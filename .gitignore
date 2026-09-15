@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Python & Django
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*.py[cod]
+*.class
+*.sqlite3
+db.sqlite3
+*.log
+.env
+venv/
+.venv/
+env/
+
+# Build artifacts
+dist/
+*/dist/
+build/
+recordings/
+*.mp4
+*.webm
+
+# Temporary / Scratch dumps
+doc_ascii_dump.txt
+doc_utf16_dump.txt
+
+# Editor & OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.agents/
