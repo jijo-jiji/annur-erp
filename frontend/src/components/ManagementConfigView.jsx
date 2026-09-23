@@ -1,328 +1,388 @@
-﻿import React, { useState } from 'react';
-import { Sliders, Plus, Save, Edit3, Trash2, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useStore } from '../store';
+import { can } from '../lib/permissions';
+import { LEVEL_LABEL, rm, STREAM_LABEL, TIER_CATEGORY_LABEL } from '../lib/format';
+import { Badge, Button, Card, CardHeader, inputClass, Input, PageHeader, Select, Table, Tabs, Td, Th, useToast } from './ui';
 
-export default function ManagementConfigView() {
-  const [subTab, setSubTab] = useState('subjects');
+export default function ManagementConfigView({ role }) {
+  const [tab, setTab] = useState('subjects');
+  return (
+    <>
+      <PageHeader title="Tetapan" description="Subjek, pakej yuran dan polisi operasi. Perubahan berkuat kuasa serta-merta." />
+      <Tabs
+        className="mb-6"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'subjects', label: 'Subjek' },
+          { value: 'pricing', label: 'Pakej yuran' },
+          { value: 'discounts', label: 'Diskaun' },
+          { value: 'policies', label: 'Polisi & elaun' },
+        ]}
+      />
+      {tab === 'subjects' && <Subjects editable={can(role, 'settings.subjects')} />}
+      {tab === 'pricing' && <Pricing editable={can(role, 'settings.pricing')} />}
+      {tab === 'discounts' && <Discounts editable={can(role, 'settings.discounts')} />}
+      {tab === 'policies' && <Policies editable={can(role, 'settings.policies')} />}
+    </>
+  );
+}
 
-  // 1. Dynamic Subject Catalog
-  const [subjects, setSubjects] = useState([
-    { code: 'FZ', name: 'Fizik', level: 'UPPER_SEC', stream: 'SAINS', active: true },
-    { code: 'KIM', name: 'Kimia', level: 'UPPER_SEC', stream: 'SAINS', active: true },
-    { code: 'BIO', name: 'Biologi', level: 'UPPER_SEC', stream: 'SAINS', active: true },
-    { code: 'ADDMT', name: 'Matematik Tambahan', level: 'UPPER_SEC', stream: 'SAINS', active: true },
-    { code: 'BI', name: 'Bahasa Inggeris', level: 'UPPER_SEC', stream: 'TERAS', active: true },
-    { code: 'BM', name: 'Bahasa Melayu', level: 'UPPER_SEC', stream: 'TERAS', active: true },
-    { code: 'MATH', name: 'Matematik', level: 'UPPER_SEC', stream: 'TERAS', active: true },
-    { code: 'SAINS', name: 'Sains', level: 'UPPER_SEC', stream: 'SASTERA', active: true },
-    { code: 'SEJ', name: 'Sejarah', level: 'UPPER_SEC', stream: 'TERAS', active: true },
-    { code: 'ACC', name: 'Prinsip Perakaunan', level: 'UPPER_SEC', stream: 'SASTERA', active: true },
-    { code: 'GEO_L', name: 'Geografi (Menengah Rendah)', level: 'LOWER_SEC', stream: 'TERAS', active: true },
-  ]);
+function Subjects({ editable }) {
+  const { subjects, addSubject, updateSubject } = useStore();
+  const notify = useToast();
+  const [f, setF] = useState({ code: '', name: '', level: 'UPPER_SEC', stream: 'TERAS' });
+  const [error, setError] = useState('');
 
-  const [newSub, setNewSub] = useState({ code: '', name: '', level: 'UPPER_SEC', stream: 'TERAS' });
-
-  // 2. Dynamic Pricing Tiers (Secondary & Primary)
-  const [pricingTiers, setPricingTiers] = useState([
-    { id: 1, level: 'Sekolah Menengah', count: 4, ratePerSub: 60.0, total: 240.0 },
-    { id: 2, level: 'Sekolah Menengah', count: 5, ratePerSub: 55.0, total: 275.0 },
-    { id: 3, level: 'Sekolah Menengah', count: 6, ratePerSub: 55.0, total: 330.0 },
-    { id: 4, level: 'Sekolah Menengah', count: 7, ratePerSub: 50.0, total: 350.0 },
-    { id: 5, level: 'Sekolah Menengah', count: 8, ratePerSub: 50.0, total: 400.0 },
-    { id: 6, level: 'Darjah 5', count: 2, ratePerSub: 50.0, total: 100.0 },
-    { id: 7, level: 'Darjah 6', count: 4, ratePerSub: 50.0, total: 200.0 },
-  ]);
-
-  // 3. Operational Policies & Thresholds
-  const [settings, setSettings] = useState({
-    regFee: 30.0,
-    sessionDuration: 90,
-    defaultCapacity: 20,
-    dueDay: 7,
-    unpaidMonthsLimit: 2,
-    permanentHourlyRate: 60.0,
-    replacementHourlyRate: 55.0,
-    annualIncrementPct: 5.0
-  });
-
-  const handleAddSubject = (e) => {
+  const submit = (e) => {
     e.preventDefault();
-    if (!newSub.code || !newSub.name) return;
-    setSubjects([...subjects, { ...newSub, active: true }]);
-    setNewSub({ code: '', name: '', level: 'UPPER_SEC', stream: 'TERAS' });
-    alert(`Subjek baru ${newSub.code} - ${newSub.name} berjaya ditambah!`);
-  };
-
-  const handleSaveSettings = (e) => {
-    e.preventDefault();
-    alert("Semua tetapan perniagaan dan kadar yuran telah dikemaskini dan berkuatkuasa secara langsung tanpa perlu pengaturcara!");
+    if (subjects.some((s) => s.code === f.code)) {
+      setError(`Kod ${f.code} sudah digunakan.`);
+      return;
+    }
+    addSubject(f);
+    notify(`Subjek ${f.name} ditambah.`);
+    setF({ code: '', name: '', level: 'UPPER_SEC', stream: 'TERAS' });
+    setError('');
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-slate-900">Hab Konfigurasi Perniagaan (Self-Service)</h2>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-              Tanpa Pengaturcara (Zero-Dev)
-            </span>
-          </div>
-          <p className="text-xs text-slate-500">
-            Dikhaskan untuk Pengurusan (Directors & Finance): Tukar subjek, kadar harga, elaun guru dan had kapasiti bilik darjah pada bila-bila masa.
-          </p>
-        </div>
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <Card className="lg:col-span-2">
+        <CardHeader title="Senarai subjek" description={`${subjects.filter((s) => s.active).length} aktif daripada ${subjects.length}`} />
+        <Table>
+          <thead>
+            <tr>
+              <Th>Kod</Th>
+              <Th>Nama</Th>
+              <Th className="hidden sm:table-cell">Peringkat</Th>
+              <Th className="hidden md:table-cell">Aliran</Th>
+              <Th className="text-right">Aktif</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {subjects.map((s) => (
+              <tr key={s.code} className={s.active ? '' : 'text-gray-400'}>
+                <Td className="font-medium">{s.code}</Td>
+                <Td className={s.active ? 'text-gray-900' : ''}>{s.name}</Td>
+                <Td className="hidden sm:table-cell">{LEVEL_LABEL[s.level]}</Td>
+                <Td className="hidden md:table-cell">{STREAM_LABEL[s.stream]}</Td>
+                <Td className="text-right">
+                  {editable ? (
+                    <Toggle checked={s.active} label={`Aktifkan ${s.name}`} onChange={(active) => updateSubject(s.code, { active })} />
+                  ) : s.active ? (
+                    <Badge tone="green">Aktif</Badge>
+                  ) : (
+                    <Badge>Tidak aktif</Badge>
+                  )}
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
 
-        {/* Sub-tab Pills */}
-        <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 text-xs">
-          <button
-            onClick={() => setSubTab('subjects')}
-            className={`px-3 py-1.5 rounded-lg font-semibold transition ${
-              subTab === 'subjects' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            Katalog Subjek
-          </button>
-          <button
-            onClick={() => setSubTab('pricing')}
-            className={`px-3 py-1.5 rounded-lg font-semibold transition ${
-              subTab === 'pricing' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            Kadar Yuran & Pakej
-          </button>
-          <button
-            onClick={() => setSubTab('policies')}
-            className={`px-3 py-1.5 rounded-lg font-semibold transition ${
-              subTab === 'policies' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            Polisi & Elaun Guru
-          </button>
-        </div>
-      </div>
-
-      {subTab === 'subjects' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Add Subject Card */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 border-b pb-2 flex items-center gap-2">
-              <Plus className="w-4 h-4 text-indigo-600" /> Tambah Subjek Baru
-            </h3>
-            <form onSubmit={handleAddSubject} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Kod Subjek (Singkatan) *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: EKON / PERN"
-                  value={newSub.code}
-                  onChange={(e) => setNewSub({ ...newSub, code: e.target.value.toUpperCase() })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 uppercase font-bold"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Nama Subjek Penuh *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Ekonomi Asas"
-                  value={newSub.name}
-                  onChange={(e) => setNewSub({ ...newSub, name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Kategori Peringkat *</label>
-                <select
-                  value={newSub.level}
-                  onChange={(e) => setNewSub({ ...newSub, level: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
-                >
-                  <option value="UPPER_SEC">Menengah Atas (Form 4 - 5)</option>
-                  <option value="LOWER_SEC">Menengah Rendah (Form 1 - 3)</option>
-                  <option value="PRIMARY">Sekolah Rendah (Darjah 5 - 6)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Aliran *</label>
-                <select
-                  value={newSub.stream}
-                  onChange={(e) => setNewSub({ ...newSub, stream: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
-                >
-                  <option value="SAINS">Aliran Sains</option>
-                  <option value="SASTERA">Aliran Sastera</option>
-                  <option value="TERAS">Teras / Umum</option>
-                </select>
-              </div>
-              <button
-                type="submit"
-                className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-sm"
-              >
-                + Simpan Subjek Baru
-              </button>
-            </form>
-          </div>
-
-          {/* Current Subjects List */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-800">Senarai Subjek Aktif ({subjects.length})</h3>
-              <span className="text-xs text-slate-400">Pusat Tuisyen An Nur Telipot</span>
-            </div>
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold text-[11px]">
-                <tr>
-                  <th className="py-3 px-4">Kod</th>
-                  <th className="py-3 px-4">Nama Subjek</th>
-                  <th className="py-3 px-4">Peringkat</th>
-                  <th className="py-3 px-4">Aliran</th>
-                  <th className="py-3 px-4 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {subjects.map((s, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50 transition">
-                    <td className="py-2.5 px-4 font-bold text-indigo-700">{s.code}</td>
-                    <td className="py-2.5 px-4 font-semibold text-slate-900">{s.name}</td>
-                    <td className="py-2.5 px-4 text-slate-600">{s.level}</td>
-                    <td className="py-2.5 px-4 text-slate-600">{s.stream}</td>
-                    <td className="py-2.5 px-4 text-right">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                        Aktif
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {subTab === 'pricing' && (
-        <div className="space-y-6">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-800 mb-3">Struktur Pakej Yuran Bulanan (Boleh Diedit Sendiri)</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold text-[11px]">
-                  <tr>
-                    <th className="py-3 px-4">Peringkat Sekolah</th>
-                    <th className="py-3 px-4">Bilangan Subjek</th>
-                    <th className="py-3 px-4">Kadar per Subjek (RM)</th>
-                    <th className="py-3 px-4">Jumlah Yuran (RM)</th>
-                    <th className="py-3 px-4 text-right">Tindakan</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {pricingTiers.map((pt) => (
-                    <tr key={pt.id} className="hover:bg-slate-50 transition">
-                      <td className="py-3 px-4 font-semibold text-slate-900">{pt.level}</td>
-                      <td className="py-3 px-4 font-bold text-indigo-700">{pt.count} Subjek</td>
-                      <td className="py-3 px-4">
-                        <input
-                          type="number"
-                          value={pt.ratePerSub}
-                          onChange={(e) => {
-                            const newR = parseFloat(e.target.value);
-                            setPricingTiers(
-                              pricingTiers.map((p) => (p.id === pt.id ? { ...p, ratePerSub: newR, total: newR * p.count } : p))
-                            );
-                          }}
-                          className="w-20 px-2 py-1 rounded-lg border border-slate-200 text-xs font-bold"
-                        />
-                      </td>
-                      <td className="py-3 px-4 font-extrabold text-emerald-700">RM {pt.total.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="text-[11px] text-indigo-600 font-semibold cursor-pointer hover:underline">
-                          Simpan
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {subTab === 'policies' && (
-        <form onSubmit={handleSaveSettings} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 max-w-2xl">
-          <h3 className="text-sm font-bold text-slate-900 border-b pb-2">Polisi Operasi, Had Kapasiti & Elaun Guru</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Yuran Pendaftaran Rasmi (RM)</label>
-              <input
-                type="number"
-                value={settings.regFee}
-                onChange={(e) => setSettings({ ...settings, regFee: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Kapasiti Kerusi Bilik Darjah (Maksimum)</label>
-              <input
-                type="number"
-                value={settings.defaultCapacity}
-                onChange={(e) => setSettings({ ...settings, defaultCapacity: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Kadar Sesi Guru Permanent (RM / 1.5 Jam)</label>
-              <input
-                type="number"
-                value={settings.permanentHourlyRate}
-                onChange={(e) => setSettings({ ...settings, permanentHourlyRate: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold text-emerald-700"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Kadar Sesi Guru Ganti (RM / 1.5 Jam)</label>
-              <input
-                type="number"
-                value={settings.replacementHourlyRate}
-                onChange={(e) => setSettings({ ...settings, replacementHourlyRate: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold text-blue-700"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Tarikh Akhir Bayaran Bulanan (HB)</label>
-              <input
-                type="number"
-                value={settings.dueDay}
-                onChange={(e) => setSettings({ ...settings, dueDay: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Had Bulan Tertunggak Sebelum Diberhentikan</label>
-              <input
-                type="number"
-                value={settings.unpaidMonthsLimit}
-                onChange={(e) => setSettings({ ...settings, unpaidMonthsLimit: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold"
-              />
-            </div>
-          </div>
-
-          <div className="pt-3">
-            <button
-              type="submit"
-              className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 shadow-sm"
-            >
-              Simpan Semua Tetapan Perniagaan
-            </button>
-          </div>
+      {editable && (
+      <Card className="self-start">
+        <CardHeader title="Tambah subjek" />
+        <form onSubmit={submit} className="space-y-4 p-5">
+          <Input label="Kod" required maxLength={8} value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase().replace(/\s/g, '') })} placeholder="cth. EKON" error={error} />
+          <Input label="Nama subjek" required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="cth. Ekonomi" />
+          <Select label="Peringkat" value={f.level} onChange={(e) => setF({ ...f, level: e.target.value })}>
+            {Object.entries(LEVEL_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </Select>
+          <Select label="Aliran" value={f.stream} onChange={(e) => setF({ ...f, stream: e.target.value })}>
+            <option value="TERAS">Teras</option>
+            <option value="SAINS">Sains</option>
+            <option value="SASTERA">Sastera / Akaun</option>
+          </Select>
+          <Button type="submit" variant="primary" icon={Plus} className="w-full">
+            Tambah subjek
+          </Button>
         </form>
+      </Card>
       )}
     </div>
+  );
+}
+
+function Toggle({ checked, onChange, label }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${checked ? 'bg-brand-600' : 'bg-gray-300'}`}
+    >
+      <span className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+    </button>
+  );
+}
+
+function Pricing({ editable }) {
+  const { pricingTiers, saveTiers } = useStore();
+  const notify = useToast();
+  const [draft, setDraft] = useState(pricingTiers);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(pricingTiers);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Pakej yuran bulanan"
+        description="Kadar seunit subjek. Jumlah pakej dikira secara automatik."
+        actions={
+          editable ? (
+          <>
+            {dirty && (
+              <Button size="sm" variant="ghost" onClick={() => setDraft(pricingTiers)}>
+                Buang perubahan
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!dirty}
+              onClick={() => {
+                saveTiers(draft);
+                notify('Pakej yuran dikemas kini.');
+              }}
+            >
+              Simpan
+            </Button>
+          </>
+          ) : (
+            <Badge>Hanya pengurusan boleh mengubah</Badge>
+          )
+        }
+      />
+      <Table>
+        <thead>
+          <tr>
+            <Th>Peringkat</Th>
+            <Th>Subjek</Th>
+            <Th>Kadar / subjek (RM)</Th>
+            <Th className="text-right">Jumlah sebulan</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {draft.map((t) => {
+            const original = pricingTiers.find((x) => x.id === t.id);
+            return (
+              <tr key={t.id}>
+                <Td className="text-gray-900">{TIER_CATEGORY_LABEL[t.category]}</Td>
+                <Td className="tnum">{t.count} subjek</Td>
+                <Td>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    aria-label={`Kadar ${TIER_CATEGORY_LABEL[t.category]} ${t.count} subjek`}
+                    value={t.rate}
+                    disabled={!editable}
+                    onChange={(e) => setDraft(draft.map((x) => (x.id === t.id ? { ...x, rate: Number(e.target.value) } : x)))}
+                    className={`${inputClass} max-w-24 tnum`}
+                  />
+                </Td>
+                <Td className="text-right font-medium tnum">
+                  {rm(t.rate * t.count)}
+                  {original && original.rate !== t.rate && <Badge tone="amber" className="ml-2">Diubah</Badge>}
+                </Td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </Table>
+    </Card>
+  );
+}
+
+const POLICY_FIELDS = [
+  { key: 'regFee', label: 'Yuran pendaftaran', unit: 'RM', section: 'fees' },
+  { key: 'dueDay', label: 'Tarikh akhir bayaran bulanan', unit: 'haribulan', section: 'fees', min: 1, max: 28 },
+  { key: 'unpaidMonthsLimit', label: 'Tunggakan maksimum sebelum diberhentikan', unit: 'bulan', section: 'fees', min: 1 },
+  { key: 'noticeWeeks', label: 'Notis berhenti', unit: 'minggu', section: 'fees', min: 0 },
+  { key: 'classCapacity', label: 'Kapasiti maksimum kelas', unit: 'pelajar', section: 'ops', min: 1 },
+  { key: 'sessionMinutes', label: 'Tempoh sesi', unit: 'minit', section: 'ops', min: 30 },
+  { key: 'permanentRate', label: 'Kadar asas guru tetap', unit: 'RM / sesi', section: 'teachers' },
+  { key: 'replacementRate', label: 'Kadar asas guru ganti', unit: 'RM / sesi', section: 'teachers' },
+];
+
+const SECTIONS = [
+  { id: 'fees', title: 'Yuran & pembayaran' },
+  { id: 'ops', title: 'Operasi kelas' },
+  { id: 'teachers', title: 'Elaun guru' },
+];
+
+function Policies({ editable }) {
+  const { settings, saveSettings } = useStore();
+  const notify = useToast();
+  const [draft, setDraft] = useState(settings);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        saveSettings(draft);
+        notify('Polisi dikemas kini.');
+      }}
+      className="max-w-3xl space-y-6"
+    >
+      {SECTIONS.map((sec) => (
+        <Card key={sec.id}>
+          <CardHeader title={sec.title} />
+          <div className="divide-y divide-gray-100">
+            {POLICY_FIELDS.filter((p) => p.section === sec.id).map((p) => (
+              <label key={p.key} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                <span className="text-sm text-gray-800">{p.label}</span>
+                <span className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    required
+                    min={p.min ?? 0}
+                    max={p.max}
+                    step="any"
+                    value={draft[p.key]}
+                    disabled={!editable}
+                    onChange={(e) => setDraft({ ...draft, [p.key]: e.target.value === '' ? '' : Number(e.target.value) })}
+                    className={`${inputClass} max-w-24 text-right tnum`}
+                  />
+                  <span className="w-20 text-[13px] text-gray-500">{p.unit}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </Card>
+      ))}
+      {!editable && <p className="text-[13px] text-gray-500">Polisi hanya boleh diubah oleh pengurusan.</p>}
+      <div className={editable ? 'flex justify-end gap-2' : 'hidden'}>
+        {dirty && (
+          <Button variant="ghost" onClick={() => setDraft(settings)}>
+            Buang perubahan
+          </Button>
+        )}
+        <Button type="submit" variant="primary" disabled={!dirty}>
+          Simpan polisi
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function Discounts({ editable }) {
+  const { discounts, students, saveDiscounts } = useStore();
+  const notify = useToast();
+  const [draft, setDraft] = useState(discounts);
+  const [newLabel, setNewLabel] = useState('');
+  const dirty = JSON.stringify(draft) !== JSON.stringify(discounts);
+  const usage = (id) => (id === 'SIBLING' ? null : students.filter((s) => s.status === 'ACTIVE' && s.discounts?.includes(id)).length);
+  const set = (id, patch) => setDraft(draft.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+
+  return (
+    <Card>
+      <CardHeader
+        title="Peraturan diskaun"
+        description="Dikenakan pada yuran bulanan dalam larian invois bulanan. Diskaun adik-beradik diberi secara automatik kepada setiap anak selain yang sulung."
+        actions={
+          editable ? (
+            <>
+              {dirty && (
+                <Button size="sm" variant="ghost" onClick={() => setDraft(discounts)}>
+                  Buang perubahan
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={!dirty}
+                onClick={() => {
+                  saveDiscounts(draft);
+                  notify('Peraturan diskaun dikemas kini.');
+                }}
+              >
+                Simpan
+              </Button>
+            </>
+          ) : (
+            <Badge>Hanya pengurusan boleh mengubah</Badge>
+          )
+        }
+      />
+      <Table>
+        <thead>
+          <tr>
+            <Th>Diskaun</Th>
+            <Th>Jenis</Th>
+            <Th>Nilai</Th>
+            <Th className="text-right">Pelajar</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {draft.map((d) => (
+            <tr key={d.id}>
+              <Td>
+                <p className="font-medium text-gray-900">{d.label}</p>
+                <p className="text-[13px] text-gray-500">{d.auto ? 'Automatik' : 'Ditetapkan pada profil pelajar'}</p>
+              </Td>
+              <Td>
+                <select
+                  value={d.type}
+                  disabled={!editable}
+                  onChange={(e) => set(d.id, { type: e.target.value })}
+                  aria-label={`Jenis ${d.label}`}
+                  className={`${inputClass} max-w-40`}
+                >
+                  <option value="PERCENT">Peratus</option>
+                  <option value="FIXED">Amaun tetap (RM)</option>
+                </select>
+              </Td>
+              <Td>
+                <input
+                  type="number"
+                  min="0"
+                  max={d.type === 'PERCENT' ? 100 : undefined}
+                  value={d.value}
+                  disabled={!editable}
+                  onChange={(e) => set(d.id, { value: Number(e.target.value) })}
+                  aria-label={`Nilai ${d.label}`}
+                  className={`${inputClass} max-w-24 tnum`}
+                />
+              </Td>
+              <Td className="text-right tnum">{usage(d.id) ?? '—'}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      {editable && (
+        <form
+          className="flex flex-wrap gap-2 border-t border-gray-200 p-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const id = newLabel.toUpperCase().replace(/[^A-Z0-9]+/g, '_').slice(0, 16) || `D${draft.length + 1}`;
+            setDraft([...draft, { id, label: newLabel, type: 'PERCENT', value: 10, auto: false }]);
+            setNewLabel('');
+          }}
+        >
+          <input
+            required
+            value={newLabel}
+            onChange={(e) => setNewLabel(e.target.value)}
+            placeholder="Nama diskaun baharu, cth. Pelajar cemerlang"
+            aria-label="Nama diskaun baharu"
+            className={`${inputClass} max-w-sm`}
+          />
+          <Button type="submit" icon={Plus}>
+            Tambah
+          </Button>
+        </form>
+      )}
+    </Card>
   );
 }

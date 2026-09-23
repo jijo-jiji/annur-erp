@@ -1,26 +1,72 @@
-﻿@import "tailwindcss";
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* An Nur green — primary brand colour */
+  --color-brand-50: #eff8f3;
+  --color-brand-100: #d8eee1;
+  --color-brand-200: #b2dcc5;
+  --color-brand-300: #82c3a2;
+  --color-brand-400: #4fa57c;
+  --color-brand-500: #2f8a61;
+  --color-brand-600: #1f704d;
+  --color-brand-700: #1a5a3f;
+  --color-brand-800: #174834;
+  --color-brand-900: #133b2c;
+  --color-brand-950: #0a2119;
+}
 
 @layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
   body {
-    background-color: #F8FAFC;
-    color: #0F172A;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--color-brand-600);
   }
 }
 
-/* Custom subtle scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+@utility tnum {
+  font-variant-numeric: tabular-nums;
 }
-::-webkit-scrollbar-track {
-  background: #F1F5F9;
-}
-::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+
+/* Printing: only the element marked .print-area is printed (receipts, payslips). */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible !important;
+  }
+  .print-area {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 24px;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+  /* Multi-page reports flow normally instead of being pinned to one page */
+  .print-flow,
+  .print-flow * {
+    visibility: visible !important;
+  }
+  .print-flow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  .no-print {
+    display: none !important;
+  }
 }

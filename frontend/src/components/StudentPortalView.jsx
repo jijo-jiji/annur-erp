@@ -1,217 +1,264 @@
-﻿import React, { useState } from 'react';
-import { Calendar, Receipt, BookOpen, Award, CheckCircle2, MessageSquare, QrCode, Phone, Download } from 'lucide-react';
-import ParentQRView from './ParentQRView';
+import { useState } from 'react';
+import { Award, CreditCard } from 'lucide-react';
+import { CENTRE, DAYS, DEMO_PARENT_PHONE } from '../data/demo';
+import { useStore } from '../store';
+import { attendanceSummary, grade, invoiceBalance, invoiceStatus } from '../lib/domain';
+import { date, DAY_LABEL, formLabel, monthLabel, PAYMENT_METHOD_LABEL, rm, STREAM_LABEL, timeRange, waLink } from '../lib/format';
+import { ReceiptModal } from './BillingView';
+import { TrendChart } from './charts';
+import { Badge, Button, Card, CardHeader, cx, EmptyState, PageHeader, Table, Tabs, Td, Th, WhatsAppIcon } from './ui';
 
 export default function StudentPortalView() {
-  const [portalTab, setPortalTab] = useState('jadual');
+  const { students, classes, subjects, teachers, invoices, receipts, attendance, exams, results } = useStore();
+  const children = students.filter((s) => s.parent1.phone === DEMO_PARENT_PHONE && s.status !== 'TERMINATED');
+  const [childId, setChildId] = useState(children[0]?.id);
+  const [tab, setTab] = useState('schedule');
+  const [viewing, setViewing] = useState(null);
 
-  const studentData = {
-    id: "AN-2026-001",
-    name: "Ahmad Daniyal bin Razali",
-    ic: "090514-03-5511",
-    form: "Tingkatan 5 (SPM 2026)",
-    stream: "Aliran Sains Tulen",
-    school: "SMK Telipot, Kota Bharu",
-    parent: "Encik Razali bin Mahmud",
-    parentPhone: "012-987 6541",
-    enrolledClasses: [
-      { code: "F5 FIZIK (A)", day: "Jumaat", time: "9.00 - 10.30 Pagi", teacher: "Cikgu Nik Ahmad Khan (NAK)", room: "Bilik Al-Farabi" },
-      { code: "F5 KIMIA (A)", day: "Sabtu", time: "2.15 - 3.45 Petang", teacher: "Cikgu Saiful (SF)", room: "Bilik Ibnu Sina" },
-      { code: "F5 BIOLOGI (A)", day: "Khamis", time: "8.30 - 10.00 Malam", teacher: "Cikgu Diana (D)", room: "Bilik Al-Khawarizmi" },
-      { code: "F5 ADD MATH (A)", day: "Jumaat", time: "3.00 - 4.30 Petang", teacher: "Cikgu Zakir / Zamri (Z)", room: "Bilik Ibnu Khaldun" },
-    ],
-    billing: {
-      invoiceNo: "INV-2026-001",
-      month: "Mac 2026",
-      monthlyFee: 240.0,
-      regFee: 30.0,
-      total: 270.0,
-      status: "PAID",
-      receiptNo: "REC-2026-0001",
-      paymentDate: "04/03/2026",
-      method: "DuitNow QR"
-    },
-    results: [
-      { subject: "Fizik", grade: "A", marks: 82 },
-      { subject: "Kimia", grade: "A-", marks: 78 },
-      { subject: "Biologi", grade: "B+", marks: 74 },
-      { subject: "Matematik Tambahan", grade: "A", marks: 85 },
-    ]
-  };
+  const s = children.find((x) => x.id === childId);
+  if (!s) return <EmptyState title="Akaun ini belum dipautkan kepada pelajar" />;
+
+  const enrolled = classes
+    .filter((c) => s.classes.includes(c.id))
+    .sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || a.start.localeCompare(b.start));
+  const myInvoices = invoices.filter((i) => i.studentId === s.id);
+  const myReceipts = receipts.filter((r) => myInvoices.some((i) => i.no === r.invoiceNo));
+  const subjectName = (code) => subjects.find((x) => x.code === code)?.name ?? code;
+  // oldest outstanding first
+  const unpaid = myInvoices.filter((i) => invoiceBalance(i) > 0).sort((a, b) => a.month.localeCompare(b.month));
+  const outstanding = unpaid.reduce((a, i) => a + invoiceBalance(i), 0);
+  const att = attendanceSummary(s.id, attendance, s.classes);
+  const familyOutstanding = children.reduce(
+    (a, c) => a + invoices.filter((i) => i.studentId === c.id).reduce((x, i) => x + invoiceBalance(i), 0),
+    0,
+  );
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Student Welcome Header Card */}
-      <div className="bg-gradient-to-r from-emerald-800 via-teal-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-emerald-500/30 text-emerald-200 uppercase tracking-wider">
-            Portal Pelajar & Ibu Bapa
-          </span>
-          <h2 className="text-xl sm:text-2xl font-black mt-2">{studentData.name}</h2>
-          <p className="text-xs text-emerald-100/90 mt-1">
-            {studentData.id} • {studentData.form} • {studentData.stream} • {studentData.school}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <a
-            href="https://wa.me/60139838085"
-            target="_blank"
-            rel="noreferrer"
-            className="px-4 py-2 rounded-xl bg-white text-emerald-900 font-bold text-xs hover:bg-emerald-50 transition shadow-sm flex items-center gap-1.5"
-          >
-            <MessageSquare className="w-4 h-4 text-[#25D366]" /> Bantuan Kaunter (WhatsApp)
-          </a>
-        </div>
-      </div>
-
-      {/* Portal Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
-        <button
-          onClick={() => setPortalTab('jadual')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-            portalTab === 'jadual'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <Calendar className="w-3.5 h-3.5" /> Jadual Kelas Saya
-        </button>
-        <button
-          onClick={() => setPortalTab('resit')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-            portalTab === 'resit'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <Receipt className="w-3.5 h-3.5" /> Yuran & Resit Rasmi
-        </button>
-        <button
-          onClick={() => setPortalTab('prestasi')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-            portalTab === 'prestasi'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <Award className="w-3.5 h-3.5" /> Prestasi & Keputusan (SAPS)
-        </button>
-        <button
-          onClick={() => setPortalTab('daftar_baru')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-            portalTab === 'daftar_baru'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <QrCode className="w-3.5 h-3.5" /> Borang Pendaftaran Baru (QR)
-        </button>
-      </div>
-
-      {/* Tab 1: Jadual Kelas Pelajar */}
-      {portalTab === 'jadual' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900">Jadual Kelas Mingguan (4 Subjek Berdaftar)</h3>
-            <span className="text-xs text-indigo-600 font-semibold">1 Sesi = 1 Jam 30 Minit</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {studentData.enrolledClasses.map((cls, idx) => (
-              <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700">
-                    {cls.day} • {cls.time}
-                  </span>
-                  <span className="text-[11px] font-semibold text-slate-500">{cls.room}</span>
-                </div>
-                <h4 className="text-base font-extrabold text-slate-900">{cls.code}</h4>
-                <p className="text-xs text-slate-600">Guru Pengajar: <strong>{cls.teacher}</strong></p>
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                  <span className="text-emerald-600 font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Status: Terdaftar
-                  </span>
-                  <span className="text-slate-400">Pusat Tuisyen An Nur Telipot</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 2: Yuran & Resit Rasmi */}
-      {portalTab === 'resit' && (
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                Selesai Dibayar (Lunas)
-              </span>
-              <h3 className="text-lg font-black text-slate-900 mt-1">Invois & Resit Rasmi Mac 2026</h3>
-              <p className="text-xs text-slate-500">No. Invois: {studentData.billing.invoiceNo} • Tarikh Bayaran: {studentData.billing.paymentDate}</p>
-            </div>
+    <div className="mx-auto max-w-4xl">
+      {children.length > 1 && (
+        <div className="mb-5 flex flex-wrap gap-2" role="tablist" aria-label="Anak">
+          {children.map((c) => (
             <button
-              onClick={() => alert(`Memuat turun Salinan Resit Rasmi ${studentData.billing.receiptNo}...`)}
-              className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 shadow-sm flex items-center gap-1.5"
+              key={c.id}
+              type="button"
+              role="tab"
+              aria-selected={c.id === childId}
+              onClick={() => setChildId(c.id)}
+              className={cx(
+                'rounded-full border px-3.5 py-1.5 text-sm font-medium',
+                c.id === childId ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400',
+              )}
             >
-              <Download className="w-4 h-4" /> Muat Turun Resit PDF
+              {c.name.split(/ bin | binti /)[0]} · {formLabel(c.form)}
             </button>
-          </div>
-
-          <div className="space-y-2 text-xs text-slate-700">
-            <div className="flex justify-between py-2 border-b">
-              <span>Yuran Bulanan (Pakej 4 Subjek Menengah):</span>
-              <span className="font-bold text-slate-900">RM 240.00</span>
-            </div>
-            <div className="flex justify-between py-2 border-b">
-              <span>Yuran Pendaftaran Rasmi (Sekali Semasa Mendaftar):</span>
-              <span className="font-bold text-slate-900">RM 30.00</span>
-            </div>
-            <div className="flex justify-between py-3 text-sm font-black text-slate-900">
-              <span>JUMLAH DIBAYAR:</span>
-              <span className="text-base text-emerald-600">RM 270.00 (Lunas)</span>
-            </div>
-            <div className="flex justify-between text-[11px] text-slate-500 pt-1">
-              <span>Kaedah Pembayaran:</span>
-              <span>DuitNow QR Kebangsaan</span>
-            </div>
-            <div className="flex justify-between text-[11px] text-slate-500">
-              <span>No. Siri Resit Rasmi:</span>
-              <span className="font-bold text-indigo-700">{studentData.billing.receiptNo}</span>
-            </div>
-          </div>
+          ))}
         </div>
       )}
 
-      {/* Tab 3: Prestasi SAPS MOE */}
-      {portalTab === 'prestasi' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b pb-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Rekod Keputusan Peperiksaan Terkini</h3>
-              <p className="text-xs text-slate-500">Dipantau bersama keputusan SAPS MOE (sapsnkra.moe)</p>
-            </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">
-              Peperiksaan Pertengahan Tahun 2026
-            </span>
-          </div>
+      <PageHeader
+        title={s.name}
+        description={`${s.id} · ${formLabel(s.form)} · ${STREAM_LABEL[s.stream]} · ${s.school}`}
+        actions={
+          <Button as="a" href={waLink(CENTRE.whatsapp)} target="_blank" rel="noreferrer">
+            <WhatsAppIcon /> Hubungi kaunter
+          </Button>
+        }
+      />
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {studentData.results.map((r, i) => (
-              <div key={i} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1">
-                <span className="text-xs text-slate-600 font-semibold">{r.subject}</span>
-                <div className="text-2xl font-black text-indigo-900">{r.grade}</div>
-                <span className="text-[11px] text-emerald-600 font-bold">{r.marks}%</span>
+      {outstanding > 0 && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm text-amber-900">
+            Baki yuran <strong>{rm(outstanding)}</strong> ({unpaid.map((i) => monthLabel(i.month)).join(', ')}). Tarikh akhir {date(unpaid[0].dueDate)}.
+          </p>
+          <Button as="a" href={`#/bayar/${unpaid[0].no}`} variant="primary" icon={CreditCard}>
+            Bayar sekarang
+          </Button>
+        </div>
+      )}
+      {outstanding === 0 && familyOutstanding > 0 && (
+        <p className="mb-6 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
+          Tiada baki untuk {s.name.split(/ bin | binti /)[0]}. Terdapat baki {rm(familyOutstanding)} bagi anak lain — pilih nama di atas.
+        </p>
+      )}
+
+      <div className="mb-6 grid grid-cols-3 gap-3">
+        {[
+          ['Subjek', enrolled.length],
+          ['Kedatangan', att.rate != null ? `${att.rate}%` : '—'],
+          ['Baki yuran', rm(outstanding)],
+        ].map(([k, v]) => (
+          <Card key={k} className="px-4 py-3">
+            <p className="text-[13px] text-gray-500">{k}</p>
+            <p className="mt-1 text-lg font-semibold tnum">{v}</p>
+          </Card>
+        ))}
+      </div>
+
+      <Tabs
+        className="mb-6"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'schedule', label: 'Jadual' },
+          { value: 'fees', label: 'Yuran' },
+          { value: 'attendance', label: 'Kedatangan' },
+          { value: 'results', label: 'Keputusan' },
+        ]}
+      />
+
+      {tab === 'schedule' && (
+        <Card>
+          <CardHeader title="Jadual mingguan" description={`${enrolled.length} subjek · setiap sesi 1 jam 30 minit`} />
+          <ul className="divide-y divide-gray-100">
+            {enrolled.map((c) => (
+              <li key={c.id} className="flex flex-col gap-1 px-5 py-4 sm:flex-row sm:items-center sm:gap-6">
+                <div className="w-44 shrink-0">
+                  <p className="text-sm font-medium text-gray-900">{DAY_LABEL[c.day]}</p>
+                  <p className="text-[13px] text-gray-500">{timeRange(c.start, c.end)}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{subjectName(c.subject)}</p>
+                  <p className="text-[13px] text-gray-500">
+                    Cikgu {teachers.find((t) => t.code === c.teacher)?.name} · Bilik {c.room}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {tab === 'fees' && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader title="Invois" />
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Bulan</Th>
+                  <Th className="text-right">Jumlah</Th>
+                  <Th className="text-right">Baki</Th>
+                  <Th>Status</Th>
+                  <Th className="text-right">
+                    <span className="sr-only">Tindakan</span>
+                  </Th>
+                </tr>
+              </thead>
+              <tbody>
+                {myInvoices.map((i) => (
+                  <tr key={i.no}>
+                    <Td>
+                      <p className="text-gray-900">{monthLabel(i.month)}</p>
+                      <p className="text-[13px] text-gray-500">{i.no}</p>
+                    </Td>
+                    <Td className="text-right tnum">
+                      {rm(i.total - i.discount)}
+                      {i.discount > 0 && <p className="text-xs text-gray-500">termasuk diskaun {rm(i.discount)}</p>}
+                    </Td>
+                    <Td className="text-right tnum">{invoiceBalance(i) ? rm(invoiceBalance(i)) : '—'}</Td>
+                    <Td>{invoiceStatus(i) === 'PAID' ? <Badge tone="green">Dibayar</Badge> : <Badge tone="red">Belum bayar</Badge>}</Td>
+                    <Td className="text-right">
+                      {invoiceBalance(i) > 0 && (
+                        <Button as="a" size="sm" variant="primary" href={`#/bayar/${i.no}`}>
+                          Bayar
+                        </Button>
+                      )}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </Card>
+          <Card>
+            <CardHeader title="Resit" />
+            {myReceipts.length === 0 ? (
+              <EmptyState title="Tiada resit lagi" />
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {myReceipts.map((r) => (
+                  <li key={r.no} className="flex items-center justify-between gap-4 px-5 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{r.no}</p>
+                      <p className="text-[13px] text-gray-500">
+                        {date(r.date)} · {PAYMENT_METHOD_LABEL[r.method]}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-medium tnum">{rm(r.amount)}</span>
+                      <Button size="sm" onClick={() => setViewing(r)}>
+                        Lihat
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {tab === 'attendance' && (
+        <Card>
+          <CardHeader title="Kedatangan" description={`${att.sessions} sesi sejak ${date(s.joined)}`} />
+          <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-200 text-center">
+            {[
+              ['Hadir', att.sessions - att.absent],
+              ['Tidak hadir', att.absent],
+              ['Lewat', att.late],
+            ].map(([k, v]) => (
+              <div key={k} className="py-4">
+                <p className="text-xl font-semibold tnum">{v}</p>
+                <p className="text-[13px] text-gray-500">{k}</p>
               </div>
             ))}
           </div>
-        </div>
+          {att.absences.length === 0 ? (
+            <p className="px-5 py-6 text-center text-sm text-gray-500">Tiada ketidakhadiran direkodkan.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {[...att.absences].reverse().map((a) => {
+                const c = classes.find((x) => x.id === a.classId);
+                return (
+                  <li key={`${a.classId}-${a.date}`} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
+                    <span className="text-gray-900">{c && subjectName(c.subject)}</span>
+                    <span className="text-gray-500">{date(a.date)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
       )}
 
-      {/* Tab 4: Pendaftaran Baru */}
-      {portalTab === 'daftar_baru' && (
-        <ParentQRView />
-      )}
+      {tab === 'results' &&
+        (results.some((r) => r.marks[s.id] != null) ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {enrolled.map((c) => {
+              const points = exams.map((e) => ({ label: e.name.replace('Ujian ', 'U'), value: results.find((r) => r.examId === e.id && r.classId === c.id)?.marks[s.id] ?? null }));
+              const last = [...points].reverse().find((p) => p.value != null);
+              return (
+                <Card key={c.id} className="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium text-gray-900">{subjectName(c.subject)}</p>
+                    {last && (
+                      <p className="text-right">
+                        <span className="text-lg font-semibold tnum">{last.value}</span>
+                        <span className="ml-1.5 text-sm text-gray-500">{grade(last.value)}</span>
+                      </p>
+                    )}
+                  </div>
+                  <TrendChart points={points} />
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <Card>
+            <EmptyState icon={Award} title="Belum ada keputusan direkodkan" />
+          </Card>
+        ))}
+
+      <ReceiptModal receipt={viewing} onClose={() => setViewing(null)} hideActions />
     </div>
   );
 }

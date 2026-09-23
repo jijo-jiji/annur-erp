@@ -1,586 +1,517 @@
-﻿import React, { useState } from 'react';
-import { UserPlus, Search, Check, Phone, MessageSquare } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Check, Clock, Search, UserPlus, Users } from 'lucide-react';
+import { FORMS } from '../data/demo';
+import { useStore } from '../store';
+import { discountsFor, invoiceBalance, isYoungerSibling, minSubjects, monthlyFee, preferredContact, subjectsForForm } from '../lib/domain';
+import { CHECKLIST, DAY_LABEL, formLabel, formShort, initials, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, waLink } from '../lib/format';
+import { navigate } from '../lib/nav';
+import { can } from '../lib/permissions';
+import {
+  Avatar, Badge, Button, Card, CardHeader, Checkbox, cx, EmptyState, Input, PageHeader, SearchInput, Segmented, Select, Table, Td, Textarea, Th,
+  useToast, WhatsAppIcon,
+} from './ui';
 
-export default function StudentRegistrationView() {
-  const [activeTab, setActiveTab] = useState('list');
-  const [students, setStudents] = useState([
-    {
-      id: 1,
-      student_id: "AN-2026-001",
-      full_name: "Ahmad Daniyal bin Razali",
-      ic_number: "090514-03-5511",
-      form_level: "F5",
-      stream: "SAINS",
-      school_name: "SMK Telipot",
-      phone_number: "011-23456781",
-      parent1_name: "Razali bin Mahmud",
-      parent1_phone: "012-9876541",
-      preferred_contact: "PARENT_1",
-      checklist_ledger: true,
-      checklist_whatsapp: true,
-      checklist_senarai_pelajar: true,
-      checklist_kedatangan: true,
-      checklist_sistem_pembayaran: true,
-      status: "ACTIVE"
-    },
-    {
-      id: 2,
-      student_id: "AN-2026-002",
-      full_name: "Nur Aisyah binti Mohd Zaki",
-      ic_number: "090822-03-6622",
-      form_level: "F5",
-      stream: "SAINS",
-      school_name: "SMK Zainab 1",
-      phone_number: "011-23456782",
-      parent1_name: "Mohd Zaki bin Salleh",
-      parent1_phone: "012-9876542",
-      preferred_contact: "PARENT_1",
-      checklist_ledger: true,
-      checklist_whatsapp: true,
-      checklist_senarai_pelajar: true,
-      checklist_kedatangan: true,
-      checklist_sistem_pembayaran: true,
-      status: "ACTIVE"
-    },
-    {
-      id: 3,
-      student_id: "AN-2026-003",
-      full_name: "Muhammad Haziq bin Imran",
-      ic_number: "100311-03-7733",
-      form_level: "F4",
-      stream: "SAINS",
-      school_name: "SMK Sultan Ismail",
-      phone_number: "011-23456783",
-      parent1_name: "Imran bin Abdullah",
-      parent1_phone: "012-9876543",
-      preferred_contact: "PARENT_1",
-      checklist_ledger: true,
-      checklist_whatsapp: true,
-      checklist_senarai_pelajar: true,
-      checklist_kedatangan: true,
-      checklist_sistem_pembayaran: false,
-      status: "ACTIVE"
-    }
-  ]);
+const PAGE = 50;
 
-  const [formData, setFormData] = useState({
-    full_name: '',
-    ic_number: '',
-    form_level: 'F5',
-    stream: 'SAINS',
-    school_name: '',
-    phone_number: '',
-    email: '',
-    address: '',
-    student_type: 'MONTHLY',
-    lead_source: 'BANNER',
-    parent1_name: '',
-    parent1_phone: '',
-    parent1_occupation: '',
-    parent1_relation: 'Bapa',
-    parent2_name: '',
-    parent2_phone: '',
-    parent2_occupation: '',
-    parent2_relation: 'Ibu',
-    preferred_contact: 'PARENT_1',
-    selected_subjects: ['FZ', 'KIM', 'BIO', 'ADDMT'],
-    agree_terms: true,
-    saps_consent: true,
-  });
+export default function StudentRegistrationView({ role }) {
+  const canEdit = can(role, 'students.edit');
+  const [mode, setMode] = useState(() => (window.location.hash.includes('?new') ? 'form' : 'list'));
 
-  const [filterSearch, setFilterSearch] = useState('');
+  useEffect(() => {
+    const onHash = () => setMode(window.location.hash.includes('?new') ? 'form' : 'list');
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
-  const subjectOptions = [
-    { code: 'FZ', name: 'Fizik', seats: '16/20', isFull: false },
-    { code: 'KIM', name: 'Kimia', seats: '19/20', isFull: false },
-    { code: 'BIO', name: 'Biologi', seats: '18/20', isFull: false },
-    { code: 'ADDMT', name: 'Add Math', seats: '21/20', isOver: true },
-    { code: 'BI', name: 'Bahasa Inggeris', seats: '17/20', isFull: false },
-    { code: 'BM', name: 'Bahasa Melayu', seats: '19/20', isFull: false },
-    { code: 'MATH', name: 'Matematik', seats: '20/20', isFull: true },
-    { code: 'SAINS', name: 'Sains', seats: '18/20', isFull: false },
-    { code: 'SEJ', name: 'Sejarah', seats: '19/20', isFull: false },
-    { code: 'ACC', name: 'Prinsip Perakaunan', seats: '14/20', isFull: false },
-  ];
+  if (mode === 'form' && canEdit) {
+    return <RegistrationForm onCancel={() => navigate('students')} onDone={(id) => navigate(`students/${id}`)} />;
+  }
+  return <StudentList canEdit={canEdit} />;
+}
 
-  const toggleSubject = (code) => {
-    if (formData.selected_subjects.includes(code)) {
-      setFormData({ ...formData, selected_subjects: formData.selected_subjects.filter((s) => s !== code) });
+// ---- Directory ----------------------------------------------------------------
+
+function ChecklistSummary({ checklist }) {
+  const done = CHECKLIST.filter((c) => checklist[c.key]).length;
+  return (
+    <div className="flex items-center gap-2" title={CHECKLIST.map((c) => `${c.label}: ${checklist[c.key] ? '✓' : '—'}`).join('\n')}>
+      <div className="flex gap-0.5">
+        {CHECKLIST.map((c) => (
+          <span key={c.key} className={cx('h-1.5 w-3 rounded-sm', checklist[c.key] ? 'bg-brand-500' : 'bg-gray-200')} />
+        ))}
+      </div>
+      <span className={cx('text-xs tnum', done === 5 ? 'text-gray-500' : 'font-medium text-amber-700')}>{done}/5</span>
+    </div>
+  );
+}
+
+function StudentList({ canEdit }) {
+  const { students, invoices } = useStore();
+  const [q, setQ] = useState('');
+  const [form, setForm] = useState('ALL');
+  const [status, setStatus] = useState('ACTIVE');
+  const [incompleteOnly, setIncompleteOnly] = useState(false);
+  const [limit, setLimit] = useState(PAGE);
+
+  const balances = useMemo(() => {
+    const b = {};
+    for (const i of invoices) b[i.studentId] = (b[i.studentId] ?? 0) + invoiceBalance(i);
+    return b;
+  }, [invoices]);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return students.filter((s) => {
+      if (status !== 'ALL' && s.status !== status) return false;
+      if (form !== 'ALL' && s.form !== form) return false;
+      if (incompleteOnly && Object.values(s.checklist).every(Boolean)) return false;
+      if (!needle) return true;
+      return [s.name, s.id, s.ic, s.school, s.parent1.name, s.parent1.phone, s.parent2?.phone].some((v) => v?.toLowerCase().includes(needle));
+    });
+  }, [students, q, form, status, incompleteOnly]);
+
+  const count = (st) => students.filter((s) => s.status === st).length;
+
+  return (
+    <>
+      <PageHeader
+        title="Pelajar"
+        description={`${count('ACTIVE')} pelajar aktif bagi sesi 2026`}
+        actions={
+          canEdit && (
+            <Button variant="primary" icon={UserPlus} onClick={() => navigate('students?new')}>
+              Daftar pelajar
+            </Button>
+          )
+        }
+      />
+
+      <Card>
+        <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 p-4">
+          <SearchInput icon={Search} value={q} onChange={(v) => { setQ(v); setLimit(PAGE); }} placeholder="Cari nama, ID, no. K/P, sekolah atau telefon" className="w-full sm:w-80" />
+          <select
+            value={form}
+            onChange={(e) => { setForm(e.target.value); setLimit(PAGE); }}
+            aria-label="Tapis tingkatan"
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-brand-600 focus:outline-none"
+          >
+            <option value="ALL">Semua tingkatan</option>
+            {FORMS.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+          <Segmented
+            value={status}
+            onChange={(v) => { setStatus(v); setLimit(PAGE); }}
+            items={[
+              { value: 'ACTIVE', label: `Aktif (${count('ACTIVE')})` },
+              { value: 'SUSPENDED', label: `Digantung (${count('SUSPENDED')})` },
+              { value: 'TERMINATED', label: `Berhenti (${count('TERMINATED')})` },
+              { value: 'ALL', label: 'Semua' },
+            ]}
+          />
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={incompleteOnly} onChange={(e) => setIncompleteOnly(e.target.checked)} className="size-4" />
+            Semakan belum lengkap
+          </label>
+        </div>
+
+        {filtered.length === 0 ? (
+          <EmptyState icon={Users} title="Tiada pelajar ditemui">
+            Cuba ubah kata carian atau tapisan.
+          </EmptyState>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Pelajar</Th>
+                <Th>Tingkatan</Th>
+                <Th className="hidden xl:table-cell">Sekolah</Th>
+                <Th className="hidden md:table-cell">Penjaga</Th>
+                <Th className="hidden text-right sm:table-cell">Baki</Th>
+                <Th className="hidden lg:table-cell">Semakan</Th>
+                <Th className="w-0">
+                  <span className="sr-only">Tindakan</span>
+                </Th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.slice(0, limit).map((s) => {
+                const contact = preferredContact(s);
+                const bal = balances[s.id] ?? 0;
+                return (
+                  <tr key={s.id} onClick={() => navigate(`students/${s.id}`)} className="cursor-pointer hover:bg-gray-50">
+                    <Td>
+                      <div className="flex items-center gap-3">
+                        <Avatar text={initials(s.name)} />
+                        <div className="min-w-0">
+                          <a href={`#/students/${s.id}`} onClick={(e) => e.stopPropagation()} className="font-medium text-gray-900 hover:text-brand-700">
+                            {s.name}
+                          </a>
+                          <p className="text-[13px] text-gray-500">
+                            {s.id}
+                            {s.status !== 'ACTIVE' && <Badge tone={STUDENT_STATUS[s.status].tone} className="ml-2">{STUDENT_STATUS[s.status].label}</Badge>}
+                          </p>
+                        </div>
+                      </div>
+                    </Td>
+                    <Td className="whitespace-nowrap">
+                      <p className="text-gray-900">{formLabel(s.form)}</p>
+                      <p className="text-[13px] text-gray-500">
+                        {STREAM_LABEL[s.stream]} · {s.classes.length} subjek
+                      </p>
+                    </Td>
+                    <Td className="hidden text-gray-700 xl:table-cell">{s.school}</Td>
+                    <Td className="hidden md:table-cell">
+                      <p className="whitespace-nowrap text-gray-900">{contact.name}</p>
+                      <p className="text-[13px] text-gray-500">{contact.phone}</p>
+                    </Td>
+                    <Td className={cx('hidden text-right tnum sm:table-cell', bal ? 'font-medium text-red-700' : 'text-gray-400')}>{bal ? rm(bal) : '—'}</Td>
+                    <Td className="hidden lg:table-cell">
+                      <ChecklistSummary checklist={s.checklist} />
+                    </Td>
+                    <Td onClick={(e) => e.stopPropagation()}>
+                      <a
+                        href={waLink(contact.phone, `Assalamualaikum ${contact.name}, makluman daripada Pusat Tuisyen An Nur berkenaan ${s.name}.`)}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="WhatsApp penjaga"
+                        aria-label={`WhatsApp penjaga ${s.name}`}
+                        className="inline-flex size-8 items-center justify-center rounded-md hover:bg-gray-100"
+                      >
+                        <WhatsAppIcon />
+                      </a>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+        {filtered.length > limit && (
+          <div className="border-t border-gray-200 p-3 text-center">
+            <Button variant="ghost" size="sm" onClick={() => setLimit((l) => l + PAGE)}>
+              Tunjuk {Math.min(PAGE, filtered.length - limit)} lagi ({filtered.length - limit} baki)
+            </Button>
+          </div>
+        )}
+      </Card>
+    </>
+  );
+}
+
+// ---- Class picker (with waiting list for full classes) -------------------------
+
+export function ClassPicker({ form, value, onChange, waitlist = [], onWaitlistChange }) {
+  const { subjects, classes, teachers } = useStore();
+  const available = subjectsForForm(subjects, form);
+  const subjectOf = (id) => classes.find((c) => c.id === id)?.subject;
+
+  const choose = (c) => {
+    const full = c.enrolled >= c.max;
+    const inClass = value.includes(c.id);
+    const waiting = waitlist.includes(c.id);
+    // one choice per subject: clear any other section of this subject first
+    const otherClasses = value.filter((id) => subjectOf(id) !== c.subject);
+    const otherWaits = waitlist.filter((id) => subjectOf(id) !== c.subject);
+    if (inClass || waiting) {
+      onChange(otherClasses);
+      onWaitlistChange?.(otherWaits);
+    } else if (full && onWaitlistChange) {
+      onChange(otherClasses);
+      onWaitlistChange([...otherWaits, c.id]);
     } else {
-      setFormData({ ...formData, selected_subjects: [...formData.selected_subjects, code] });
+      onChange([...otherClasses, c.id]);
+      onWaitlistChange?.(otherWaits);
     }
-  };
-
-  const handleToggleChecklist = (studentId, key) => {
-    setStudents(
-      students.map((s) => (s.id === studentId ? { ...s, [key]: !s[key] } : s))
-    );
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (formData.selected_subjects.length < 4 && formData.form_level.startsWith('F')) {
-      alert("Pilihan Minimum: 4 Subjek bagi Sekolah Menengah!");
-      return;
-    }
-    const newId = `AN-2026-${String(students.length + 1).padStart(3, '0')}`;
-    const newStudent = {
-      id: students.length + 1,
-      student_id: newId,
-      full_name: formData.full_name,
-      ic_number: formData.ic_number,
-      form_level: formData.form_level,
-      stream: formData.stream,
-      school_name: formData.school_name,
-      phone_number: formData.phone_number,
-      parent1_name: formData.parent1_name,
-      parent1_phone: formData.parent1_phone,
-      preferred_contact: formData.preferred_contact,
-      checklist_ledger: true,
-      checklist_whatsapp: true,
-      checklist_senarai_pelajar: true,
-      checklist_kedatangan: true,
-      checklist_sistem_pembayaran: true,
-      status: "ACTIVE"
-    };
-    setStudents([newStudent, ...students]);
-    setActiveTab('list');
-    alert(`Pendaftaran Pelajar ${formData.full_name} berjaya! ID: ${newId}. Invois RM270 dijana secara automatik.`);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header with Sub-tabs */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">Modul Pendaftaran & Direktori Pelajar</h2>
-          <p className="text-xs text-slate-500">
-            Borang Pendaftaran Rasmi, Kebenaran SAPS MOE, 5-Poin Kegunaan Pejabat (L, TEL, SP, AT, SY)
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab('list')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-              activeTab === 'list'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            Senarai Pelajar ({students.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('form')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-              activeTab === 'form'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            + Borang Pendaftaran Baru
-          </button>
-        </div>
-      </div>
-
-      {activeTab === 'list' ? (
-        /* Student Directory Table with 5-Point Office Checklist */
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-200 flex items-center justify-between gap-4">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="Cari nama pelajar, no K/P, atau sekolah..."
-                value={filterSearch}
-                onChange={(e) => setFilterSearch(e.target.value)}
-                className="w-full text-xs pl-9 pr-4 py-2 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none"
-              />
-            </div>
-            <div className="text-xs text-slate-500 font-medium">
-              Checklist: <span className="font-bold text-slate-700">L</span> (Ledger), <span className="font-bold text-slate-700">TEL</span> (WhatsApp), <span className="font-bold text-slate-700">SP</span> (Senarai Pelajar), <span className="font-bold text-slate-700">AT</span> (Kedatangan), <span className="font-bold text-slate-700">SY</span> (Sistem Yuran)
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold text-[11px]">
-                <tr>
-                  <th className="py-3.5 px-4">ID Pelajar</th>
-                  <th className="py-3.5 px-4">Nama Pelajar</th>
-                  <th className="py-3.5 px-4">Tingkatan / Aliran</th>
-                  <th className="py-3.5 px-4">Sekolah</th>
-                  <th className="py-3.5 px-4">Penjaga & Tel</th>
-                  <th className="py-3.5 px-4 text-center">Kegunaan Pejabat (Checklist)</th>
-                  <th className="py-3.5 px-4 text-right">Tindakan Cepat</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {students
-                  .filter((s) => s.full_name.toLowerCase().includes(filterSearch.toLowerCase()) || s.student_id.includes(filterSearch))
-                  .map((s) => (
-                    <tr key={s.id} className="hover:bg-slate-50/80 transition">
-                      <td className="py-3 px-4 font-bold text-indigo-600">{s.student_id}</td>
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-900">{s.full_name}</div>
-                        <div className="text-slate-400 text-[10px]">{s.ic_number}</div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold text-[10px]">
-                          {s.form_level}
-                        </span>
-                        <span className="ml-1 text-slate-500 font-medium">({s.stream})</span>
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">{s.school_name}</td>
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-slate-800">{s.parent1_name}</div>
-                        <div className="text-slate-500 text-[11px]">{s.parent1_phone}</div>
-                      </td>
-                      {/* 5-Point Office Checklist Badges (Interactive) */}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {[
-                            { key: 'checklist_ledger', label: 'L' },
-                            { key: 'checklist_whatsapp', label: 'TEL' },
-                            { key: 'checklist_senarai_pelajar', label: 'SP' },
-                            { key: 'checklist_kedatangan', label: 'AT' },
-                            { key: 'checklist_sistem_pembayaran', label: 'SY' }
-                          ].map((ck) => (
-                            <button
-                              key={ck.key}
-                              title={`Togol status ${ck.label}`}
-                              onClick={() => handleToggleChecklist(s.id, ck.key)}
-                              className={`w-7 h-6 rounded-md font-bold text-[10px] flex items-center justify-center transition border ${
-                                s[ck.key]
-                                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                                  : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200'
-                              }`}
-                            >
-                              {ck.label}
-                            </button>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <a
-                            href={`https://wa.me/60${s.parent1_phone.replace(/[^0-9]/g, '').replace(/^0/, '')}?text=Assalamualaikum%20${encodeURIComponent(s.parent1_name)},%20makluman%20dari%20Pusat%20Tuisyen%20An%20Nur%20Telipot%20mengenai%20${encodeURIComponent(s.full_name)}.`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-1.5 rounded-lg bg-emerald-50 text-[#25D366] hover:bg-emerald-100 transition border border-emerald-200"
-                            title="Hantar WhatsApp"
-                          >
-                            <MessageSquare className="w-4 h-4" />
-                          </a>
-                          <a
-                            href={`tel:${s.parent1_phone}`}
-                            className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition border border-blue-200"
-                            title="Panggilan Terus"
-                          >
-                            <Phone className="w-4 h-4" />
-                          </a>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        /* Full Registration Form Matching Borang Pendaftaran PDF */
-        <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl mx-auto">
-          {/* Section 1: Maklumat Pelajar */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
-              <UserPlus className="w-4 h-4 text-indigo-600" /> 1. Maklumat Pelajar
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Nama Penuh Pelajar *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Muhammad Danial bin Farhan"
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">No. Kad Pengenalan / Surat Beranak *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="090101-03-XXXX"
-                  value={formData.ic_number}
-                  onChange={(e) => setFormData({ ...formData, ic_number: e.target.value })}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Tingkatan / Darjah *</label>
-                <select
-                  value={formData.form_level}
-                  onChange={(e) => setFormData({ ...formData, form_level: e.target.value })}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 outline-none bg-white font-medium"
-                >
-                  <option value="F5">Tingkatan 5 (SPM)</option>
-                  <option value="F4">Tingkatan 4</option>
-                  <option value="F3">Tingkatan 3</option>
-                  <option value="F2">Tingkatan 2</option>
-                  <option value="F1">Tingkatan 1</option>
-                  <option value="S6">Darjah 6</option>
-                  <option value="S5">Darjah 5</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Aliran *</label>
-                <select
-                  value={formData.stream}
-                  onChange={(e) => setFormData({ ...formData, stream: e.target.value })}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 outline-none bg-white font-medium"
-                >
-                  <option value="SAINS">Sains Tulen</option>
-                  <option value="SASTERA">Sastera / Perniagaan / Akaun</option>
-                  <option value="GENERAL">Umum (Ting 1-3 & Rendah)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Nama Sekolah Asal *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: SMK Telipot / SMK Sultan Ismail"
-                  value={formData.school_name}
-                  onChange={(e) => setFormData({ ...formData, school_name: e.target.value })}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">No. Telefon Pelajar (HP)</label>
-                <input
-                  type="text"
-                  placeholder="011-XXXXXXXX"
-                  value={formData.phone_number}
-                  onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 outline-none"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block font-semibold text-slate-700 mb-1">Alamat Kediaman Penuh</label>
-                <textarea
-                  rows="2"
-                  placeholder="Alamat rumah..."
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 outline-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 2: Maklumat Ibu Bapa / Penjaga */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-              2. Maklumat Ibu Bapa / Penjaga (2 Penjaga)
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800">Penjaga 1 (Bapa)</span>
-                  <label className="flex items-center gap-1.5 cursor-pointer text-indigo-700 font-semibold">
-                    <input
-                      type="radio"
-                      name="preferred"
-                      checked={formData.preferred_contact === 'PARENT_1'}
-                      onChange={() => setFormData({ ...formData, preferred_contact: 'PARENT_1' })}
-                    />
-                    Hubungi Utama (WhatsApp)
-                  </label>
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">Nama Bapa / Penjaga *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Nama bapa"
-                    value={formData.parent1_name}
-                    onChange={(e) => setFormData({ ...formData, parent1_name: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">No. Telefon WhatsApp *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="012-XXXXXXX"
-                    value={formData.parent1_phone}
-                    onChange={(e) => setFormData({ ...formData, parent1_phone: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">Pekerjaan</label>
-                  <input
-                    type="text"
-                    placeholder="Pekerjaan"
-                    value={formData.parent1_occupation}
-                    onChange={(e) => setFormData({ ...formData, parent1_occupation: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800">Penjaga 2 (Ibu)</span>
-                  <label className="flex items-center gap-1.5 cursor-pointer text-indigo-700 font-semibold">
-                    <input
-                      type="radio"
-                      name="preferred"
-                      checked={formData.preferred_contact === 'PARENT_2'}
-                      onChange={() => setFormData({ ...formData, preferred_contact: 'PARENT_2' })}
-                    />
-                    Hubungi Utama (WhatsApp)
-                  </label>
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">Nama Ibu</label>
-                  <input
-                    type="text"
-                    placeholder="Nama ibu"
-                    value={formData.parent2_name}
-                    onChange={(e) => setFormData({ ...formData, parent2_name: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">No. Telefon Ibu</label>
-                  <input
-                    type="text"
-                    placeholder="013-XXXXXXX"
-                    value={formData.parent2_phone}
-                    onChange={(e) => setFormData({ ...formData, parent2_phone: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">Pekerjaan Ibu</label>
-                  <input
-                    type="text"
-                    placeholder="Pekerjaan"
-                    value={formData.parent2_occupation}
-                    onChange={(e) => setFormData({ ...formData, parent2_occupation: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: Pemilihan Subjek & Kapasiti Kerusi Langsung */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">3. Pemilihan Subjek (Minima 4 Subjek Menengah)</h3>
-                <p className="text-xs text-slate-500">Pakej Yuran: 4 Sub = RM240, 5 Sub = RM275, 6 Sub = RM330, 7 Sub = RM350, 8 Sub = RM400</p>
-              </div>
-              <span className="text-xs font-bold px-3 py-1 rounded-full bg-indigo-50 text-indigo-700">
-                {formData.selected_subjects.length} Subjek Dipilih
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-              {subjectOptions.map((sub) => {
-                const isSelected = formData.selected_subjects.includes(sub.code);
+    <div className="divide-y divide-gray-100">
+      {available.map((subj) => {
+        const options = classes.filter((c) => c.form === form && c.subject === subj.code);
+        return (
+          <div key={subj.code} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start">
+            <p className="w-44 shrink-0 pt-1.5 text-sm font-medium text-gray-900">{subj.name}</p>
+            <div className="flex flex-1 flex-wrap gap-2">
+              {options.length === 0 && <span className="pt-1.5 text-[13px] text-gray-400">Tiada kelas dibuka untuk {formShort(form)}</span>}
+              {options.map((c) => {
+                const selected = value.includes(c.id);
+                const waiting = waitlist.includes(c.id);
+                const full = c.enrolled >= c.max;
+                const seats = c.max - c.enrolled;
                 return (
                   <button
+                    key={c.id}
                     type="button"
-                    key={sub.code}
-                    onClick={() => toggleSubject(sub.code)}
-                    className={`p-3 rounded-xl border text-left transition-all ${
-                      isSelected
-                        ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm ring-2 ring-indigo-200'
-                        : 'bg-white text-slate-800 border-slate-200 hover:border-indigo-300'
-                    }`}
+                    onClick={() => choose(c)}
+                    aria-pressed={selected || waiting}
+                    className={cx(
+                      'flex items-center gap-2 rounded-md border px-3 py-1.5 text-left text-[13px] transition-colors',
+                      selected && 'border-brand-600 bg-brand-50 ring-1 ring-brand-600',
+                      waiting && 'border-amber-500 bg-amber-50 ring-1 ring-amber-500',
+                      !selected && !waiting && 'border-gray-300 bg-white hover:border-gray-400',
+                    )}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-sm">{sub.code}</span>
-                      {isSelected && <Check className="w-4 h-4 text-white" />}
-                    </div>
-                    <div className={`text-[11px] truncate ${isSelected ? 'text-indigo-100' : 'text-slate-500'}`}>
-                      {sub.name}
-                    </div>
-                    <div className="mt-2 pt-1.5 border-t border-slate-100/30 flex items-center justify-between text-[10px]">
-                      <span className={isSelected ? 'text-indigo-200' : 'text-slate-400'}>Kerusi:</span>
-                      <span
-                        className={`font-bold px-1.5 py-0.5 rounded ${
-                          sub.isOver
-                            ? 'bg-rose-500 text-white'
-                            : sub.isFull
-                            ? 'bg-amber-500 text-white'
-                            : isSelected
-                            ? 'bg-indigo-700 text-indigo-100'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {sub.isOver ? '-1 (Lebih)' : sub.seats}
+                    <span
+                      className={cx(
+                        'flex size-4 shrink-0 items-center justify-center rounded-full border',
+                        selected ? 'border-brand-700 bg-brand-700 text-white' : waiting ? 'border-amber-600 bg-amber-500 text-white' : 'border-gray-300',
+                      )}
+                    >
+                      {selected && <Check className="size-3" strokeWidth={3} />}
+                      {waiting && <Clock className="size-3" strokeWidth={3} />}
+                    </span>
+                    <span>
+                      <span className="font-medium text-gray-900">
+                        {c.section} · {DAY_LABEL[c.day]} {timeRange(c.start, c.end)}
                       </span>
-                    </div>
+                      <span className={cx('block', waiting ? 'text-amber-800' : full ? 'text-red-700' : 'text-gray-500')}>
+                        Cikgu {teachers.find((t) => t.code === c.teacher)?.name} ·{' '}
+                        {waiting
+                          ? `Senarai menunggu (${c.waiting + 1})`
+                          : full
+                            ? onWaitlistChange
+                              ? `Penuh — sertai senarai menunggu`
+                              : `Penuh (${c.enrolled}/${c.max})`
+                            : `${seats} kerusi kosong`}
+                      </span>
+                    </span>
                   </button>
                 );
               })}
             </div>
           </div>
-
-          {/* Section 4: Persetujuan SAPS MOE & Syarat Peraturan */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3 text-xs text-slate-700">
-            <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-              4. Perakuan Pelajar & Syarat Kontrak Ibu Bapa (Borang Pendaftaran MS 2)
-            </h3>
-            <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.saps_consent}
-                onChange={(e) => setFormData({ ...formData, saps_consent: e.target.checked })}
-                className="mt-0.5"
-              />
-              <span>
-                <strong>Kebenaran Semakan SAPS:</strong> Saya membenarkan pihak tuisyen menyemak keputusan peperiksaan saya di laman sesawang <code>sapsnkra.moe</code> bertujuan memantau prestasi akademik.
-              </span>
-            </label>
-            <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.agree_terms}
-                onChange={(e) => setFormData({ ...formData, agree_terms: e.target.checked })}
-                className="mt-0.5"
-              />
-              <span>
-                <strong>Syarat Pembayaran & Peraturan:</strong> Bersetuju menjelaskan yuran sebelum <strong>7hb setiap bulan</strong>, maklumkan notis berhenti 2 minggu awal, dan mematuhi polisi penamatan jika yuran tertunggak 2 bulan tanpa makluman.
-              </span>
-            </label>
-          </div>
-
-          {/* Submit Action */}
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('list')}
-              className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-xs hover:bg-slate-50"
-            >
-              Batal
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 shadow-sm"
-            >
-              Daftar Pelajar & Jana Invois Rasmi
-            </button>
-          </div>
-        </form>
-      )}
+        );
+      })}
     </div>
+  );
+}
+
+// ---- Registration form ------------------------------------------------------
+
+const EMPTY_PARENT = { name: '', phone: '', occupation: '' };
+
+function RegistrationForm({ onCancel, onDone }) {
+  const { registerStudent, pricingTiers, settings, students, discounts } = useStore();
+  const notify = useToast();
+  const [f, setF] = useState({
+    name: '', ic: '', form: 'F5', stream: 'SAINS', school: '', phone: '', address: '',
+    parent1: { ...EMPTY_PARENT, relation: 'Bapa' },
+    parent2: { ...EMPTY_PARENT, relation: 'Ibu' },
+    preferred: 1,
+    classes: [],
+    waitlist: [],
+    saps: true,
+    terms: false,
+  });
+  const [error, setError] = useState('');
+
+  const set = (patch) => setF((prev) => ({ ...prev, ...patch }));
+  const setParent = (key, patch) => setF((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+
+  const min = minSubjects(f.form);
+  const fee = monthlyFee(f.form, f.classes.length, pricingTiers);
+  // Existing sibling (same father's phone) → sibling discount preview
+  const draft = { id: 'NEW', form: f.form, parent1: f.parent1, status: 'ACTIVE', discounts: [] };
+  const sibling = f.parent1.phone && students.find((s) => s.parent1.phone === f.parent1.phone && s.status !== 'TERMINATED');
+  const disc = fee ? discountsFor(draft, [...students, draft], discounts, fee) : [];
+  const discTotal = disc.reduce((a, d) => a + d.amount, 0);
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (f.classes.length < min) {
+      setError(`Sila pilih sekurang-kurangnya ${min} subjek yang mempunyai kerusi kosong untuk ${formLabel(f.form)}.`);
+      document.getElementById('pilihan-kelas')?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    if (f.preferred === 2 && !f.parent2.phone) {
+      setError('Hubungan utama ialah penjaga 2, tetapi nombor telefonnya kosong.');
+      return;
+    }
+    const { student, invoice } = registerStudent(
+      {
+        name: f.name, ic: f.ic, form: f.form, stream: f.stream, school: f.school, phone: f.phone, address: f.address,
+        parent1: f.parent1, parent2: f.parent2, preferred: f.preferred, classes: f.classes,
+      },
+      { source: 'KAUNTER', waitlist: f.waitlist },
+    );
+    notify(
+      `${student.name} didaftarkan sebagai ${student.id}. Invois ${invoice.no} (${rm(invoice.total - invoice.discount)}) dijana${f.waitlist.length ? `; ${f.waitlist.length} kelas dalam senarai menunggu` : ''}.`,
+    );
+    onDone(student.id);
+  };
+
+  return (
+    <form onSubmit={submit}>
+      <button type="button" onClick={onCancel} className="mb-4 flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900">
+        <ArrowLeft className="size-4" /> Senarai pelajar
+      </button>
+      <PageHeader title="Pendaftaran pelajar baharu" description="Berdasarkan borang pendaftaran rasmi Cawangan Telipot." />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <Card>
+            <CardHeader title="Maklumat pelajar" />
+            <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+              <Input label="Nama penuh" required className="sm:col-span-2" value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder="Seperti dalam kad pengenalan" />
+              <Input label="No. kad pengenalan / sijil lahir" required value={f.ic} onChange={(e) => set({ ic: e.target.value })} placeholder="090101-03-1234" />
+              <Input label="Nama sekolah" required value={f.school} onChange={(e) => set({ school: e.target.value })} placeholder="cth. SMK Telipot" />
+              <Select
+                label="Tingkatan / darjah"
+                required
+                value={f.form}
+                onChange={(e) => {
+                  const form = e.target.value;
+                  set({ form, classes: [], waitlist: [], stream: form.startsWith('F') && Number(form[1]) >= 4 ? f.stream : 'GENERAL' });
+                  setError('');
+                }}
+              >
+                {FORMS.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.label}
+                  </option>
+                ))}
+              </Select>
+              <Select label="Aliran" value={f.stream} onChange={(e) => set({ stream: e.target.value })} disabled={!(f.form.startsWith('F') && Number(f.form[1]) >= 4)}>
+                <option value="SAINS">Sains</option>
+                <option value="SASTERA">Sastera / Akaun</option>
+                <option value="GENERAL">Umum</option>
+              </Select>
+              <Input label="No. telefon pelajar" type="tel" value={f.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="Jika ada" />
+              <Textarea label="Alamat rumah" className="sm:col-span-2" rows={2} value={f.address} onChange={(e) => set({ address: e.target.value })} />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader title="Ibu bapa / penjaga" description="Pilih satu penjaga sebagai hubungan utama untuk resit dan makluman WhatsApp." />
+            <div className="grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
+              {[1, 2].map((n) => {
+                const key = `parent${n}`;
+                const p = f[key];
+                return (
+                  <fieldset key={n} className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <legend className="text-sm font-semibold text-gray-900">Penjaga {n}</legend>
+                      <label className="flex items-center gap-2 text-[13px] text-gray-700">
+                        <input type="radio" name="preferred" checked={f.preferred === n} onChange={() => set({ preferred: n })} className="size-4" />
+                        Hubungan utama
+                      </label>
+                    </div>
+                    <Select label="Hubungan" value={p.relation} onChange={(e) => setParent(key, { relation: e.target.value })}>
+                      <option>Bapa</option>
+                      <option>Ibu</option>
+                      <option>Penjaga</option>
+                    </Select>
+                    <Input label="Nama" required={n === 1} value={p.name} onChange={(e) => setParent(key, { name: e.target.value })} />
+                    <Input label="No. telefon (WhatsApp)" type="tel" required={n === 1} value={p.phone} onChange={(e) => setParent(key, { phone: e.target.value })} placeholder="012-345 6789" />
+                    <Input label="Pekerjaan" value={p.occupation} onChange={(e) => setParent(key, { occupation: e.target.value })} />
+                  </fieldset>
+                );
+              })}
+            </div>
+            {sibling && (
+              <p className="border-t border-gray-200 bg-sky-50/60 px-5 py-3 text-[13px] text-sky-900">
+                Penjaga ini sudah berdaftar untuk <strong>{sibling.name}</strong> ({sibling.id}).
+                {isYoungerSibling(draft, [...students, draft]) ? ' Diskaun adik-beradik akan dikenakan.' : ''}
+              </p>
+            )}
+          </Card>
+
+          <Card id="pilihan-kelas">
+            <CardHeader
+              title="Pilihan kelas"
+              description={
+                f.form.startsWith('F')
+                  ? 'Minimum 4 subjek. Pilih satu kumpulan bagi setiap subjek; kelas penuh boleh dimasukkan ke senarai menunggu.'
+                  : 'Pakej sekolah rendah. Pilih kelas yang dihadiri.'
+              }
+            />
+            <div className="px-5 pb-2">
+              <ClassPicker
+                form={f.form}
+                value={f.classes}
+                waitlist={f.waitlist}
+                onChange={(classes) => { set({ classes }); setError(''); }}
+                onWaitlistChange={(waitlist) => set({ waitlist })}
+              />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader title="Perakuan" />
+            <div className="space-y-4 p-5">
+              <Checkbox
+                label="Kebenaran semakan SAPS"
+                description="Membenarkan pihak tuisyen menyemak keputusan peperiksaan pelajar di sapsnkra.moe.gov.my untuk pemantauan prestasi."
+                checked={f.saps}
+                onChange={(e) => set({ saps: e.target.checked })}
+              />
+              <Checkbox
+                required
+                label="Syarat pembayaran dan peraturan"
+                description={`Yuran dijelaskan sebelum ${settings.dueDay} haribulan setiap bulan; notis berhenti ${settings.noticeWeeks} minggu lebih awal; pelajar diberhentikan jika yuran tertunggak ${settings.unpaidMonthsLimit} bulan tanpa makluman.`}
+                checked={f.terms}
+                onChange={(e) => set({ terms: e.target.checked })}
+              />
+            </div>
+          </Card>
+        </div>
+
+        {/* Summary */}
+        <div className="lg:sticky lg:top-8 lg:self-start">
+          <Card>
+            <CardHeader title="Ringkasan yuran" />
+            <div className="space-y-2 p-5 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-600">Subjek didaftarkan</span>
+                <span className="font-medium tnum">{f.classes.length}</span>
+              </div>
+              {f.waitlist.length > 0 && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-gray-600">Senarai menunggu</span>
+                  <span className="font-medium tnum">{f.waitlist.length}</span>
+                </div>
+              )}
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-600">Yuran bulanan</span>
+                <span className="whitespace-nowrap font-medium tnum">{fee ? rm(fee) : '—'}</span>
+              </div>
+              {disc.map((d) => (
+                <div key={d.id} className="flex justify-between gap-3">
+                  <span className="text-gray-600">{d.label}</span>
+                  <span className="whitespace-nowrap font-medium tnum">− {rm(d.amount)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-600">Yuran pendaftaran</span>
+                <span className="whitespace-nowrap font-medium tnum">{rm(settings.regFee)}</span>
+              </div>
+              <div className="flex justify-between gap-3 border-t border-gray-200 pt-3 text-base">
+                <span className="font-semibold text-gray-900">Bayaran pertama</span>
+                <span className="whitespace-nowrap font-semibold tnum">{fee ? rm(fee - discTotal + settings.regFee) : '—'}</span>
+              </div>
+              {f.classes.length < min && <p className="pt-1 text-[13px] text-gray-500">Pilih {min - f.classes.length} lagi subjek untuk melihat yuran.</p>}
+              {f.waitlist.length > 0 && (
+                <p className="rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+                  Yuran kelas dalam senarai menunggu hanya dikenakan selepas pelajar dimasukkan ke kelas.
+                </p>
+              )}
+            </div>
+            <div className="border-t border-gray-200 p-5">
+              {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p>}
+              <Button type="submit" variant="primary" className="w-full">
+                Daftar & jana invois
+              </Button>
+              <Button onClick={onCancel} variant="ghost" className="mt-2 w-full">
+                Batal
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </form>
   );
 }

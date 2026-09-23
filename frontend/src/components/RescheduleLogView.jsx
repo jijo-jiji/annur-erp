@@ -1,187 +1,277 @@
-﻿import React, { useState } from 'react';
-import { CalendarSync, Plus, MessageSquare, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useState } from 'react';
+import { CalendarClock, Check, Copy, Plus } from 'lucide-react';
+import { CENTRE, DAYS } from '../data/demo';
+import { useStore } from '../store';
+import { can } from '../lib/permissions';
+import { classLabel } from '../lib/domain';
+import { date, DAY_LABEL, RESCHEDULE_REASON_LABEL, timeRange, todayISO } from '../lib/format';
+import {
+  Badge, Button, Card, EmptyState, Input, Modal, PageHeader, Segmented, Select, Table, Tabs, Td, Textarea, Th, useToast, WhatsAppIcon,
+} from './ui';
 
-export default function RescheduleLogView() {
-  const [logs, setLogs] = useState([
-    { id: 1, month: "DEC '25", subject: "BI (A)", form: "F5", batal: "2025-12-09", ganti: "2025-12-30", extra: false, remarks: "Sesi start 12/12 / Cuti Krismas (PH)", approved: true },
-    { id: 2, month: "DEC '25", subject: "MATH (A)", form: "F5", batal: "2025-12-10", ganti: "2025-12-31", extra: false, remarks: "Hari Krismas (PH)", approved: true },
-    { id: 3, month: "JAN '26", subject: "ADDMT (A)", form: "F5", batal: "2026-01-23", ganti: "2026-01-30", extra: false, remarks: "Cg marking paper SPM", approved: true },
-    { id: 4, month: "JAN '26", subject: "FIZIK (B)", form: "F5", batal: "2026-01-24", ganti: "2026-01-31", extra: false, remarks: "Cg silap tgk masa batal 30 min", approved: true },
-    { id: 5, month: "JAN '26", subject: "KIMIA (A)", form: "F5", batal: null, ganti: "2026-01-31", extra: true, remarks: "Sesi intensif kelas tambahan exam", approved: true },
-  ]);
 
-  const [showModal, setShowModal] = useState(false);
-  const [newLog, setNewLog] = useState({
-    month: "FEB '26",
-    subject: "F5 BIO (A)",
-    form: "F5",
-    batal: "",
-    ganti: "",
-    extra: false,
-    remarks: ""
-  });
+export default function RescheduleLogView({ role }) {
+  const { reschedules, classes, subjects, teachers, updateReschedule } = useStore();
+  const notify = useToast();
+  const [tab, setTab] = useState('all');
+  const [creating, setCreating] = useState(false);
+  const [notice, setNotice] = useState(null);
 
-  const handleCreate = (e) => {
+  const byId = Object.fromEntries(classes.map((c) => [c.id, c]));
+  const pending = reschedules.filter((r) => !r.approved);
+  const rows = tab === 'pending' ? pending : reschedules;
+
+  return (
+    <>
+      <PageHeader
+        title="Batal & ganti kelas"
+        description="Rekod rasmi pembatalan, kelas ganti dan kelas tambahan, termasuk makluman kepada pelajar."
+        actions={
+          <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+            Rekod baharu
+          </Button>
+        }
+      />
+
+      <Tabs
+        className="mb-4"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'all', label: 'Semua rekod', count: reschedules.length },
+          { value: 'pending', label: 'Menunggu pengesahan', count: pending.length },
+        ]}
+      />
+
+      <Card>
+        {rows.length === 0 ? (
+          <EmptyState icon={CalendarClock} title="Tiada rekod" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Kelas</Th>
+                <Th>Tarikh</Th>
+                <Th>Sebab</Th>
+                <Th>Status</Th>
+                <Th className="text-right">Makluman</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const c = byId[r.classId];
+                return (
+                  <tr key={r.id} className="hover:bg-gray-50">
+                    <Td className="min-w-44">
+                      <p className="font-medium text-gray-900">{c ? classLabel(c, subjects) : '—'}</p>
+                      <p className="text-[13px] text-gray-500">Cikgu {teachers.find((t) => t.code === c?.teacher)?.name}</p>
+                    </Td>
+                    <Td className="whitespace-nowrap">
+                      {r.extra ? (
+                        <>
+                          <p className="text-gray-900">{date(r.replacement)}</p>
+                          <Badge tone="blue" className="mt-1">Kelas tambahan</Badge>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-gray-500 line-through decoration-gray-400">{date(r.cancelled)}</p>
+                          <p className="text-gray-900">→ {date(r.replacement)}</p>
+                        </>
+                      )}
+                    </Td>
+                    <Td className="min-w-40">
+                      <p className="text-gray-900">{RESCHEDULE_REASON_LABEL[r.reason]}</p>
+                      {r.remarks && <p className="text-[13px] text-gray-500">{r.remarks}</p>}
+                    </Td>
+                    <Td className="whitespace-nowrap">
+                      {r.approved ? (
+                        <Badge tone="green">Disahkan</Badge>
+                      ) : can(role, 'reschedules.approve') ? (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            updateReschedule(r.id, { approved: true });
+                            notify('Gantian kelas disahkan.');
+                          }}
+                        >
+                          Sahkan
+                        </Button>
+                      ) : (
+                        <Badge tone="amber">Menunggu</Badge>
+                      )}
+                    </Td>
+                    <Td className="whitespace-nowrap text-right">
+                      <Button size="sm" onClick={() => setNotice(r)} title={r.notified ? 'Notis telah dihantar' : 'Hantar notis WhatsApp'} className="px-2 xl:px-3">
+                        <WhatsAppIcon className="size-3.5" />
+                        <span className="hidden xl:inline">{r.notified ? 'Dihantar' : 'Hantar notis'}</span>
+                        {r.notified && <Check className="size-3.5 text-brand-600 xl:hidden" aria-label="Dihantar" />}
+                      </Button>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      <CreateModal open={creating} role={role} onClose={() => setCreating(false)} />
+      <NoticeModal record={notice} cls={notice && byId[notice.classId]} onClose={() => setNotice(null)} />
+    </>
+  );
+}
+
+function CreateModal({ open, role, onClose }) {
+  const { classes, subjects, addReschedule } = useStore();
+  const notify = useToast();
+  const [kind, setKind] = useState('replace');
+  const [f, setF] = useState({ classId: '', cancelled: '', replacement: '', reason: 'PH', remarks: '' });
+  const [error, setError] = useState('');
+  const set = (patch) => setF((p) => ({ ...p, ...patch }));
+
+  const submit = (e) => {
     e.preventDefault();
-    setLogs([{ id: logs.length + 1, ...newLog, approved: true }, ...logs]);
-    setShowModal(false);
-    alert(`Rekod Gantian Kelas berjaya disimpan! Notis WhatsApp dijana untuk dihantar kepada pelajar.`);
+    if (kind === 'replace' && f.cancelled && f.replacement <= f.cancelled) {
+      setError('Tarikh ganti mesti selepas tarikh batal.');
+      return;
+    }
+    const extra = kind === 'extra';
+    addReschedule({
+      classId: Number(f.classId),
+      month: (f.cancelled || f.replacement).slice(0, 7),
+      cancelled: extra ? null : f.cancelled,
+      replacement: f.replacement,
+      extra,
+      reason: extra ? 'EXTRA' : f.reason,
+      remarks: f.remarks,
+      approved: can(role, 'reschedules.approve'),
+      notified: false,
+    });
+    notify(can(role, 'reschedules.approve') ? 'Rekod disimpan dan disahkan.' : 'Rekod disimpan. Menunggu pengesahan supervisor.');
+    setF({ classId: '', cancelled: '', replacement: '', reason: 'PH', remarks: '' });
+    setError('');
+    onClose();
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">Catatan Pembatalan & Gantian Kelas</h2>
-          <p className="text-xs text-slate-500">
-            Direkodkan mengikut buku log rasmi Pusat Tuisyen An Nur (Tarikh Batal, Tarikh Ganti, Extra Class & Sebab)
-          </p>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Rekod pembatalan / kelas ganti"
+      footer={
+        <>
+          <Button onClick={onClose}>Batal</Button>
+          <Button type="submit" form="reschedule-form" variant="primary">
+            Simpan
+          </Button>
+        </>
+      }
+    >
+      <form id="reschedule-form" onSubmit={submit} className="space-y-4">
+        <Segmented
+          value={kind}
+          onChange={setKind}
+          items={[
+            { value: 'replace', label: 'Batal & ganti' },
+            { value: 'extra', label: 'Kelas tambahan' },
+          ]}
+        />
+        <Select label="Kelas" required value={f.classId} onChange={(e) => set({ classId: e.target.value })}>
+          <option value="">Pilih kelas…</option>
+          {DAYS.map((day) => (
+            <optgroup key={day} label={DAY_LABEL[day]}>
+              {classes
+                .filter((c) => c.day === day)
+                .sort((a, b) => a.start.localeCompare(b.start))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {classLabel(c, subjects)} — {timeRange(c.start, c.end)}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </Select>
+        <div className="grid grid-cols-2 gap-3">
+          {kind === 'replace' && <Input label="Tarikh batal" type="date" required value={f.cancelled} onChange={(e) => set({ cancelled: e.target.value })} />}
+          <Input
+            label={kind === 'replace' ? 'Tarikh ganti' : 'Tarikh kelas'}
+            type="date"
+            required
+            min={kind === 'extra' ? todayISO() : undefined}
+            value={f.replacement}
+            onChange={(e) => set({ replacement: e.target.value })}
+          />
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold text-xs hover:bg-indigo-700 shadow-sm flex items-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" /> + Catat Pembatalan / Gantian
-        </button>
-      </div>
+        {kind === 'replace' && (
+          <Select label="Sebab" value={f.reason} onChange={(e) => set({ reason: e.target.value })}>
+            {Object.entries(RESCHEDULE_REASON_LABEL)
+              .filter(([k]) => k !== 'EXTRA')
+              .map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+          </Select>
+        )}
+        <Textarea label="Catatan" rows={2} value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} placeholder="cth. Cuti Hari Raya Aidilfitri" />
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {!can(role, 'reschedules.approve') && <p className="text-[13px] text-gray-500">Rekod akan menunggu pengesahan supervisor sebelum dimaklumkan.</p>}
+      </form>
+    </Modal>
+  );
+}
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold text-[11px]">
-            <tr>
-              <th className="py-3.5 px-4">Bulan</th>
-              <th className="py-3.5 px-4">Subjek / Kelas</th>
-              <th className="py-3.5 px-4">Ting / Djh</th>
-              <th className="py-3.5 px-4">Tarikh Batal</th>
-              <th className="py-3.5 px-4">Tarikh Ganti</th>
-              <th className="py-3.5 px-4 text-center">Extra Class</th>
-              <th className="py-3.5 px-4">Catatan & Sebab (Remarks)</th>
-              <th className="py-3.5 px-4 text-right">Notis WhatsApp</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {logs.map((log) => (
-              <tr key={log.id} className="hover:bg-slate-50 transition">
-                <td className="py-3.5 px-4 font-bold text-indigo-700">{log.month}</td>
-                <td className="py-3.5 px-4 font-semibold text-slate-900">{log.subject}</td>
-                <td className="py-3.5 px-4">
-                  <span className="px-2 py-0.5 rounded bg-slate-100 font-bold text-[10px] text-slate-700">
-                    {log.form}
-                  </span>
-                </td>
-                <td className="py-3.5 px-4 text-rose-600 font-medium">{log.batal || '-'}</td>
-                <td className="py-3.5 px-4 text-emerald-600 font-bold">{log.ganti}</td>
-                <td className="py-3.5 px-4 text-center">
-                  {log.extra ? (
-                    <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-bold text-[10px]">
-                      YA
-                    </span>
-                  ) : (
-                    <span className="text-slate-400">-</span>
-                  )}
-                </td>
-                <td className="py-3.5 px-4 text-slate-700">{log.remarks}</td>
-                <td className="py-3.5 px-4 text-right">
-                  <button
-                    onClick={() =>
-                      alert(
-                        `Format WhatsApp Notis Gantian Kelas:\n\n"Assalamualaikum ibu bapa/pelajar. Makluman gantian kelas bagi ${log.subject} (${log.form}):\nTarikh Batal: ${log.batal || '-'}\nTarikh Ganti: ${log.ganti}\nSebab: ${log.remarks}\n\nHarap maklum. Terima kasih - Pusat Tuisyen An Nur."`
-                      )
-                    }
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition font-semibold text-[11px]"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 text-[#25D366]" /> Hantar Notis
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+function NoticeModal({ record: r, cls, onClose }) {
+  const { subjects, updateReschedule } = useStore();
+  const notify = useToast();
+  if (!r || !cls) return null;
 
-      {showModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl border border-slate-200 space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Rekod Pembatalan & Gantian Kelas Baru</h3>
-            <form onSubmit={handleCreate} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Bulan Operasi</label>
-                <input
-                  type="text"
-                  value={newLog.month}
-                  onChange={(e) => setNewLog({ ...newLog, month: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Subjek & Kelas</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: F5 ADDMT (A) Z"
-                  value={newLog.subject}
-                  onChange={(e) => setNewLog({ ...newLog, subject: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Tarikh Batal (Jika ada)</label>
-                  <input
-                    type="date"
-                    value={newLog.batal}
-                    onChange={(e) => setNewLog({ ...newLog, batal: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Tarikh Ganti *</label>
-                  <input
-                    type="date"
-                    required
-                    value={newLog.ganti}
-                    onChange={(e) => setNewLog({ ...newLog, ganti: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={newLog.extra}
-                    onChange={(e) => setNewLog({ ...newLog, extra: e.target.checked })}
-                  />
-                  Kelas Tambahan (Extra Class)
-                </label>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Catatan / Sebab (Remarks) *</label>
-                <textarea
-                  rows="2"
-                  placeholder="Contoh: Cikgu menanda kertas / Hari Pelepasan Am"
-                  required
-                  value={newLog.remarks}
-                  onChange={(e) => setNewLog({ ...newLog, remarks: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
-                />
-              </div>
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold"
-                >
-                  Batal
-                </button>
-                <button type="submit" className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold">
-                  Simpan & Sahkan
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+  const label = classLabel(cls, subjects);
+  const message = r.extra
+    ? `Assalamualaikum ibu bapa dan pelajar.\n\nMakluman kelas tambahan ${label} pada ${date(r.replacement)}, ${timeRange(cls.start, cls.end)}.${r.remarks ? `\n\n${r.remarks}` : ''}\n\nTerima kasih.\n— ${CENTRE.name} ${CENTRE.branch}`
+    : `Assalamualaikum ibu bapa dan pelajar.\n\nKelas ${label} pada ${date(r.cancelled)} dibatalkan (${RESCHEDULE_REASON_LABEL[r.reason].toLowerCase()}). Kelas ganti pada ${date(r.replacement)}, ${timeRange(cls.start, cls.end)}.\n\nHarap maklum. Terima kasih.\n— ${CENTRE.name} ${CENTRE.branch}`;
+
+  const markSent = () => updateReschedule(r.id, { notified: true });
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Notis WhatsApp"
+      description={`Hantar ke kumpulan WhatsApp ${label}.`}
+      footer={
+        <>
+          <Button
+            icon={Copy}
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(message);
+                notify('Mesej disalin.', 'info');
+              } catch {
+                notify('Tidak dapat menyalin. Sila salin secara manual.', 'error');
+              }
+            }}
+          >
+            Salin mesej
+          </Button>
+          <Button
+            as="a"
+            variant="primary"
+            href={`https://wa.me/?text=${encodeURIComponent(message)}`}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => {
+              markSent();
+              onClose();
+            }}
+          >
+            Buka WhatsApp
+          </Button>
+        </>
+      }
+    >
+      {!r.approved && <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-800">Rekod ini belum disahkan oleh supervisor.</p>}
+      <pre className="whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-4 font-sans text-sm text-gray-800">{message}</pre>
+    </Modal>
   );
 }

@@ -1,148 +1,302 @@
-﻿import React, { useState } from 'react';
-import { Calendar, Filter, Users, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { CalendarDays, Printer } from 'lucide-react';
+import { DAYS, FORMS } from '../data/demo';
+import { useStore } from '../store';
+import { classLabel, preferredContact } from '../lib/domain';
+import { can } from '../lib/permissions';
+import { date, DAY_LABEL, formLabel, timeRange } from '../lib/format';
+import { Badge, Button, Card, cx, EmptyState, Modal, PageHeader, SeatMeter, Segmented, Table, Td, Th, useToast } from './ui';
 
-export default function TimetableView() {
-  const [selectedDay, setSelectedDay] = useState('ALL');
-  const [selectedForm, setSelectedForm] = useState('ALL');
+const selectClass = 'rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-brand-600 focus:outline-none';
 
-  const timetableSlots = [
-    { id: 1, day: "JUMAAT", time: "9.00 - 10.30", sub: "FIZIK", code: "F4 FIZIK (A) NAK", form: "F4", sec: "A", teacher: "Nik Ahmad Khan (NAK)", enrolled: 16, max: 20 },
-    { id: 2, day: "JUMAAT", time: "9.00 - 10.30", sub: "MATH", code: "F3 MATH (A) F", form: "F3", sec: "A", teacher: "Fadzlul (F)", enrolled: 18, max: 20 },
-    { id: 3, day: "JUMAAT", time: "9.00 - 10.30", sub: "SEJ", code: "F3 SEJ (B) M", form: "F3", sec: "B", teacher: "Maheran (M)", enrolled: 14, max: 20 },
-    { id: 4, day: "JUMAAT", time: "9.00 - 10.30", sub: "BI", code: "F2 BI Z", form: "F2", sec: "A", teacher: "Zakir (Z)", enrolled: 15, max: 20 },
-    { id: 5, day: "JUMAAT", time: "9.00 - 10.30", sub: "BM", code: "S6/S5 BM K", form: "S6", sec: "A", teacher: "Kamal (K)", enrolled: 12, max: 20 },
+export default function TimetableView({ role }) {
+  const { classes, subjects, teachers } = useStore();
+  const [openId, setOpenId] = useState(null);
+  const [view, setView] = useState('week');
+  const [form, setForm] = useState('ALL');
+  const [teacher, setTeacher] = useState('ALL');
+  const [fullOnly, setFullOnly] = useState(false);
 
-    { id: 6, day: "JUMAAT", time: "10.40 - 12.10", sub: "BI", code: "F4 BI (A) Z", form: "F4", sec: "A", teacher: "Zakir (Z)", enrolled: 19, max: 20 },
-    { id: 7, day: "JUMAAT", time: "10.40 - 12.10", sub: "SEJ", code: "F3 SEJ (A) M", form: "F3", sec: "A", teacher: "Maheran (M)", enrolled: 20, max: 20 },
-    { id: 8, day: "JUMAAT", time: "10.40 - 12.10", sub: "BM", code: "F3 BM (B) K", form: "F3", sec: "B", teacher: "Kamal (K)", enrolled: 15, max: 20 },
-    { id: 9, day: "JUMAAT", time: "10.40 - 12.10", sub: "MATH", code: "F2 MATH F", form: "F2", sec: "A", teacher: "Fadzlul (F)", enrolled: 17, max: 20 },
-    { id: 10, day: "JUMAAT", time: "10.40 - 12.10", sub: "BI", code: "S6/S5 BI A", form: "S6", sec: "A", teacher: "Anis Sabreena (A)", enrolled: 14, max: 20 },
+  const teacherName = (code) => teachers.find((t) => t.code === code)?.name ?? code;
 
-    { id: 11, day: "JUMAAT", time: "3.00 - 4.30", sub: "ADDMT", code: "F5 ADDMT (A) Z", form: "F5", sec: "A", teacher: "Zamri / Zakir (Z)", enrolled: 21, max: 20, over: true },
-    { id: 12, day: "JUMAAT", time: "3.00 - 4.30", sub: "BI", code: "F5 BI (B) Z", form: "F5", sec: "B", teacher: "Zakir (Z)", enrolled: 18, max: 20 },
-    { id: 13, day: "JUMAAT", time: "3.00 - 4.30", sub: "SEJ", code: "F5 SEJ (C) M", form: "F5", sec: "C", teacher: "Maheran (M)", enrolled: 16, max: 20 },
-    { id: 14, day: "JUMAAT", time: "3.00 - 4.30", sub: "ACC", code: "F4 ACC AT", form: "F4", sec: "A", teacher: "Atiqah (AT)", enrolled: 15, max: 20 },
-    { id: 15, day: "JUMAAT", time: "3.00 - 4.30", sub: "BIO", code: "F4 BIO (A) AM", form: "F4", sec: "A", teacher: "Amin (AM)", enrolled: 17, max: 20 },
+  const filtered = useMemo(
+    () =>
+      classes
+        .filter((c) => (form === 'ALL' || c.form === form) && (teacher === 'ALL' || c.teacher === teacher) && (!fullOnly || c.enrolled >= c.max))
+        .sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || a.start.localeCompare(b.start) || a.form.localeCompare(b.form)),
+    [classes, form, teacher, fullOnly],
+  );
 
-    { id: 16, day: "JUMAAT", time: "4.45 - 6.15", sub: "SEJ", code: "F5 SEJ (B) M", form: "F5", sec: "B", teacher: "Maheran (M)", enrolled: 19, max: 20 },
-    { id: 17, day: "JUMAAT", time: "4.45 - 6.15", sub: "ACC", code: "F5 ACC (A) AT", form: "F5", sec: "A", teacher: "Atiqah (AT)", enrolled: 14, max: 20 },
-    { id: 18, day: "JUMAAT", time: "4.45 - 6.15", sub: "SNS", code: "F5 SNS (C) AM", form: "F5", sec: "C", teacher: "Amin (AM)", enrolled: 18, max: 20 },
-    { id: 19, day: "JUMAAT", time: "4.45 - 6.15", sub: "FIZIK", code: "F5 FIZIK (C) NAK", form: "F5", sec: "C", teacher: "Nik Ahmad Khan (NAK)", enrolled: 20, max: 20 },
-    { id: 20, day: "JUMAAT", time: "4.45 - 6.15", sub: "ADDMT", code: "F4 ADDMT (A) Z", form: "F4", sec: "A", teacher: "Zamri (Z)", enrolled: 22, max: 20, over: true },
-
-    { id: 21, day: "SABTU", time: "9.00 - 10.30", sub: "MATH", code: "S6 MATH FQ", form: "S6", sec: "A", teacher: "Faqihah (FQ)", enrolled: 15, max: 20 },
-    { id: 22, day: "SABTU", time: "9.00 - 10.30", sub: "BI", code: "F4 BI (B) Z", form: "F4", sec: "B", teacher: "Zakir (Z)", enrolled: 17, max: 20 },
-    { id: 23, day: "SABTU", time: "9.00 - 10.30", sub: "KIM", code: "F4 KIM (B) SF", form: "F4", sec: "B", teacher: "Saiful (SF)", enrolled: 16, max: 20 },
-    { id: 24, day: "SABTU", time: "9.00 - 10.30", sub: "SAINS", code: "F3 SAINS (A) AZ", form: "F3", sec: "A", teacher: "Azahari (AZ)", enrolled: 19, max: 20 },
-    { id: 25, day: "SABTU", time: "9.00 - 10.30", sub: "MATH", code: "F3 MATH (B) SAF", form: "F3", sec: "B", teacher: "Safran (SAF)", enrolled: 14, max: 20 },
-
-    { id: 26, day: "ISNIN", time: "8.30 - 10.00", sub: "BIO", code: "F5 BIO (B) D", form: "F5", sec: "B", teacher: "Diana (D)", enrolled: 17, max: 20 },
-    { id: 27, day: "ISNIN", time: "8.30 - 10.00", sub: "SNS", code: "F5 SNS (B) AM", form: "F5", sec: "B", teacher: "Amin (AM)", enrolled: 18, max: 20 },
-    { id: 28, day: "ISNIN", time: "8.30 - 10.00", sub: "MATH", code: "F4 MATH (A) HK", form: "F4", sec: "A", teacher: "Hakimi (HK)", enrolled: 20, max: 20 },
-    { id: 29, day: "SELASA", time: "8.30 - 10.00", sub: "BI", code: "F5 BI (A) Z", form: "F5", sec: "A", teacher: "Zakir (Z)", enrolled: 19, max: 20 },
-    { id: 30, day: "RABU", time: "8.30 - 10.00", sub: "MATH", code: "F5 MATH (A) HK", form: "F5", sec: "A", teacher: "Hakimi (HK)", enrolled: 20, max: 20 },
-    { id: 31, day: "KHAMIS", time: "8.30 - 10.00", sub: "BIO", code: "F5 BIO (A) D", form: "F5", sec: "A", teacher: "Diana (D)", enrolled: 18, max: 20 },
-  ];
-
-  const filteredSlots = timetableSlots.filter((s) => {
-    const matchDay = selectedDay === 'ALL' || s.day === selectedDay;
-    const matchForm = selectedForm === 'ALL' || s.form === selectedForm;
-    return matchDay && matchForm;
-  });
+  const teachingTeachers = teachers.filter((t) => classes.some((c) => c.teacher === t.code));
+  const over = classes.filter((c) => c.enrolled > c.max).length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">Jadual Waktu Master 2026</h2>
-          <p className="text-xs text-slate-500">
-            Pusat Tuisyen An Nur (Telipot) • Sesi 1 Jam 30 Minit (Jumaat, Sabtu & Malam Isnin–Khamis)
-          </p>
-        </div>
+    <>
+      <PageHeader
+        title="Jadual kelas 2026"
+        description="Setiap sesi 1 jam 30 minit · Jumaat, Sabtu dan malam Isnin hingga Khamis"
+        actions={<Segmented value={view} onChange={setView} items={[{ value: 'week', label: 'Mingguan' }, { value: 'list', label: 'Senarai' }]} />}
+      />
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 text-xs">
-            {['ALL', 'JUMAAT', 'SABTU', 'ISNIN', 'SELASA', 'RABU', 'KHAMIS'].map((d) => (
-              <button
-                key={d}
-                onClick={() => setSelectedDay(d)}
-                className={`px-3 py-1.5 rounded-lg font-medium transition ${
-                  selectedDay === d ? 'bg-indigo-600 text-white font-semibold shadow-xs' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {d === 'ALL' ? 'Semua Hari' : d}
-              </button>
-            ))}
-          </div>
-
-          <select
-            value={selectedForm}
-            onChange={(e) => setSelectedForm(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none"
-          >
-            <option value="ALL">Semua Tingkatan</option>
-            <option value="F5">Tingkatan 5</option>
-            <option value="F4">Tingkatan 4</option>
-            <option value="F3">Tingkatan 3</option>
-            <option value="F2">Tingkatan 2</option>
-            <option value="S6">Darjah 6 & 5</option>
-          </select>
-        </div>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <select value={form} onChange={(e) => setForm(e.target.value)} aria-label="Tapis tingkatan" className={selectClass}>
+          <option value="ALL">Semua tingkatan</option>
+          {FORMS.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+        <select value={teacher} onChange={(e) => setTeacher(e.target.value)} aria-label="Tapis guru" className={selectClass}>
+          <option value="ALL">Semua guru</option>
+          {teachingTeachers.map((t) => (
+            <option key={t.code} value={t.code}>
+              Cikgu {t.name}
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={fullOnly} onChange={(e) => setFullOnly(e.target.checked)} className="size-4" />
+          Kelas penuh sahaja
+        </label>
+        <span className="ml-auto text-sm text-gray-500">
+          {filtered.length} kelas{over > 0 && <> · <span className="font-medium text-red-700">{over} melebihi had</span></>}
+        </span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredSlots.map((slot) => {
-          const isOver = slot.enrolled > slot.max;
-          const isFull = slot.enrolled === slot.max;
-          return (
-            <div
-              key={slot.id}
-              className={`p-5 rounded-2xl border transition-all bg-white ${
-                isOver
-                  ? 'border-rose-300 shadow-rose-50 ring-1 ring-rose-200'
-                  : isFull
-                  ? 'border-amber-300 shadow-amber-50'
-                  : 'border-slate-200 hover:border-indigo-200 shadow-sm'
-              }`}
-            >
-              <div className="flex items-center justify-between text-xs mb-2">
-                <span className="font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700">
-                  {slot.day} • {slot.time}
-                </span>
-                <span
-                  className={`font-bold px-2 py-0.5 rounded-md ${
-                    isOver
-                      ? 'bg-rose-100 text-rose-700'
-                      : isFull
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-emerald-100 text-emerald-700'
-                  }`}
+      {filtered.length === 0 ? (
+        <Card>
+          <EmptyState icon={CalendarDays} title="Tiada kelas sepadan dengan tapisan" />
+        </Card>
+      ) : view === 'week' ? (
+        <div className="space-y-6">
+          {DAYS.map((day) => {
+            const dayClasses = filtered.filter((c) => c.day === day);
+            if (!dayClasses.length) return null;
+            const slots = [...new Set(dayClasses.map((c) => `${c.start}|${c.end}`))];
+            return (
+              <Card key={day}>
+                <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+                  <h2 className="text-[15px] font-semibold text-gray-900">{DAY_LABEL[day]}</h2>
+                  <span className="text-[13px] text-gray-500">{dayClasses.length} kelas</span>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {slots.map((slot) => {
+                    const [start, end] = slot.split('|');
+                    return (
+                      <div key={slot} className="flex flex-col gap-3 px-5 py-4 md:flex-row">
+                        <p className="w-32 shrink-0 text-sm font-medium text-gray-700">{timeRange(start, end)}</p>
+                        <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                          {dayClasses
+                            .filter((c) => c.start === start)
+                            .map((c) => (
+                              <button
+                                type="button"
+                                key={c.id}
+                                onClick={() => setOpenId(c.id)}
+                                className={cx(
+                                  'rounded-md border px-3 py-2.5 text-left transition-colors hover:border-brand-400',
+                                  c.enrolled > c.max ? 'border-red-200 bg-red-50/50' : 'border-gray-200',
+                                )}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-sm font-medium text-gray-900">{classLabel(c, subjects)}</p>
+                                  {c.enrolled > c.max && <Badge tone="red">Lebih {c.enrolled - c.max}</Badge>}
+                                  {c.enrolled === c.max && <Badge tone="amber">Penuh</Badge>}
+                                </div>
+                                <p className="mt-0.5 text-[13px] text-gray-500">
+                                  Cikgu {teacherName(c.teacher)} · {c.room}
+                                </p>
+                                <div className="mt-2 flex items-center justify-between gap-2">
+                                  <SeatMeter enrolled={c.enrolled} max={c.max} compact />
+                                  {c.waiting > 0 && <span className="text-xs font-medium text-amber-700">{c.waiting} menunggu</span>}
+                                </div>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <Card>
+          <Table>
+            <thead>
+              <tr>
+                <Th>Hari</Th>
+                <Th>Masa</Th>
+                <Th>Kelas</Th>
+                <Th>Guru</Th>
+                <Th className="hidden md:table-cell">Bilik</Th>
+                <Th>Kerusi</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((c) => (
+                <tr key={c.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setOpenId(c.id)}>
+                  <Td className="whitespace-nowrap text-gray-900">{DAY_LABEL[c.day]}</Td>
+                  <Td className="whitespace-nowrap text-gray-700">{timeRange(c.start, c.end)}</Td>
+                  <Td className="font-medium text-gray-900">{classLabel(c, subjects)}</Td>
+                  <Td className="whitespace-nowrap text-gray-700">Cikgu {teacherName(c.teacher)}</Td>
+                  <Td className="hidden text-gray-700 md:table-cell">{c.room}</Td>
+                  <Td>
+                    <SeatMeter enrolled={c.enrolled} max={c.max} compact />
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
+      )}
+
+      {openId && <ClassModal cls={classes.find((c) => c.id === openId)} role={role} onClose={() => setOpenId(null)} />}
+    </>
+  );
+}
+
+function ClassModal({ cls, role, onClose }) {
+  const { students, subjects, teachers, waitlist, enrollFromWaitlist, removeFromWaitlist, addToWaitlist } = useStore();
+  const notify = useToast();
+  const [adding, setAdding] = useState('');
+  const roster = students.filter((s) => s.status === 'ACTIVE' && s.classes.includes(cls.id)).sort((a, b) => a.name.localeCompare(b.name));
+  const waits = waitlist.filter((w) => w.classId === cls.id).map((w) => ({ ...w, student: students.find((s) => s.id === w.studentId) }));
+  const label = classLabel(cls, subjects);
+  const teacher = teachers.find((t) => t.code === cls.teacher)?.name;
+  const seatFree = cls.enrolled < cls.max;
+  const manage = can(role, 'waitlist.manage');
+  const candidates = students.filter(
+    (s) => s.status === 'ACTIVE' && s.form === cls.form && !s.classes.includes(cls.id) && !waits.some((w) => w.studentId === s.id),
+  );
+
+  return (
+    <Modal
+      open
+      side
+      size="lg"
+      onClose={onClose}
+      title={label}
+      description={`${DAY_LABEL[cls.day]}, ${timeRange(cls.start, cls.end)} · Cikgu ${teacher} · ${cls.room}`}
+      footer={
+        <Button icon={Printer} onClick={() => window.print()}>
+          Cetak senarai kelas
+        </Button>
+      }
+    >
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <SeatMeter enrolled={cls.enrolled} max={cls.max} />
+          {cls.enrolled > cls.max && <Badge tone="red">Melebihi had {cls.enrolled - cls.max}</Badge>}
+        </div>
+
+        {(waits.length > 0 || manage) && (
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-gray-900">Senarai menunggu ({waits.length})</h3>
+            {waits.length > 0 && (
+              <ul className="mb-3 divide-y divide-gray-100 rounded-md border border-gray-200">
+                {waits.map((w, i) => (
+                  <li key={w.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
+                    <span className="w-5 text-xs text-gray-400 tnum">{i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <a href={`#/students/${w.studentId}`} className="font-medium text-gray-900 hover:underline">
+                        {w.student?.name}
+                      </a>
+                      <p className="text-[13px] text-gray-500">Sejak {date(w.added)}</p>
+                    </div>
+                    {manage && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          disabled={!seatFree}
+                          title={seatFree ? undefined : 'Kelas penuh'}
+                          onClick={() => {
+                            enrollFromWaitlist(w.id);
+                            notify(`${w.student?.name} dimasukkan ke ${label}.`);
+                          }}
+                        >
+                          Masukkan
+                        </Button>
+                        <Button size="sm" onClick={() => removeFromWaitlist(w.id)}>
+                          Keluarkan
+                        </Button>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {manage && (
+              <div className="flex gap-2">
+                <select
+                  value={adding}
+                  onChange={(e) => setAdding(e.target.value)}
+                  aria-label="Pilih pelajar untuk senarai menunggu"
+                  className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-brand-600 focus:outline-none"
                 >
-                  {isOver ? `Lebihan -${slot.enrolled - slot.max}` : `${slot.enrolled}/${slot.max} Kerusi`}
-                </span>
+                  <option value="">Tambah pelajar {formLabel(cls.form)} ke senarai menunggu…</option>
+                  {candidates.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  size="sm"
+                  disabled={!adding}
+                  onClick={() => {
+                    addToWaitlist(cls.id, adding);
+                    setAdding('');
+                    notify('Ditambah ke senarai menunggu.', 'info');
+                  }}
+                >
+                  Tambah
+                </Button>
               </div>
+            )}
+          </section>
+        )}
 
-              <h4 className="text-base font-bold text-slate-900 mt-1">{slot.code}</h4>
-              <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-slate-400" /> Guru: {slot.teacher}
-              </p>
-
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-slate-400">Seksyen: {slot.sec}</span>
-                {isOver ? (
-                  <span className="text-rose-600 font-bold flex items-center gap-1 text-[11px]">
-                    <AlertTriangle className="w-3.5 h-3.5" /> Amaran Kapasiti
-                  </span>
-                ) : (
-                  <span className="text-emerald-600 font-semibold flex items-center gap-1 text-[11px]">
-                    <CheckCircle className="w-3.5 h-3.5" /> Ada Kekosongan
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        <section className="print-area bg-white">
+          <div className="mb-2 hidden print:block">
+            <p className="text-base font-semibold">{label}</p>
+            <p className="text-sm">
+              {DAY_LABEL[cls.day]}, {timeRange(cls.start, cls.end)} · Cikgu {teacher} · {cls.room}
+            </p>
+          </div>
+          <h3 className="mb-2 text-sm font-semibold text-gray-900">Pelajar ({roster.length})</h3>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
+                <th className="w-8 py-2 font-medium">#</th>
+                <th className="py-2 font-medium">Nama</th>
+                <th className="py-2 font-medium">Sekolah</th>
+                <th className="py-2 font-medium">Penjaga</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roster.map((s, i) => {
+                const p = preferredContact(s);
+                return (
+                  <tr key={s.id} className="border-b border-gray-100">
+                    <td className="py-2 text-gray-400 tnum">{i + 1}</td>
+                    <td className="py-2">
+                      <a href={`#/students/${s.id}`} className="text-gray-900 hover:underline">
+                        {s.name}
+                      </a>
+                    </td>
+                    <td className="py-2 text-gray-600">{s.school}</td>
+                    <td className="py-2 text-gray-600">{p.phone}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
       </div>
-    </div>
+    </Modal>
   );
 }
