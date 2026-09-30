@@ -25,7 +25,8 @@ SECRET_KEY = 'django-insecure-#-9qaqbtmu&gb3*=hty&$l40g&-3w601*gs2e12qkl2el(nl%w
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
+
 
 
 # Application definition
@@ -39,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Third-party
     'rest_framework',
+    'rest_framework.authtoken',
     'corsheaders',
     # An-Nur ERP Apps
     'core',
@@ -64,9 +66,16 @@ MIDDLEWARE = [
 CORS_ALLOW_ALL_ORIGINS = True
 
 REST_FRAMEWORK = {
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
     ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'core.permissions.RolePermission',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'login': '10/min',
+        'public_register': '20/hour',
+    },
     'DEFAULT_PAGINATION_CLASS': None,
 }
 
@@ -136,6 +145,11 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Uploaded files: kept outside any public URL; served only through /api/v1/files/<id>/download/
+MEDIA_ROOT = BASE_DIR / 'uploads'
+FILE_UPLOAD_PERMISSIONS = 0o640
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # non-file form data
 
 
 # Email

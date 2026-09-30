@@ -23,6 +23,8 @@ class PaymentVoucher(models.Model):
     STATUS_CHOICES = [
         ('DRAFT', 'Draf'),
         ('VERIFIED_ADMIN', 'Disahkan Admin'),
+        ('PENDING_SUPERVISOR', 'Menunggu Kelulusan Supervisor'),
+        ('PENDING_MANAGEMENT', 'Menunggu Kelulusan Pengurusan'),
         ('APPROVED_SUPERVISOR', 'Diluluskan Supervisor'),
         ('APPROVED_MANAGEMENT', 'Diluluskan Pengurusan'),
         ('REJECTED', 'Ditolak'),
@@ -41,6 +43,7 @@ class PaymentVoucher(models.Model):
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='DRAFT')
     prepared_by = models.CharField(max_length=100, default='Admin')
     approved_by = models.CharField(max_length=100, blank=True)
+    approval_comment = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

@@ -57,3 +57,29 @@ class TeacherRateSetting(models.Model):
 
     def __str__(self):
         return f"{self.teacher_type}: RM{self.base_rate_per_session}/sesi"
+
+class DynamicMasterData(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Menunggu Kelulusan (Pending)'),
+        ('APPROVED', 'Diluluskan & Aktif (Approved)'),
+        ('REJECTED', 'Ditolak (Rejected)'),
+    ]
+
+    category = models.CharField(max_length=50, db_index=True)
+    code = models.CharField(max_length=60)
+    label = models.CharField(max_length=150)
+    meta_info = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='APPROVED', db_index=True)
+    created_by = models.CharField(max_length=100, default='Admin 1')
+    approved_by = models.CharField(max_length=100, blank=True)
+    rejection_reason = models.TextField(blank=True)
+    is_locked = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['category', 'code']
+        unique_together = ('category', 'code')
+
+    def __str__(self):
+        return f"[{self.category}] {self.code} - {self.label} ({self.status})"

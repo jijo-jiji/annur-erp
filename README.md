@@ -24,13 +24,8 @@ Dibina berdasarkan dokumen operasi rasmi:
 
 1. **Hab Konfigurasi Perniagaan Pengurusan (No-Code Self-Service Engine):**
    * Pihak Pengarah & Pengurusan Kewangan boleh menambah/mengedit subjek, mengubah kadar yuran bulanan, pakej yuran Darjah 5 & 6, kadar elaun guru per sesi, dan had kapasiti kerusi secara langsung tanpa perlu pengaturcara.
-2. **Pendaftaran Pelajar & 5-Poin Kegunaan Pejabat:**
-   * Borang pendaftaran rasmi, tangkapan 2 penjaga dengan penunjuk *Preferred Contact*, persetujuan semakan keputusan di `sapsnkra.moe`, dan pengesahan 5 kod pejabat:
-     * `[L]` Ledger
-     * `[TEL]` WhatsApp Broadcast
-     * `[SP]` Senarai Pelajar
-     * `[AT]` Kedatangan
-     * `[SY]` Sistem Pembayaran
+2. **Pendaftaran Pelajar:**
+   * Borang pendaftaran rasmi, tangkapan 2 penjaga dengan penunjuk *Preferred Contact*, dan persetujuan semakan keputusan di `sapsnkra.moe`.
 3. **Jadual Waktu Master 2026 & Pemantauan Kapasiti Langsung:**
    * Jadual sesi 1 jam 30 minit (Jumaat, Sabtu & malam Isnin–Khamis).
    * Pemantauan lebihan kerusi secara langsung (contoh amaran merah: `-2 kerusi`).

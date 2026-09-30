@@ -47,7 +47,6 @@ All user interfaces must strictly adhere to this visual architecture and token p
 |---|---|---|---|---|
 | **Parent Self-Registration** | Assist / Verify | Monitor intake | View statistics | Fill form via QR |
 | **Student Registration Approval** | Draft / Submit | Review | **Approve / Reject** | View status |
-| **Office Checklist (L, TEL, SP, AT, SY)**| **Mark & Update** | Audit | Oversee | None |
 | **Attendance Tracking** | **Daily Marking** | Audit & Alerts | High-level reports | View child attendance |
 | **Master Timetable & Class Setup** | View | Draft & Adjust | **Approve Master** | View schedule |
 | **Cancellation & Gantian Kelas** | Log requests | **Verify & Reschedule** | Audit impact | Receive WS notice |
@@ -116,12 +115,6 @@ To guarantee that Directors & Finance Approvers can modify business rules withou
   * Father Name, Phone, Occupation.
   * Mother Name, Phone, Occupation.
   * **"Preferred Contact" Toggle:** Designates which parent receives official WhatsApp receipts and reminders.
-* **Office Processing Checklist (Mandatory 5-Point Validation):**
-  * `[L]` **Ledger:** Account ledger code created.
-  * `[TEL]` **WhatsApp:** Added to official broadcast group and parent directory.
-  * `[SP]` **Senarai Pelajar:** Added to master student roster.
-  * `[AT]` **Kedatangan:** Attendance register initialized.
-  * `[SY]` **Sistem Pembayaran:** Billing cycle and monthly subscription activated.
 * **Academic Consent & Parent Contract:**
   * `SAPS NKRA MOE`: Student declaration authorizing exam score verification (`sapsnkra.moe`).
   * 6 Enforced Parent Clauses: Payment before 7th; 2 months unpaid auto-termination; 2 weeks advance termination notice; clear outstanding arrears; student absence disclaimer; classroom accident disclaimer.
@@ -186,7 +179,7 @@ sequenceDiagram
     participant WhatsApp
 
     Parent->>System: Submit Registration (via Web / Mobile QR)
-    Admin->>System: Verify Checklist (L, TEL, SP, AT, SY)
+    Admin->>System: Verify Registration Details
     Supervisor->>System: Check Class Occupancy & Timetable Section
     Management->>System: Final Approval
     System->>WhatsApp: 1. Auto Send Welcome & Group Invite Link

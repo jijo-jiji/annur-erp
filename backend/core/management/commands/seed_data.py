@@ -1,9 +1,10 @@
+from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from datetime import date
-from business_config.models import SubjectMaster, PricingTier, BusinessSetting, TeacherRateSetting
-from teachers.models import Teacher
-from academic.models import Classroom, TimeSlot, ClassTimetable, ClassRescheduleLog
-from students.models import Student
+from business_config.models import SubjectMaster, PricingTier, BusinessSetting, TeacherRateSetting, DynamicMasterData
+from teachers.models import Teacher, StaffMember, LeaveRequest
+from academic.models import Classroom, TimeSlot, ClassTimetable, ClassRescheduleLog, LessonHandout
+from students.models import Student, Lead
 from billing.models import Invoice, PaymentReceipt
 from expenses.models import Vendor, PaymentVoucher
 
@@ -249,7 +250,8 @@ class Command(BaseCommand):
         ]
         cr_idx = 0
         all_created_classes = []
-        for slot_k, sub_c, f_lvl, sec, t_code, enrolled in classes_data:
+        # Seat usage comes from actual student enrolments, so the last tuple value is not stored
+        for slot_k, sub_c, f_lvl, sec, t_code, _expected_size in classes_data:
             if slot_k in slot_map and sub_c in sub_dict and t_code in t_dict:
                 cl, _ = ClassTimetable.objects.update_or_create(
                     slot=slot_map[slot_k],
@@ -260,7 +262,6 @@ class Command(BaseCommand):
                         "teacher": t_dict[t_code],
                         "classroom": cr_objs[cr_idx % len(cr_objs)],
                         "max_seats": 20,
-                        "current_enrolled": enrolled
                     }
                 )
                 all_created_classes.append(cl)
@@ -290,15 +291,15 @@ class Command(BaseCommand):
                     }
                 )
 
-        # 10. Sample Students with full checklists
+        # 10. Sample Students
         sample_students = [
-            ("AN-2026-001", "Ahmad Daniyal bin Razali", "090514-03-5511", "MONTHLY", "F5", "SAINS", "SMK Telipot", "011-23456781", "Razali bin Mahmud", "012-9876541", "Jurutera", "PARENT_1", True, True, True, True, True),
-            ("AN-2026-002", "Nur Aisyah binti Mohd Zaki", "090822-03-6622", "MONTHLY", "F5", "SAINS", "SMK Zainab 1", "011-23456782", "Mohd Zaki bin Salleh", "012-9876542", "Guru", "PARENT_1", True, True, True, True, True),
-            ("AN-2026-003", "Muhammad Haziq bin Imran", "100311-03-7733", "MONTHLY", "F4", "SAINS", "SMK Sultan Ismail", "011-23456783", "Imran bin Abdullah", "012-9876543", "Peniaga", "PARENT_1", True, True, True, True, False),
-            ("AN-2026-004", "Farah Nadiah binti Azman", "110425-03-8844", "MONTHLY", "F3", "GENERAL", "SMK Maktab Sultan Ismail", "011-23456784", "Azman bin Yusof", "012-9876544", "Pegawai Bank", "PARENT_1", True, True, True, False, False),
-            ("AN-2026-005", "Amirul Hakim bin Shukri", "140212-03-9955", "MONTHLY", "S6", "GENERAL", "SK Telipot", "011-23456785", "Shukri bin Ramli", "012-9876545", "Pensyarah", "PARENT_1", True, True, True, True, True),
+            ("AN-2026-001", "Ahmad Daniyal bin Razali", "090514-03-5511", "MONTHLY", "F5", "SAINS", "SMK Telipot", "011-23456781", "Razali bin Mahmud", "012-9876541", "Jurutera", "PARENT_1"),
+            ("AN-2026-002", "Nur Aisyah binti Mohd Zaki", "090822-03-6622", "MONTHLY", "F5", "SAINS", "SMK Zainab 1", "011-23456782", "Mohd Zaki bin Salleh", "012-9876542", "Guru", "PARENT_1"),
+            ("AN-2026-003", "Muhammad Haziq bin Imran", "100311-03-7733", "MONTHLY", "F4", "SAINS", "SMK Sultan Ismail", "011-23456783", "Imran bin Abdullah", "012-9876543", "Peniaga", "PARENT_1"),
+            ("AN-2026-004", "Farah Nadiah binti Azman", "110425-03-8844", "MONTHLY", "F3", "GENERAL", "SMK Maktab Sultan Ismail", "011-23456784", "Azman bin Yusof", "012-9876544", "Pegawai Bank", "PARENT_1"),
+            ("AN-2026-005", "Amirul Hakim bin Shukri", "140212-03-9955", "MONTHLY", "S6", "GENERAL", "SK Telipot", "011-23456785", "Shukri bin Ramli", "012-9876545", "Pensyarah", "PARENT_1"),
         ]
-        for sid, name, ic, stype, flvl, strm, sch, sph, p1n, p1p, p1occ, pref, l, tel, sp, at, sy in sample_students:
+        for sid, name, ic, stype, flvl, strm, sch, sph, p1n, p1p, p1occ, pref in sample_students:
             stud, _ = Student.objects.update_or_create(
                 student_id=sid,
                 defaults={
@@ -316,11 +317,6 @@ class Command(BaseCommand):
                     "parent2_name": "Puan Halimah",
                     "parent2_phone": "013-8889999",
                     "preferred_contact": pref,
-                    "checklist_ledger": l,
-                    "checklist_whatsapp": tel,
-                    "checklist_senarai_pelajar": sp,
-                    "checklist_kedatangan": at,
-                    "checklist_sistem_pembayaran": sy,
                     "status": "ACTIVE"
                 }
             )
@@ -398,4 +394,350 @@ class Command(BaseCommand):
             }
         )
 
+        # 12. Dynamic Master Data (All 21 Categories from SOP j-status.doc)
+        self.stdout.write("Seeding all 21 Dynamic Master Data categories...")
+        master_seed_data = [
+            # 1. Form / Tingkatan
+            ("1_form", "S1", "Darjah 1", {"level": "Primary", "order": 1}, "APPROVED"),
+            ("1_form", "S2", "Darjah 2", {"level": "Primary", "order": 2}, "APPROVED"),
+            ("1_form", "S3", "Darjah 3", {"level": "Primary", "order": 3}, "APPROVED"),
+            ("1_form", "S4", "Darjah 4", {"level": "Primary", "order": 4}, "APPROVED"),
+            ("1_form", "S5", "Darjah 5", {"level": "Primary", "order": 5}, "APPROVED"),
+            ("1_form", "S6", "Darjah 6", {"level": "Primary", "order": 6}, "APPROVED"),
+            ("1_form", "F1", "Tingkatan 1", {"level": "Lower Sec", "order": 7}, "APPROVED"),
+            ("1_form", "F2", "Tingkatan 2", {"level": "Lower Sec", "order": 8}, "APPROVED"),
+            ("1_form", "F3", "Tingkatan 3", {"level": "Lower Sec", "order": 9}, "APPROVED"),
+            ("1_form", "F4", "Tingkatan 4", {"level": "Upper Sec", "order": 10}, "APPROVED"),
+            ("1_form", "F5", "Tingkatan 5", {"level": "Upper Sec", "order": 11}, "APPROVED"),
+
+            # 2. Subjek Diminati (Interested Subjects)
+            ("2_interested_sub", "FZ", "Fizik (SPM)", {"stream": "Sains", "code": 4531}, "APPROVED"),
+            ("2_interested_sub", "KIM", "Kimia (SPM)", {"stream": "Sains", "code": 4541}, "APPROVED"),
+            ("2_interested_sub", "BIO", "Biologi (SPM)", {"stream": "Sains", "code": 4551}, "APPROVED"),
+            ("2_interested_sub", "ADDMT", "Matematik Tambahan (SPM)", {"stream": "Sains", "code": 3472}, "APPROVED"),
+            ("2_interested_sub", "MATH", "Matematik Teras (SPM)", {"stream": "Teras", "code": 1449}, "APPROVED"),
+            ("2_interested_sub", "BM", "Bahasa Melayu (SPM)", {"stream": "Teras", "code": 1103}, "APPROVED"),
+            ("2_interested_sub", "BI", "Bahasa Inggeris (SPM)", {"stream": "Teras", "code": 1119}, "APPROVED"),
+            ("2_interested_sub", "SEJ", "Sejarah (SPM)", {"stream": "Teras", "code": 1249}, "APPROVED"),
+            ("2_interested_sub", "ACC", "Prinsip Perakaunan (SPM)", {"stream": "Sastera", "code": 3756}, "APPROVED"),
+            ("2_interested_sub", "SAINS_L", "Sains Menengah Rendah (F1-F3)", {"stream": "Teras"}, "APPROVED"),
+            ("2_interested_sub", "MATH_L", "Matematik Menengah Rendah (F1-F3)", {"stream": "Teras"}, "APPROVED"),
+
+            # 3. Saluran Lead / Sumber (Lead Source)
+            ("3_lead_source", "BANNER", "Banner & Bunting Telipot", {"type": "Offline"}, "APPROVED"),
+            ("3_lead_source", "TIKTOK", "TikTok Ads / Live", {"type": "Digital"}, "APPROVED"),
+            ("3_lead_source", "FB", "Facebook Ads & Page", {"type": "Digital"}, "APPROVED"),
+            ("3_lead_source", "IG", "Instagram Post & Reels", {"type": "Digital"}, "APPROVED"),
+            ("3_lead_source", "WHATSAPP", "WhatsApp Rasmi / Rujukan Rakan", {"type": "Direct"}, "APPROVED"),
+            ("3_lead_source", "WALKIN", "Kunjungan Kaunter Pejabat", {"type": "Direct"}, "APPROVED"),
+            ("3_lead_source", "FLYER", "Edaran Risalah Sekolah", {"type": "Offline"}, "APPROVED"),
+            ("3_lead_source", "WARIS", "Cadangan Ibu Bapa / Alumni", {"type": "Referral"}, "APPROVED"),
+
+            # 4. Jenis Pelajar (Student Type)
+            ("4_student_type", "MONTHLY", "Bulanan (Tetap Berjadual)", {"fee_type": "Monthly Subscription"}, "APPROVED"),
+            ("4_student_type", "WALK_IN", "Walk-in (Bayar Per Sesi)", {"fee_type": "Per Session RM25"}, "APPROVED"),
+            ("4_student_type", "INTENSIVE", "Program Percubaan / Intensif", {"fee_type": "Modular"}, "APPROVED"),
+            ("4_student_type", "SCHOLARSHIP", "Biasiswa An Nur / Bantuan Asnaf", {"fee_type": "Subsidized"}, "APPROVED"),
+
+            # 5. Gred Persekolahan (Grade Progression)
+            ("5_grade", "RENDAH_1", "Sekolah Rendah Tahap 1 (Darjah 1-3)", {"next_level": "Tahap 2"}, "APPROVED"),
+            ("5_grade", "RENDAH_2", "Sekolah Rendah Tahap 2 (Darjah 4-6)", {"next_level": "Menengah Rendah"}, "APPROVED"),
+            ("5_grade", "MEN_RENDAH", "Menengah Rendah (Tingkatan 1-3)", {"next_level": "Menengah Atas"}, "APPROVED"),
+            ("5_grade", "MEN_ATAS", "Menengah Atas (Tingkatan 4-5)", {"next_level": "SPM Candidate"}, "APPROVED"),
+
+            # 6. Nama Sekolah (18 Kota Bharu Schools)
+            ("6_school", "SMK_TELIPOT", "SMK Telipot", {"kod": "DEA1123", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SMK_ZAINAB1", "SMK Zainab 1", {"kod": "DEA1124", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SMK_ZAINAB2", "SMK Zainab 2", {"kod": "DEA1125", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SMK_SIC", "SMK Sultan Ismail (SIC)", {"kod": "DEA1126", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SMK_KOLEJ", "SMK Maktab Sultan Ismail (Kolej)", {"kod": "DEA1127", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SMS_FARIS", "SMS Tengku Muhammad Faris Petra", {"kod": "DEA1128", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "MAAHAD_MML", "Maahad Muhammadi Lelaki (MML)", {"kod": "DFT1001", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "MAAHAD_MMP", "Maahad Muhammadi Perempuan (MMP)", {"kod": "DFT1002", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SMK_KOTA", "SMK Kota", {"kod": "DEA1129", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SMK_ISMAIL_PETRA", "SMK Ismail Petra", {"kod": "DEA1130", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SK_TELIPOT", "SK Telipot", {"kod": "DBA1011", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SK_SULTAN_ISMAIL_1", "SK Sultan Ismail 1", {"kod": "DBA1012", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SK_ZAINAB_1", "SK Zainab 1", {"kod": "DBA1013", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SK_SULTAN_ISMAIL_2", "SK Sultan Ismail 2", {"kod": "DBA1014", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SK_KOTA", "SK Kota", {"kod": "DBA1015", "daerah": "Kota Bharu"}, "APPROVED"),
+            ("6_school", "SK_KUBANG_KERIAN_1", "SK Kubang Kerian 1", {"kod": "DBA1016", "daerah": "Kubang Kerian"}, "APPROVED"),
+            ("6_school", "SMK_KUBANG_KERIAN_1", "SMK Kubang Kerian 1", {"kod": "DEA1131", "daerah": "Kubang Kerian"}, "APPROVED"),
+            ("6_school", "SMKA_NAIM", "SMKA Naim Lilbanat", {"kod": "DRA1001", "daerah": "Kota Bharu"}, "APPROVED"),
+
+            # 7. Kategori Umur Penjaga (Parent Age Group)
+            ("7_parent_age", "AGE_25_35", "25 - 35 Tahun (Generasi Muda)", {"focus": "Anak Sekolah Rendah"}, "APPROVED"),
+            ("7_parent_age", "AGE_36_45", "36 - 45 Tahun (Menengah Rendah)", {"focus": "Anak Menengah Rendah"}, "APPROVED"),
+            ("7_parent_age", "AGE_46_55", "46 - 55 Tahun (Calon SPM)", {"focus": "Calon SPM Utama"}, "APPROVED"),
+            ("7_parent_age", "AGE_56_ABOVE", "56 Tahun ke Atas (Warga Emas/Penjaga)", {"focus": "Waris / Datuk / Nenek"}, "APPROVED"),
+
+            # 8. Pakej Subjek Aktif (Active Subject Packages)
+            ("8_active_sub", "PKG_4_SUB", "Pakej 4 Subjek (RM240 / RM60 per sub)", {"count": 4, "price": 240.0}, "APPROVED"),
+            ("8_active_sub", "PKG_5_SUB", "Pakej 5 Subjek (RM275 / RM55 per sub)", {"count": 5, "price": 275.0}, "APPROVED"),
+            ("8_active_sub", "PKG_6_SUB", "Pakej 6 Subjek (RM330 / RM55 per sub)", {"count": 6, "price": 330.0}, "APPROVED"),
+            ("8_active_sub", "PKG_7_SUB", "Pakej 7 Subjek (RM350 / RM50 per sub)", {"count": 7, "price": 350.0}, "APPROVED"),
+            ("8_active_sub", "PKG_8_SUB", "Pakej 8 Subjek (RM400 / RM50 per sub)", {"count": 8, "price": 400.0}, "APPROVED"),
+
+            # 9. Subjek Walk-in (Walk-in Subjects)
+            ("9_walkin_sub", "WI_FZ", "Walk-in Fizik SPM (RM25/sesi)", {"rate": 25.0}, "APPROVED"),
+            ("9_walkin_sub", "WI_KIM", "Walk-in Kimia SPM (RM25/sesi)", {"rate": 25.0}, "APPROVED"),
+            ("9_walkin_sub", "WI_ADDMT", "Walk-in Add Math SPM (RM25/sesi)", {"rate": 25.0}, "APPROVED"),
+            ("9_walkin_sub", "WI_MATH", "Walk-in Matematik Teras (RM25/sesi)", {"rate": 25.0}, "APPROVED"),
+            ("9_walkin_sub", "WI_BIO", "Walk-in Biologi SPM (RM25/sesi)", {"rate": 25.0}, "APPROVED"),
+
+            # 10. Jenis Peperiksaan (Exam Type)
+            ("10_exam_type", "UASA", "Ujian Akhir Sesi Akademik (UASA)", {"level": "F1 - F3"}, "APPROVED"),
+            ("10_exam_type", "SPM_TRIAL", "Peperiksaan Percubaan SPM Negeri", {"level": "F5"}, "APPROVED"),
+            ("10_exam_type", "SPM_SEBENAR", "Peperiksaan SPM Sebenar (LPM)", {"level": "F5"}, "APPROVED"),
+            ("10_exam_type", "PPT", "Peperiksaan Pertengahan Tahun", {"level": "Semua Tingkatan"}, "APPROVED"),
+            ("10_exam_type", "UPKK", "Ujian Penilaian Kelas KAFA", {"level": "Rendah"}, "APPROVED"),
+
+            # 11. Gred Akademik (Academic Grade)
+            ("11_academic_grade", "AP", "A+ (Cemerlang Tertinggi: 90 - 100)", {"points": 4.0}, "APPROVED"),
+            ("11_academic_grade", "A", "A (Cemerlang Tinggi: 80 - 89)", {"points": 4.0}, "APPROVED"),
+            ("11_academic_grade", "AM", "A- (Cemerlang: 75 - 79)", {"points": 3.7}, "APPROVED"),
+            ("11_academic_grade", "BP", "B+ (Kepujian Tertinggi: 70 - 74)", {"points": 3.3}, "APPROVED"),
+            ("11_academic_grade", "B", "B (Kepujian Tinggi: 65 - 69)", {"points": 3.0}, "APPROVED"),
+            ("11_academic_grade", "CP", "C+ (Kepujian: 60 - 64)", {"points": 2.7}, "APPROVED"),
+            ("11_academic_grade", "C", "C (Lulus: 50 - 59)", {"points": 2.0}, "APPROVED"),
+            ("11_academic_grade", "D", "D (Lulus Atas: 40 - 49)", {"points": 1.5}, "APPROVED"),
+            ("11_academic_grade", "E", "E (Lulus Bersyarat: 30 - 39)", {"points": 1.0}, "APPROVED"),
+            ("11_academic_grade", "G", "G (Gagal: < 30)", {"points": 0.0}, "APPROVED"),
+
+            # 12. Subjek Akademik (Academic Subjects)
+            ("12_academic_sub", "SUB_4531", "Fizik Kertas SPM (4531)", {"paper": "P1, P2, P3"}, "APPROVED"),
+            ("12_academic_sub", "SUB_4541", "Kimia Kertas SPM (4541)", {"paper": "P1, P2, P3"}, "APPROVED"),
+            ("12_academic_sub", "SUB_4551", "Biologi Kertas SPM (4551)", {"paper": "P1, P2, P3"}, "APPROVED"),
+            ("12_academic_sub", "SUB_3472", "Matematik Tambahan (3472)", {"paper": "P1, P2"}, "APPROVED"),
+            ("12_academic_sub", "SUB_1449", "Matematik Teras (1449)", {"paper": "P1, P2"}, "APPROVED"),
+            ("12_academic_sub", "SUB_1103", "Bahasa Melayu (1103)", {"paper": "P1, P2, P3, P4"}, "APPROVED"),
+            ("12_academic_sub", "SUB_1119", "Bahasa Inggeris (1119)", {"paper": "P1, P2, P3, P4"}, "APPROVED"),
+            ("12_academic_sub", "SUB_1249", "Sejarah (1249)", {"paper": "P1, P2"}, "APPROVED"),
+
+            # 13. Julat Markah (Mark Band)
+            ("13_mark_band", "BAND_A", "80% - 100% (Tahap Cemerlang)", {"min": 80, "max": 100}, "APPROVED"),
+            ("13_mark_band", "BAND_B", "65% - 79% (Tahap Kepujian)", {"min": 65, "max": 79}, "APPROVED"),
+            ("13_mark_band", "BAND_C", "50% - 64% (Tahap Memuaskan)", {"min": 50, "max": 64}, "APPROVED"),
+            ("13_mark_band", "BAND_D", "40% - 49% (Tahap Lulus)", {"min": 40, "max": 49}, "APPROVED"),
+            ("13_mark_band", "BAND_E", "0% - 39% (Tahap Intervensi Khas)", {"min": 0, "max": 39}, "APPROVED"),
+
+            # 14. Sebab Berhenti / Drop (Drop Reasons)
+            ("14_drop_reason", "ASRAMA", "Tawaran MRSM / SBP / Asrama Penuh", {"category": "Peluang Pendidikan"}, "APPROVED"),
+            ("14_drop_reason", "PINDAH", "Pindah Sekolah / Daerah Luar Kota Bharu", {"category": "Relokasi"}, "APPROVED"),
+            ("14_drop_reason", "KEWANGAN", "Kekangan Kewangan Keluarga", {"category": "Kewangan"}, "APPROVED"),
+            ("14_drop_reason", "MASA", "Jadual Sekolah Bertindih / Kokurikulum", {"category": "Masa"}, "APPROVED"),
+            ("14_drop_reason", "KENDERAAN", "Ketiadaan Pengangkutan ke Pusat Telipot", {"category": "Logistik"}, "APPROVED"),
+            ("14_drop_reason", "LAIN", "Alasan Peribadi / Masalah Kesihatan", {"category": "Lain-lain"}, "APPROVED"),
+
+            # 15. Kategori Guru (Teacher Type)
+            ("15_teacher_type", "PERMANENT", "Guru Tetap Berjadual (Permanent)", {"rate": 60.0}, "APPROVED"),
+            ("15_teacher_type", "REPLACEMENT", "Guru Pengganti Berdaftar (Active Replacement)", {"rate": 55.0}, "APPROVED"),
+            ("15_teacher_type", "SPECIALIST", "Penceramah Bengkel & Seminar Khas", {"rate": 100.0}, "APPROVED"),
+
+            # 16. Subjek Pengajaran Guru (Teacher Subjects)
+            ("16_teacher_sub", "TS_FZ", "Pengkhususan Fizik Menengah Atas", {"subject": "FZ"}, "APPROVED"),
+            ("16_teacher_sub", "TS_KIM", "Pengkhususan Kimia Menengah Atas", {"subject": "KIM"}, "APPROVED"),
+            ("16_teacher_sub", "TS_BIO", "Pengkhususan Biologi Menengah Atas", {"subject": "BIO"}, "APPROVED"),
+            ("16_teacher_sub", "TS_ADDMT", "Pengkhususan Matematik Tambahan", {"subject": "ADDMT"}, "APPROVED"),
+            ("16_teacher_sub", "TS_MATH", "Pengkhususan Matematik Menengah/Rendah", {"subject": "MATH"}, "APPROVED"),
+            ("16_teacher_sub", "TS_LANG", "Pengkhususan Bahasa Melayu & Sejarah", {"subject": "BM_SEJ"}, "APPROVED"),
+
+            # 17. Tahap Kelayakan Guru (Teacher Qualification Grade)
+            ("17_teacher_grade", "DEG_EDU", "Ijazah Sarjana Muda Pendidikan KPM", {"level": "Ijazah"}, "APPROVED"),
+            ("17_teacher_grade", "MASTER_PHD", "Sarjana / Doktor Falsafah Bidang Berkaitan", {"level": "Pascasiswazah"}, "APPROVED"),
+            ("17_teacher_grade", "EX_EXAMINER", "Pemeriksa Kertas Peperiksaan SPM Rasmi", {"level": "Pakar SPM"}, "APPROVED"),
+            ("17_teacher_grade", "EXPERT_10YR", "Guru Cemerlang Pengalaman > 10 Tahun", {"level": "Senior"}, "APPROVED"),
+
+            # 18. Kategori Baucar Bayaran (Expense Category)
+            ("18_expense_cat", "SEWA", "Sewa Premis Bangunan (PT 105 Seksyen 23)", {"budget": 3500.0}, "APPROVED"),
+            ("18_expense_cat", "UTILITI", "Bil Utiliti TNB Elektrik & Air Kelantan AKSB", {"budget": 1200.0}, "APPROVED"),
+            ("18_expense_cat", "ALAT_TULIS", "Kertas Modul, Risograf & Alat Tulis Pejabat", {"budget": 800.0}, "APPROVED"),
+            ("18_expense_cat", "SELENGGARA", "Penyelenggaraan & Servis Aircond Bilik Kuliah", {"budget": 600.0}, "APPROVED"),
+            ("18_expense_cat", "ELAUN_STAF", "Gaji Pokok & Elaun Kerja Lebih Masa Staf", {"budget": 4500.0}, "APPROVED"),
+            ("18_expense_cat", "PEMASARAN", "Pemasaran (TikTok Ads, Banner & Edaran Flyers)", {"budget": 1000.0}, "APPROVED"),
+            ("18_expense_cat", "JAMUAN", "Jamuan Mesyuarat Guru & Program Motivasi Pelajar", {"budget": 500.0}, "APPROVED"),
+
+            # 19. Sub-kategori Perbelanjaan (Expense Subcategory)
+            ("19_expense_subcat", "SUB_TNB", "Tenaga Nasional Berhad (Elektrik Pusat)", {"cat": "UTILITI"}, "APPROVED"),
+            ("19_expense_subcat", "SUB_AKSB", "Air Kelantan Sdn Bhd (Bekalan Air)", {"cat": "UTILITI"}, "APPROVED"),
+            ("19_expense_subcat", "SUB_PAPER", "Kertas A4 70gsm/80gsm (Pustaka Sri Telipot)", {"cat": "ALAT_TULIS"}, "APPROVED"),
+            ("19_expense_subcat", "SUB_TONER", "Toner Mesin Cetak Risograph Digital", {"cat": "ALAT_TULIS"}, "APPROVED"),
+            ("19_expense_subcat", "SUB_AIRCOND", "Servis Cuci Filter & Tambah Gas R32 Aircond", {"cat": "SELENGGARA"}, "APPROVED"),
+            ("19_expense_subcat", "SUB_CLEANING", "Bahan Pencuci & Sanitasi Pusat", {"cat": "SELENGGARA"}, "APPROVED"),
+
+            # 20. Pembekal / Vendor (Vendor Master)
+            ("20_vendor", "VND_001", "Pustaka Sri Telipot", {"pic": "Encik Razak", "phone": "09-7441234", "bank": "CIMB 8600112233"}, "APPROVED"),
+            ("20_vendor", "VND_002", "Kolej Cool Aircond Services", {"pic": "Tuan Hafiz", "phone": "013-9223344", "bank": "Maybank 514011223344"}, "APPROVED"),
+            ("20_vendor", "VND_003", "Tenaga Nasional Berhad", {"pic": "Kaunter KB", "phone": "1-300-88-5454", "bank": "Autodebit"}, "APPROVED"),
+            ("20_vendor", "VND_004", "Air Kelantan Sdn Bhd (AKSB)", {"pic": "Cawangan KB", "phone": "09-7437777", "bank": "Autodebit"}, "APPROVED"),
+            ("20_vendor", "VND_005", "Percetakan Kota Bharu Sdn Bhd", {"pic": "Cikgu Amin", "phone": "019-9887766", "bank": "Bank Islam 03018020011223"}, "APPROVED"),
+
+            # 21. Kaedah Pembayaran Yuran (Payment Methods)
+            ("21_payment_method", "DUITNOW_QR", "DuitNow QR Rasmi Pusat (Maybank)", {"acc": "564011223344", "instant": True}, "APPROVED"),
+            ("21_payment_method", "ONLINE_TRANSFER", "Perbankan Atas Talian (FPX / Pindahan Bank)", {"acc": "Maybank / CIMB", "instant": True}, "APPROVED"),
+            ("21_payment_method", "CASH", "Tunai di Kaunter Pejabat Tingkat 1", {"receipt": "Manual & Digital"}, "APPROVED"),
+            ("21_payment_method", "DEBIT_CARD", "Kad Debit Melalui Mesin EDC Kaunter", {"terminal": "Maybank POS"}, "APPROVED"),
+        ]
+
+        for cat, code, label, meta, st in master_seed_data:
+            DynamicMasterData.objects.update_or_create(
+                category=cat,
+                code=code,
+                defaults={
+                    "label": label,
+                    "meta_info": meta,
+                    "status": st,
+                    "created_by": "System Seeder",
+                    "approved_by": "Pengurusan Pusat An Nur",
+                    "is_locked": True
+                }
+            )
+
+        # 13. CRM Leads (Kanban Conversion Funnel)
+        self.stdout.write("Seeding CRM Leads...")
+        sample_leads = [
+            ("LD-2026-001", "Muhammad Danish bin Faizal", "Encik Faizal", "019-9881122", "danish@gmail.com", "F5", "SMK Telipot", "TIKTOK", ["FZ", "KIM", "ADDMT"], "ENQUIRY", None, "", "Admin 1", "Berminat pakej 5 subjek SPM aliran Sains"),
+            ("LD-2026-002", "Nurul Izzati binti Rosli", "Puan Rosli", "019-9882233", "izzati@gmail.com", "F4", "SMK Zainab 1", "FB", ["BIO", "KIM"], "TRIAL", date(2026, 3, 10), "Hadir kelas percubaan Fizik & Kimia Sabtu lepas, waris sangat berpuas hati.", "Admin 2", "Menunggu pengesahan pendaftaran rasmi awal bulan depan."),
+            ("LD-2026-003", "Wan Arif bin Wan Kamal", "Wan Kamal", "019-9883344", "arif@gmail.com", "F3", "SMK Sultan Ismail", "WHATSAPP", ["MATH_L", "SAINS_L"], "REGISTERED", date(2026, 2, 25), "Selesai kelas trial dan terus bayar yuran pendaftaran.", "Admin 1", "Telah didaftarkan sebagai pelajar tetap."),
+            ("LD-2026-004", "Siti Aisyah binti Khairul", "Khairul", "019-9884455", "aisyah@gmail.com", "S6", "SK Telipot", "FLYER", ["MATH_P", "SAINS_P"], "ENQUIRY", None, "", "Admin 2", "Ibu bertanya tentang persediaan UASA Darjah 6"),
+        ]
+        for lid, sname, pname, ph, em, flvl, sch, src, subs, st, tdate, tfb, asgn, nts in sample_leads:
+            Lead.objects.update_or_create(
+                lead_id=lid,
+                defaults={
+                    "student_name": sname,
+                    "parent_name": pname,
+                    "phone": ph,
+                    "email": em,
+                    "form_level": flvl,
+                    "school_name": sch,
+                    "lead_source": src,
+                    "interested_subjects": subs,
+                    "status": st,
+                    "trial_date": tdate,
+                    "trial_feedback": tfb,
+                    "assigned_to": asgn,
+                    "notes": nts
+                }
+            )
+
+        # 14. Staff HR & Attendance & Leaves
+        self.stdout.write("Seeding Staff HR, Attendance & Leaves...")
+        stf1, _ = StaffMember.objects.update_or_create(
+            staff_id="STF-001",
+            defaults={
+                "name": "Siti Aminah Binti Ahmad",
+                "role": "Pegawai Pentadbiran & Kaunter (Admin 1)",
+                "department": "Pentadbiran & Khidmat Pelanggan",
+                "ic_number": "960412-03-5124",
+                "phone": "013-9123456",
+                "email": "siti.annur@gmail.com",
+                "join_date": date(2024, 1, 1),
+                "al_entitlement": 11,
+                "mc_entitlement": 12,
+                "el_entitlement": 2,
+                "is_active": True
+            }
+        )
+        stf2, _ = StaffMember.objects.update_or_create(
+            staff_id="STF-002",
+            defaults={
+                "name": "Norhafizah Binti Razali",
+                "role": "Pegawai Pentadbiran & Media Sosial (Admin 2)",
+                "department": "Pentadbiran & Pemasaran",
+                "ic_number": "980915-03-5322",
+                "phone": "013-9876544",
+                "email": "fizah.annur@gmail.com",
+                "join_date": date(2024, 6, 1),
+                "al_entitlement": 12,
+                "mc_entitlement": 13,
+                "el_entitlement": 3,
+                "is_active": True
+            }
+        )
+        stf3, _ = StaffMember.objects.update_or_create(
+            staff_id="STF-003",
+            defaults={
+                "name": "Cikgu Maheran (Supervisor)",
+                "role": "Penyelia Akademik & Operasi (Supervisor)",
+                "department": "Pengurusan Akademik",
+                "ic_number": "850210-03-5001",
+                "phone": "019-9110016",
+                "email": "maheran.annur@gmail.com",
+                "join_date": date(2022, 1, 1),
+                "al_entitlement": 14,
+                "mc_entitlement": 14,
+                "el_entitlement": 3,
+                "is_active": True
+            }
+        )
+
+        # Staff Attendance
+        # Staff Leaves
+        LeaveRequest.objects.update_or_create(
+            leave_id="LV-2026-01",
+            defaults={
+                "staff": stf1,
+                "leave_type": "MC",
+                "start_date": date(2026, 2, 18),
+                "end_date": date(2026, 2, 19),
+                "days_count": 2,
+                "reason": "Demam panas & sakit tekak (Klinik Perdana Telipot)",
+                "mc_document": "MC_SitiAminah_18Feb.pdf",
+                "status": "APPROVED",
+                "supervisor_remark": "Diluluskan oleh Supervisor (Cg Maheran)."
+            }
+        )
+        LeaveRequest.objects.update_or_create(
+            leave_id="LV-2026-02",
+            defaults={
+                "staff": stf2,
+                "leave_type": "AL",
+                "start_date": date(2026, 3, 15),
+                "end_date": date(2026, 3, 16),
+                "days_count": 2,
+                "reason": "Urusan keluarga di Pasir Mas",
+                "mc_document": None,
+                "status": "PENDING",
+                "supervisor_remark": ""
+            }
+        )
+
+        # 15. Lesson Handouts Repository
+        self.stdout.write("Seeding Lesson Handouts...")
+        sample_handouts = [
+            ("HND-001", "Modul SPM 2026: Gelombang, Cahaya & Optik", "F5", "FIZIK", "F5 FIZIK (A) NAK", "Nik Ahmad Khan (NAK)", "Modul_Fizik_F5_Optik.pdf", "3.4 MB", 20, 20, "PRINT_READY", "Latihan intensif Kertas 2 Bahagian B & C untuk persediaan peperiksaan percubaan."),
+            ("HND-002", "Nota Ringkas & Formula Lanjutan: Pembezaan & Pengamiran", "F5", "ADDMT", "F5 ADDMT (A) Z", "Zamri / Zakir (Z)", "AddMath_Form5_Calculus.pdf", "2.1 MB", 22, 22, "PRINT_READY", "Kompilasi rumus penting dan teknik menjawab soalan graf fungsi kuadratik."),
+            ("HND-003", "Topical Drill: Thermochemistry & Electrochemistry", "F4", "KIMIA", "F4 KIM (B) SF", "Saiful (SF)", "Kimia_F4_Elektrokimia.pdf", "4.2 MB", 18, 0, "NEEDS_PRINTING", "Soalan ramalan bertopik untuk kelas Sabtu pagi. Perlu dicetak sebelum Jumaat petang."),
+            ("HND-004", "Model Essay Bank: SPM Continuous Writing & Directed Writing", "F5", "BI", "F5 BI (B) Z", "Zakir (Z)", "SPM_English_Essays.pdf", "1.8 MB", 18, 18, "PRINT_READY", "Contoh karangan Gred A+ beserta senarai kosa kata aras tinggi (CEFR C1)."),
+            ("HND-005", "Latihan Topikal: Operasi Pecahan & Perpuluhan Lanjutan", "S6", "MATH", "S6 MATH FQ", "Faqihah (FQ)", "Math_Darjah6_Pecahan.pdf", "1.5 MB", 15, 15, "PRINT_READY", "Modul asas pengukuhan Matematik Darjah 6 untuk sesi intensif Sabtu."),
+        ]
+        for hid, tit, flvl, sname, ccode, tname, fname, fsz, cneed, cprt, st, desc in sample_handouts:
+            LessonHandout.objects.update_or_create(
+                handout_id=hid,
+                defaults={
+                    "title": tit,
+                    "form_level": flvl,
+                    "subject_name": sname,
+                    "class_code": ccode,
+                    "teacher_name": tname,
+                    "file_name": fname,
+                    "file_size": fsz,
+                    "copies_needed": cneed,
+                    "copies_printed": cprt,
+                    "status": st,
+                    "description": desc
+                }
+            )
+
+        call_command('seed_users', stdout=self.stdout)
+
+        # Link the office staff records to their login accounts so they clock in and apply for leave as themselves
+        from django.contrib.auth.models import User
+        for staff_code, username in (('STF-001', 'admin1'), ('STF-002', 'admin2'), ('STF-003', 'supervisor')):
+            user = User.objects.filter(username=username).first()
+            if user and not StaffMember.objects.filter(user=user).exists():
+                StaffMember.objects.filter(staff_id=staff_code, user=None).update(user=user)
+
         self.stdout.write(self.style.SUCCESS("All Pusat Tuisyen An Nur 2026 operational data seeded successfully!"))
+

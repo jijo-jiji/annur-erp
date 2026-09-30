@@ -1,55 +1,73 @@
-from rest_framework.decorators import api_view
+from rest_framework import status
+from rest_framework.authtoken.models import Token
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from django.db.models import Sum, Count
+from rest_framework.throttling import ScopedRateThrottle
+from django.contrib.auth import authenticate
 from datetime import date
-from students.models import Student
-from billing.models import Invoice, PaymentReceipt
-from academic.models import ClassTimetable, ClassRescheduleLog
-from teachers.models import Teacher
+from .analytics import build_dashboard, build_reports
+from django.contrib.auth.models import User
+from .permissions import APPROVER_ROLES, MANAGEMENT, get_role, display_name, require_role
+
+
+class LoginThrottle(ScopedRateThrottle):
+    scope = 'login'
+
+
+def user_payload(user):
+    return {
+        'username': user.username,
+        'full_name': display_name(user),
+        'role': get_role(user),
+    }
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([LoginThrottle])
+def auth_login(request):
+    username = (request.data.get('username') or '').strip()
+    password = request.data.get('password') or ''
+    user = authenticate(request, username=username, password=password)
+    if user is None:
+        return Response({'detail': 'Nama pengguna atau kata laluan salah.'}, status=status.HTTP_400_BAD_REQUEST)
+    if get_role(user) is None:
+        return Response({'detail': 'Akaun ini belum diberikan peranan. Sila hubungi Management.'}, status=status.HTTP_403_FORBIDDEN)
+    token, _ = Token.objects.get_or_create(user=user)
+    return Response({'token': token.key, 'user': user_payload(user)})
+
+
+@api_view(['GET'])
+def auth_me(request):
+    return Response(user_payload(request.user))
+
+
+@api_view(['POST'])
+def auth_logout(request):
+    Token.objects.filter(user=request.user).delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 @api_view(['GET'])
 def dashboard_summary(request):
-    total_students = Student.objects.count()
-    active_monthly = Student.objects.filter(status='ACTIVE', student_type='MONTHLY').count()
-    walk_in_students = Student.objects.filter(status='ACTIVE', student_type='WALK_IN').count()
-    inactive_students = Student.objects.filter(status='TERMINATED').count()
+    return Response(build_dashboard(get_role(request.user)))
 
-    # Sales
-    monthly_sales = PaymentReceipt.objects.aggregate(total=Sum('amount_paid'))['total'] or 0.0
-    outstanding = Invoice.objects.filter(status__in=['UNPAID', 'PARTIAL']).aggregate(total=Sum('balance_due'))['total'] or 0.0
 
-    # Capacity alerts
-    all_classes = ClassTimetable.objects.all()
-    overcapacity_classes = [c.class_code for c in all_classes if c.current_enrolled > c.max_seats]
-    near_full_classes = [c.class_code for c in all_classes if c.current_enrolled >= c.max_seats - 2 and c.current_enrolled <= c.max_seats]
+@api_view(['GET'])
+def reports_summary(request):
+    require_role(request, *APPROVER_ROLES)
+    try:
+        year = int(request.query_params.get('year') or date.today().year)
+    except ValueError:
+        return Response({'detail': 'Tahun tidak sah.'}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(build_reports(year))
 
-    # Reschedule logs
-    recent_reschedules = ClassRescheduleLog.objects.order_by('-created_at')[:5]
-    reschedule_data = [{
-        'class_code': r.timetable_class.class_code,
-        'batal': r.tarikh_batal,
-        'ganti': r.tarikh_ganti,
-        'remarks': r.remarks,
-        'is_extra': r.is_extra_class
-    } for r in recent_reschedules]
 
-    # Staff & Teacher counts
-    teachers_count = Teacher.objects.filter(is_active=True).count()
-
-    return Response({
-        'total_students': total_students,
-        'active_monthly': active_monthly,
-        'walk_in_students': walk_in_students,
-        'inactive_students': inactive_students,
-        'monthly_sales': float(monthly_sales),
-        'outstanding_arrears': float(outstanding),
-        'teachers_active': teachers_count,
-        'overcapacity_classes': overcapacity_classes,
-        'near_full_classes': near_full_classes,
-        'recent_reschedules': reschedule_data,
-        'alerts': [
-            {"type": "danger", "msg": f"Amaran Kapasiti: {len(overcapacity_classes)} kelas melebihi had tempat duduk (contoh: F4 ADDMT A melebihi 2 kerusi)!"},
-            {"type": "warning", "msg": "Kutipan Yuran: Tarikh akhir 7hb semakin hampir. Sila semak senarai baki tertunggak."},
-            {"type": "info", "msg": "Jadual Master 2026: 5 sesi gantian kelas telah disahkan oleh Supervisor."},
-        ]
-    })
+@api_view(['GET'])
+def auth_users(request):
+    """Login accounts, for Management to link staff records to them."""
+    require_role(request, MANAGEMENT)
+    return Response([{
+        'id': u.id, 'username': u.username, 'full_name': display_name(u), 'role': get_role(u),
+    } for u in User.objects.filter(is_active=True).order_by('username')])

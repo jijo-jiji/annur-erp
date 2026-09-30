@@ -110,17 +110,10 @@ async function sleep(ms) {
   await page.evaluate(() => window.scrollBy({ top: -300, behavior: 'smooth' }));
   await sleep(1500);
 
-  // Student Directory & Checklist
+  // Student Directory
   console.log('Admin: Navigating to Pendaftaran & Pelajar...');
   await page.locator('text=Pendaftaran & Pelajar').click();
   await sleep(2500);
-
-  // Toggle checklist button (AT)
-  const checklistBtn = page.locator('table button').first();
-  if (await checklistBtn.isVisible()) {
-    await checklistBtn.click();
-    await sleep(1500);
-  }
 
   // View New Registration Form
   console.log('Admin: Opening Registration Form...');
