@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { X, MessageSquare, Phone, Mail, Plus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useGrades } from './grades';
 import { billingApi, studentsApi } from '../api/client';
-import { STATUS_META, FORM_LABELS, GRADES, waLink, today } from './studentShared';
+import { STATUS_META, GRADES, waLink, today } from './studentShared';
 import { PhotoBox } from './Attachments';
+import { ResultsChart } from './charts';
 import { StudentFeedbackPanel } from './FeedbackViews';
 
 const EVENT_STYLE = {
@@ -31,6 +33,7 @@ function Field({ label, children }) {
 }
 
 export default function StudentDetailModal({ studentId, currentRole, onClose }) {
+  const { forms, formLabel, isForm } = useGrades();
   const { students, timetable, subjects, getMasterOptions, studentAction, refreshStudents, showToast } = useApp();
   const student = students.find((s) => s.id === studentId);
   const [history, setHistory] = useState([]);
@@ -127,7 +130,7 @@ export default function StudentDetailModal({ studentId, currentRole, onClose }) 
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${status.cls}`}>{status.label}</span>
             </div>
             <p className="text-slate-500 mt-0.5">
-              <span className="font-mono font-bold text-indigo-700">{student.student_id}</span> • {FORM_LABELS[student.form_level] || student.form_level}
+              <span className="font-mono font-bold text-indigo-700">{student.student_id}</span> • {formLabel(student.form_level) || student.form_level}
               {' '}• {student.student_type === 'WALK_IN' ? 'Walk-in' : 'Bulanan'} • Daftar {student.join_date}
               {student.on_hold_until && ` • Tangguh hingga ${student.on_hold_until}`}
               {student.left_date && ` • Berhenti ${student.left_date}`}
@@ -255,7 +258,7 @@ export default function StudentDetailModal({ studentId, currentRole, onClose }) 
               {panel === 'enroll' && formPanel((e) => { e.preventDefault(); run('enroll', { class_id: Number(form.class_id), date: form.date }, 'Subjek dikemaskini.'); }, (
                 <>
                   <select required aria-label="Kelas" value={form.class_id} onChange={(e) => setForm({ ...form, class_id: e.target.value })} className={inputCls}>
-                    <option value="">Pilih kelas {FORM_LABELS[student.form_level]}…</option>
+                    <option value="">Pilih kelas {formLabel(student.form_level)}…</option>
                     {classOptions.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.class_code} • {c.day} {c.period_label} • {c.available_seats > 0 ? `baki ${c.available_seats}` : c.available_seats === 0 ? 'PENUH: senarai menunggu' : `LEBIH ${Math.abs(c.available_seats)}: senarai menunggu`}
@@ -345,6 +348,7 @@ export default function StudentDetailModal({ studentId, currentRole, onClose }) 
                   <input type="date" aria-label="Tarikh peperiksaan" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={`${inputCls} col-span-2`} />
                 </div>
               ), 'Simpan')}
+              {results.length > 0 && <ResultsChart results={results} />}
               {results.length === 0 ? <p className="text-slate-400">Tiada keputusan direkodkan.</p> : (
                 <table className="w-full text-left">
                   <thead className="text-slate-400 text-[10px] uppercase"><tr><th className="py-1">Tarikh</th><th>Peperiksaan</th><th>Subjek</th><th>Gred</th><th>Markah</th></tr></thead>

@@ -176,3 +176,45 @@ def decide_registration(student, by, approve, comment=''):
     log(student, 'REJECTED', by, reason_text=comment)
     leads.registration_decided(student, by, False, comment)
     return None
+
+
+def promote(by, dry_run=True, remove_old_classes=True, on=None):
+    """Year-end move of active students to their grade's next grade (master data 1_form).
+    Grades without a next grade (e.g. Tingkatan 5) are left as they are."""
+    from core import grades
+    on = on or date.today()
+    grade_map = grades.by_code()
+    rows = []
+    students = Student.objects.filter(status__in=('ACTIVE', 'ON_HOLD')).prefetch_related('enrolled_classes__subject', 'enrolled_classes__teacher')
+    for student in students.order_by('form_level', 'full_name'):
+        grade = grade_map.get(student.form_level)
+        next_code = grade['next'] if grade else ''
+        row = {'student_id': student.id, 'student_code': student.student_id, 'name': student.full_name,
+               'from': student.form_level, 'from_label': grade['label'] if grade else student.form_level}
+        if not next_code or next_code not in grade_map:
+            rows.append({**row, 'result': 'UNCHANGED', 'reason': 'Tiada gred seterusnya (tamat)' if grade else 'Gred tiada dalam senarai'})
+            continue
+        old_classes = [c for c in student.enrolled_classes.all() if c.form_level == student.form_level]
+        row.update({'to': next_code, 'to_label': grade_map[next_code]['label'],
+                    'classes_removed': [c.class_code for c in old_classes] if remove_old_classes else []})
+        if dry_run:
+            rows.append({**row, 'result': 'READY'})
+            continue
+        with transaction.atomic():
+            student.form_level = next_code
+            student.save(update_fields=['form_level'])
+            if remove_old_classes and old_classes:
+                student.enrolled_classes.remove(*old_classes)
+                ClassWaitlist.objects.filter(student=student, status='WAITING', timetable_class__in=old_classes)\
+                    .update(status='CANCELLED', resolved_by=by)
+            log(student, 'PROMOTE', by, on,
+                description=f"{row['from_label']} → {row['to_label']}",
+                class_label=', '.join(row['classes_removed'])[:100])
+        rows.append({**row, 'result': 'PROMOTED'})
+    return {
+        'dry_run': dry_run,
+        'ready': sum(1 for r in rows if r['result'] == 'READY'),
+        'promoted': sum(1 for r in rows if r['result'] == 'PROMOTED'),
+        'unchanged': sum(1 for r in rows if r['result'] == 'UNCHANGED'),
+        'rows': rows,
+    }

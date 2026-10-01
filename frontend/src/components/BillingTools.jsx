@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { X, Play, Eye, Plus, Tag } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useGrades } from './grades';
 import { billingApi } from '../api/client';
-import { FORM_LABELS, today } from './studentShared';
+import { today } from './studentShared';
 
 export const money = (v) => `RM ${Number(v || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const input = 'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white';
@@ -29,6 +30,7 @@ export function Modal({ title, subtitle, onClose, children }) {
 
 // Monthly run: preview who will be invoiced this month, then raise the invoices in one go
 export function MonthlyRunPanel() {
+  const { forms, formLabel, isForm } = useGrades();
   const { billingAction } = useApp();
   const [month, setMonth] = useState(today().slice(0, 7));
   const [result, setResult] = useState(null);
@@ -100,7 +102,7 @@ export function MonthlyRunPanel() {
                 {billed.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-slate-400">Tiada pelajar untuk dibil bagi bulan ini.</td></tr>}
                 {billed.map((r) => (
                   <tr key={r.student_id}>
-                    <td className="py-2 px-3 font-semibold">{r.name}<div className="text-[10px] text-slate-400 font-normal">{r.student_code} • {FORM_LABELS[r.form_level] || r.form_level}</div></td>
+                    <td className="py-2 px-3 font-semibold">{r.name}<div className="text-[10px] text-slate-400 font-normal">{r.student_code} • {formLabel(r.form_level) || r.form_level}</div></td>
                     <td className="px-3">{r.subjects}</td>
                     <td className="px-3">{money(r.monthly_fee)}</td>
                     <td className="px-3">{Number(r.discount) > 0 ? <span className="text-indigo-700">-{money(r.discount)} <span className="text-[10px]">{r.discount_name}</span></span> : '-'}

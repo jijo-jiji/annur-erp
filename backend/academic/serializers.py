@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import Classroom, TimeSlot, ClassTimetable, ClassRescheduleLog, LessonHandout
+from core import grades
+from .models import TimetableChange, Classroom, TimeSlot, ClassTimetable, ClassRescheduleLog, LessonHandout
 from business_config.serializers import SubjectMasterSerializer
 from teachers.serializers import TeacherSerializer
 
@@ -29,6 +30,18 @@ class ClassTimetableSerializer(serializers.ModelSerializer):
         model = ClassTimetable
         fields = '__all__'
 
+    def validate_form_level(self, value):
+        return grades.validate(value)
+
+class TimetableChangeSerializer(serializers.ModelSerializer):
+    action_label = serializers.CharField(source='get_action_display', read_only=True)
+    status_label = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = TimetableChange
+        fields = '__all__'
+
+
 class ClassRescheduleLogSerializer(serializers.ModelSerializer):
     class_code = serializers.CharField(source='timetable_class.class_code', read_only=True)
     subject_name = serializers.CharField(source='timetable_class.subject.name', read_only=True)
@@ -38,6 +51,9 @@ class ClassRescheduleLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClassRescheduleLog
         fields = '__all__'
+        # Decisions go through the approve / reject / verify actions
+        read_only_fields = ('status', 'supervisor_approved', 'decided_by', 'decision_comment',
+                            'verified_by', 'verified_at', 'recorded_by')
 
 class LessonHandoutSerializer(serializers.ModelSerializer):
     handout_id = serializers.CharField(read_only=True)

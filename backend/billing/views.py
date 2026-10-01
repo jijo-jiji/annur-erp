@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from django.db import transaction
 from django.db.models import F
-from core import numbering
+from core import numbering, pdf
 from core.permissions import APPROVER_ROLES, display_name
 from . import services
 from .models import Discount, Invoice, PaymentReceipt
@@ -88,6 +88,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 class PaymentReceiptViewSet(viewsets.ModelViewSet):
     queryset = PaymentReceipt.objects.all().select_related('invoice', 'student').order_by('-created_at')
     serializer_class = PaymentReceiptSerializer
+
+    @action(detail=True, methods=['get'])
+    def pdf(self, request, pk=None):
+        receipt = self.get_object()
+        return pdf.pdf_response(pdf.receipt_pdf(receipt), f"{receipt.receipt_number}.pdf")
 
     @transaction.atomic
     def perform_create(self, serializer):

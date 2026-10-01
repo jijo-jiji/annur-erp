@@ -77,6 +77,14 @@ class StudentViewSet(viewsets.ModelViewSet):
         student = self.get_queryset().get(pk=student.pk)
         return Response({**self.get_serializer(student).data, **extra})
 
+    @action(detail=False, methods=['post'])
+    def promote(self, request):
+        """Year-end promotion to the next grade; preview first (dry_run), then apply."""
+        require_role(request, *APPROVER_ROLES)
+        dry_run = str(request.data.get('dry_run', 'true')).lower() not in ('false', '0', 'no')
+        remove = str(request.data.get('remove_old_classes', 'true')).lower() not in ('false', '0', 'no')
+        return Response(services.promote(display_name(request.user), dry_run=dry_run, remove_old_classes=remove))
+
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
         require_role(request, *APPROVER_ROLES)

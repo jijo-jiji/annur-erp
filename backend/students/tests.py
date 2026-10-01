@@ -361,3 +361,45 @@ class MonthlyInvoicingTests(Phase2Base):
         self.assertEqual((res.data['invoice_type'], res.data['total_payable']), ('OTHER', '50.00'))
         res = self.client.post(f"/api/v1/billing/invoices/{res.data['id']}/remind/")
         self.assertEqual((res.data['reminder_count'], res.data['last_reminder_at']), (1, date.today().isoformat()))
+
+
+class GradeListTests(Phase2Base):
+    def add_grade(self, code, label, order, nxt, level='UPPER'):
+        from business_config.models import DynamicMasterData
+        DynamicMasterData.objects.create(category='1_form', code=code, label=label, status='APPROVED',
+                                         meta_info={'order': order, 'next': nxt, 'level': level})
+
+    def test_form_must_come_from_master_grade_list(self):
+        self.add_grade('F4', 'Tingkatan 4', 10, 'F5')
+        self.add_grade('F5', 'Tingkatan 5', 11, '')
+        self.add_grade('PRA', 'Pra-U', 12, '')
+        self.as_role(ADMIN)
+        body = {'full_name': 'X', 'ic_number': '0', 'phone_number': '1', 'parent1_name': 'P', 'parent1_phone': '2'}
+        self.assertEqual(self.client.post('/api/v1/students/students/', {**body, 'form_level': 'S5'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post('/api/v1/students/students/', {**body, 'form_level': 'PRA'}, format='json').status_code, 201)
+        codes = [g['code'] for g in self.client.get('/api/v1/business-config/grades/').data]
+        self.assertEqual(codes, ['F4', 'F5', 'PRA'])
+
+    def test_promotion_moves_to_next_grade_and_frees_old_classes(self):
+        self.add_grade('F4', 'Tingkatan 4', 10, 'F5')
+        self.add_grade('F5', 'Tingkatan 5', 11, '')
+        f4 = self.register('Abu', [])
+        Student.objects.filter(pk=f4['id']).update(form_level='F4', status='ACTIVE')
+        f5 = self.register('Ali', [self.kim.id])  # F5 class
+        self.as_role(SUPERVISOR)
+        self.client.post(f"/api/v1/students/students/{f5['id']}/approve/")
+        cls_f4 = ClassTimetable.objects.create(slot=self.kim.slot, form_level='F4', section='A', subject=self.kim.subject)
+        Student.objects.get(pk=f4['id']).enrolled_classes.add(cls_f4)
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.post('/api/v1/students/students/promote/').status_code, 403)
+        self.as_role(SUPERVISOR)
+        preview = self.client.post('/api/v1/students/students/promote/', {'dry_run': True}, format='json').data
+        self.assertEqual((preview['ready'], preview['unchanged']), (1, 1))
+        self.assertEqual(Student.objects.get(pk=f4['id']).form_level, 'F4')
+        done = self.client.post('/api/v1/students/students/promote/', {'dry_run': False}, format='json').data
+        self.assertEqual(done['promoted'], 1)
+        abu = Student.objects.get(pk=f4['id'])
+        self.assertEqual((abu.form_level, abu.enrolled_classes.count()), ('F5', 0))
+        ev = StudentEvent.objects.get(student=abu, event_type='PROMOTE')
+        self.assertEqual(ev.description, 'Tingkatan 4 → Tingkatan 5')
+        self.assertEqual(Student.objects.get(pk=f5['id']).form_level, 'F5')  # no next grade: unchanged

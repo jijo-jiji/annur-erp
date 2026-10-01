@@ -2,7 +2,7 @@
 from collections import defaultdict
 from datetime import date, timedelta
 from django.db.models import Count, Q, Sum
-from academic.models import ClassTimetable, ClassRescheduleLog
+from academic.models import ClassTimetable, ClassRescheduleLog, TimetableChange
 from billing.models import Invoice, PaymentReceipt
 from business_config.models import DynamicMasterData
 from expenses.models import PaymentVoucher
@@ -10,16 +10,16 @@ from students.models import Student, StudentExamResult, StudentEvent, ClassWaitl
 from students.views import attendance_rates
 from teachers.staff import alerts as staff_alerts
 from teachers.models import Teacher, TeacherAttendance, LeaveRequest, TeacherRateIncrement, TeacherPayment
+from . import grades
 from .permissions import ADMIN, MANAGEMENT
 
-FORM_LABELS = dict(Student.FORM_CHOICES)
-FORM_ORDER = ['F5', 'F4', 'F3', 'F2', 'F1', 'S6', 'S5']
-LEVEL_OF_FORM = {
-    'F4': 'UPPER', 'F5': 'UPPER',
-    'F1': 'LOWER', 'F2': 'LOWER', 'F3': 'LOWER',
-    'S5': 'PRIMARY', 'S6': 'PRIMARY',
-}
-LEVEL_LABELS = {'UPPER': 'Menengah Atas (F4-F5)', 'LOWER': 'Menengah Rendah (F1-F3)', 'PRIMARY': 'Rendah (Darjah 5-6)'}
+LEVEL_LABELS = {'UPPER': 'Menengah Atas', 'LOWER': 'Menengah Rendah', 'PRIMARY': 'Sekolah Rendah'}
+
+
+def form_order(present):
+    """Grades highest first (from master data), then any older codes still in use."""
+    order = grades.display_order()
+    return order + sorted(set(present) - set(order))
 COUNTED_PV_STATUSES = ('VERIFIED_ADMIN', 'APPROVED_SUPERVISOR', 'APPROVED_MANAGEMENT')
 LOW_GRADES = ('D', 'E', 'F', 'G', 'TH')
 PERMIT_WARNING_DAYS = 60
@@ -118,6 +118,7 @@ def build_dashboard(role, today=None):
     active = students.filter(status='ACTIVE')
 
     by_form = {row['form_level']: row['n'] for row in active.values('form_level').annotate(n=Count('id'))}
+    form_labels = {code: g['label'] for code, g in grades.by_code().items()}
     new_this = students.filter(join_date__gte=month_start, join_date__lt=next_month).count()
     new_last = students.filter(join_date__gte=prev_start, join_date__lt=month_start).count()
 
@@ -168,7 +169,9 @@ def build_dashboard(role, today=None):
         'vouchers_pending_management': pending_pv.filter(status='PENDING_MANAGEMENT').count(),
         'leave_pending': LeaveRequest.objects.filter(status='PENDING').count(),
         'master_data_pending': DynamicMasterData.objects.filter(status='PENDING').count(),
-        'reschedules_pending': ClassRescheduleLog.objects.filter(supervisor_approved=False).count(),
+        'reschedules_pending': ClassRescheduleLog.objects.filter(status='PENDING').count(),
+        'reschedules_to_verify': ClassRescheduleLog.objects.filter(status='APPROVED', verified_by='').count() if role == MANAGEMENT else 0,
+        'timetable_changes_pending': TimetableChange.objects.filter(status='PENDING').count() if role != ADMIN else 0,
         'rate_increments_pending': TeacherRateIncrement.objects.filter(status='PENDING').count() if role != ADMIN else 0,
         'registrations_pending': Student.objects.filter(status='PENDING').count(),
         'waitlist_waiting': ClassWaitlist.objects.filter(status='WAITING').count(),
@@ -204,17 +207,17 @@ def build_dashboard(role, today=None):
             'on_hold': students.filter(status='ON_HOLD').count(),
             'inactive': students.filter(status='TERMINATED').count(),
             'by_form': [
-                {'form': f, 'label': FORM_LABELS.get(f, f), 'count': by_form.get(f, 0)}
-                for f in FORM_ORDER if by_form.get(f)
+                {'form': f, 'label': form_labels.get(f, f), 'count': by_form.get(f, 0)}
+                for f in form_order(by_form) if by_form.get(f)
             ],
             'by_school_category': [
                 {'category': row['school_category'] or 'Tidak dinyatakan', 'count': row['n']}
                 for row in active.values('school_category').annotate(n=Count('id')).order_by('-n')
             ],
             'subjects_by_form': [
-                {'form': f, 'label': FORM_LABELS.get(f, f),
+                {'form': f, 'label': form_labels.get(f, f),
                  'subjects': sorted(({'subject': k, 'count': v} for k, v in subjects_by_form[f].items()), key=lambda x: -x['count'])}
-                for f in FORM_ORDER if f in subjects_by_form
+                for f in form_order(subjects_by_form) if f in subjects_by_form
             ],
             'new_this_month': new_this,
             'new_last_month': new_last,
@@ -312,7 +315,7 @@ def build_reports(year):
         form = r.student.form_level
         by_form[form]['amount'] += money(r.amount_paid)
         by_form[form]['students'].add(r.student_id)
-        by_level[LEVEL_OF_FORM.get(form, 'UPPER')] += money(r.amount_paid)
+        by_level[grades.level_of(form)] += money(r.amount_paid)
 
     vouchers = PaymentVoucher.objects.filter(date__year=year, status__in=COUNTED_PV_STATUSES)
     for pv in vouchers.values('date__month').annotate(t=Sum('amount')):
@@ -393,10 +396,10 @@ def build_reports(year):
             'walk_in_collected': sum(m['walk_in_collected'] for m in months),
             'outstanding': money(Invoice.objects.filter(status__in=['UNPAID', 'PARTIAL', 'OVERDUE']).aggregate(t=Sum('balance_due'))['t']),
             'by_form': [
-                {'form': f, 'label': FORM_LABELS.get(f, f), 'amount': by_form[f]['amount'],
+                {'form': f, 'label': grades.label(f), 'amount': by_form[f]['amount'],
                  'students': len(by_form[f]['students']),
                  'pct': round(by_form[f]['amount'] / total_collected * 100, 1) if total_collected else 0}
-                for f in FORM_ORDER if f in by_form
+                for f in form_order(by_form) if f in by_form
             ],
             'by_level': [
                 {'level': lv, 'label': LEVEL_LABELS[lv], 'amount': by_level[lv],

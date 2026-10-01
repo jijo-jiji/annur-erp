@@ -162,6 +162,19 @@ export function AppProvider({ children }) {
     }
   };
 
+  const updateMasterData = async (id, data) => {
+    try {
+      const updated = await masterDataApi.update(id, data);
+      setMasterData((prev) => prev.map((item) => (item.id === id ? updated : item)));
+      showToast(`Data induk ${updated.code} dikemas kini.`);
+      return updated;
+    } catch (err) {
+      const detail = err.data && typeof err.data === 'object' ? Object.values(err.data).flat().join(' ') : '';
+      showToast(detail || err.message || 'Ralat mengemas kini data induk.', 'error');
+      throw err;
+    }
+  };
+
   const approveMasterData = async (id, approverRole = 'Supervisor') => {
     try {
       const updated = await masterDataApi.approve(id, approverRole);
@@ -417,22 +430,33 @@ export function AppProvider({ children }) {
       const saved = classId
         ? await academicApi.updateClass(classId, payload)
         : await academicApi.createClass(payload);
+      if (saved?.pending_change) {
+        // Supervisor: the change waits for Management
+        showToast(saved.message || 'Perubahan dihantar untuk kelulusan Management.', 'info');
+        return saved;
+      }
       await refreshTimetable();
       showToast(classId ? `Sesi ${saved.class_code} dikemaskini.` : `Sesi baharu ${saved.class_code} ditambah.`);
       return saved;
     } catch (err) {
-      showToast(err.message || 'Ralat menyimpan sesi kelas.', 'error');
+      const detail = err.data && typeof err.data === 'object' ? Object.values(err.data).flat().join(' ') : '';
+      showToast(detail || err.message || 'Ralat menyimpan sesi kelas.', 'error');
       throw err;
     }
   };
 
   const deleteClass = async (classId, classCode) => {
     try {
-      await academicApi.deleteClass(classId);
+      const res = await academicApi.deleteClass(classId);
+      if (res?.pending_change) {
+        showToast(`Permintaan padam ${classCode} dihantar untuk kelulusan Management.`, 'info');
+        return res;
+      }
       await refreshTimetable();
       showToast(`Sesi ${classCode} dipadam dari jadual.`, 'info');
     } catch (err) {
-      showToast(err.message || 'Ralat memadam sesi kelas.', 'error');
+      const detail = err.data && typeof err.data === 'object' ? Object.values(err.data).flat().join(' ') : '';
+      showToast(detail || err.message || 'Ralat memadam sesi kelas.', 'error');
       throw err;
     }
   };
@@ -452,14 +476,16 @@ export function AppProvider({ children }) {
     }
   };
 
-  const approveReschedule = async (logId) => {
+  // approve / reject / verify an extra or cancelled class
+  const rescheduleAction = async (logId, name, data, successMessage) => {
     try {
-      const updated = await academicApi.updateRescheduleLog(logId, { supervisor_approved: true });
+      const updated = await academicApi.rescheduleAction(logId, name, data);
       setReschedules((prev) => prev.map((r) => (r.id === logId ? updated : r)));
-      showToast(`Gantian kelas ${updated.class_code} diluluskan.`);
+      if (successMessage) showToast(successMessage);
       return updated;
     } catch (err) {
-      showToast(err.message || 'Ralat meluluskan gantian kelas.', 'error');
+      const detail = err.data && typeof err.data === 'object' ? Object.values(err.data).flat().join(' ') : '';
+      showToast(detail || err.message || 'Ralat mengemaskini gantian kelas.', 'error');
       throw err;
     }
   };
@@ -555,6 +581,7 @@ export function AppProvider({ children }) {
     getMasterOptions,
     proposeMasterData,
     approveMasterData,
+    updateMasterData,
     rejectMasterData,
 
     // Operations
@@ -578,7 +605,8 @@ export function AppProvider({ children }) {
     saveClass,
     deleteClass,
     createReschedule,
-    approveReschedule,
+    rescheduleAction,
+    refreshTimetable,
     markRescheduleNotified,
     refreshTeachers,
   };

@@ -1,10 +1,11 @@
 from rest_framework import serializers
 from .models import Student, StudentExamResult, Lead, LeadActivity, StudentEvent, ClassWaitlist, StudentFeedback
 from academic.serializers import ClassTimetableSerializer
+from core import grades
 
 
 class StudentSerializer(serializers.ModelSerializer):
-    standing_discount_name = serializers.CharField(source='standing_discount.__str__', read_only=True, default=None)
+    standing_discount_name = serializers.SerializerMethodField()
     student_id = serializers.CharField(read_only=True)
     join_date = serializers.DateField(required=False)
     enrolled_classes_details = ClassTimetableSerializer(source='enrolled_classes', many=True, read_only=True)
@@ -18,6 +19,12 @@ class StudentSerializer(serializers.ModelSerializer):
             'status', 'registration_comment', 'registration_decided_by', 'on_hold_until', 'left_date',
             'credit_balance', 'enrolled_classes',
         )
+
+    def validate_form_level(self, value):
+        return grades.validate(value)
+
+    def get_standing_discount_name(self, obj):
+        return str(obj.standing_discount) if obj.standing_discount_id else None
 
     def get_waiting_for(self, obj):
         return [
@@ -97,6 +104,9 @@ class LeadSerializer(serializers.ModelSerializer):
         fields = '__all__'
         # Stage changes go through the move / lost / convert actions so each one is logged
         read_only_fields = ['stage_changed_at', 'lost_at_stage', 'lost_reason', 'next_follow_up', 'converted_student']
+
+    def validate_form_level(self, value):
+        return grades.validate(value)
 
     def get_activity_count(self, obj):
         annotated = getattr(obj, 'activity_total', None)

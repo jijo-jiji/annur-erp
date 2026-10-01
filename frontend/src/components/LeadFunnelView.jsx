@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Filter, Plus, MessageSquare, ChevronRight, X, Save, AlertCircle, Clock, UserPlus, Ban, RotateCcw, Download } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useGrades } from './grades';
 import { leadsApi } from '../api/client';
-import { FORMS, FORM_LABELS, today, waLink, downloadCsv } from './studentShared';
+import { today, waLink, downloadCsv } from './studentShared';
 import { Donut } from './charts';
 
 // j-status.doc: the 8 conversion stages, in order
@@ -51,6 +52,7 @@ function Modal({ title, subtitle, onClose, children, wide }) {
 }
 
 function LeadForm({ value, onChange, sources, subjects, campaigns }) {
+  const { forms, formLabel, isForm } = useGrades();
   const set = (patch) => onChange({ ...value, ...patch });
   const toggleSubject = (code) => set({
     interested_subjects: value.interested_subjects.includes(code)
@@ -67,7 +69,7 @@ function LeadForm({ value, onChange, sources, subjects, campaigns }) {
         <div>
           <label htmlFor="ld-form" className={labelCls}>Tingkatan / Darjah *</label>
           <select id="ld-form" value={value.form_level} onChange={(e) => set({ form_level: e.target.value })} className={input}>
-            {FORMS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            {forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
           </select>
         </div>
         <div><label htmlFor="ld-school" className={labelCls}>Sekolah</label><input id="ld-school" value={value.school_name} onChange={(e) => set({ school_name: e.target.value })} className={input} /></div>
@@ -141,6 +143,7 @@ function AddLeadModal({ onClose, sources, subjects, campaigns }) {
 }
 
 function LeadDetailModal({ lead, onClose, sources, sourceLabel, subjects, subjectName, campaigns, onConverted }) {
+  const { forms, formLabel, isForm } = useGrades();
   const { leadAction, updateLead, convertLeadToStudent } = useApp();
   const [activities, setActivities] = useState([]);
   const [edit, setEdit] = useState(null);
@@ -184,7 +187,7 @@ function LeadDetailModal({ lead, onClose, sources, sourceLabel, subjects, subjec
   return (
     <Modal
       title={`${lead.student_name}`}
-      subtitle={`${lead.lead_id} • ${FORM_LABELS[lead.form_level] || lead.form_level} • ${STAGE_LABEL[lead.status]}`}
+      subtitle={`${lead.lead_id} • ${formLabel(lead.form_level) || lead.form_level} • ${STAGE_LABEL[lead.status]}`}
       onClose={onClose}
       wide
     >
@@ -378,6 +381,7 @@ function Kpi({ label, value, note, tone = 'text-slate-900' }) {
 }
 
 export default function LeadFunnelView({ onConvertToStudent }) {
+  const { forms, formLabel, isForm } = useGrades();
   const { leads, leadAction, getMasterOptions, subjects } = useApp();
   const [filters, setFilters] = useState({ source: '', form: '', campaign: '', start: '', end: '' });
   const [dueOnly, setDueOnly] = useState(false);
@@ -451,7 +455,7 @@ export default function LeadFunnelView({ onConvertToStudent }) {
         </select>
         <select aria-label="Tingkatan" value={filters.form} onChange={(e) => setFilter({ form: e.target.value })} className={select}>
           <option value="">Semua tingkatan</option>
-          {FORMS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+          {forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
         <select aria-label="Kempen" value={filters.campaign} onChange={(e) => setFilter({ campaign: e.target.value })} className={select}>
           <option value="">Semua kempen</option>

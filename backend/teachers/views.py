@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from datetime import date, datetime
 from django.db.models import Q
 from django.utils.dateparse import parse_date, parse_time
-from core import numbering
+from core import numbering, pdf
 from core.permissions import MANAGEMENT, APPROVER_ROLES, display_name, get_role, require_role
 from . import payroll
 from . import staff as staff_hr
@@ -134,6 +134,12 @@ class TeacherPaymentViewSet(viewsets.ReadOnlyModelViewSet):
     def sessions(self, request, pk=None):
         payment = self.get_object()
         return Response(payroll.sessions_for(payment.teacher_id, payment.month))
+
+    @action(detail=True, methods=['get'])
+    def payslip(self, request, pk=None):
+        payment = self.get_object()
+        data = pdf.payslip_pdf(payment, payroll.sessions_for(payment.teacher_id, payment.month))
+        return pdf.pdf_response(data, f"slip-gaji-{payment.teacher.teacher_code}-{payment.month:%Y-%m}.pdf")
 
     @action(detail=True, methods=['post'])
     def adjust(self, request, pk=None):

@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from business_config.views import (
+    grade_list,
     SubjectMasterViewSet, PricingTierViewSet, BusinessSettingViewSet,
     TeacherRateSettingViewSet, DynamicMasterDataViewSet
 )
@@ -11,6 +12,7 @@ from teachers.views import (
     StaffMemberViewSet, StaffAttendanceViewSet, LeaveRequestViewSet
 )
 from academic.views import (
+    TimetableChangeViewSet,
     ClassroomViewSet, TimeSlotViewSet, ClassTimetableViewSet,
     ClassRescheduleLogViewSet, LessonHandoutViewSet
 )
@@ -36,6 +38,7 @@ router.register(r'academic/classrooms', ClassroomViewSet)
 router.register(r'academic/time-slots', TimeSlotViewSet)
 router.register(r'academic/timetable', ClassTimetableViewSet)
 router.register(r'academic/reschedule-logs', ClassRescheduleLogViewSet)
+router.register(r'academic/timetable-changes', TimetableChangeViewSet)
 router.register(r'academic/handouts', LessonHandoutViewSet)
 
 # Teachers & Staff HR
@@ -75,6 +78,7 @@ urlpatterns = [
     path('api/v1/auth/logout/', auth_logout),
     path('api/v1/', include(router.urls)),
     path('api/v1/auth/users/', auth_users),
+    path('api/v1/business-config/grades/', grade_list),
     path('api/v1/dashboard/summary/', dashboard_summary),
     path('api/v1/reports/summary/', reports_summary),
     path('api/v1/students/parent-self-register/', parent_self_register),

@@ -5,12 +5,71 @@ import React, { useState } from 'react';
 export const SERIES_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'];
 const OTHER_COLOR = '#94a3b8';
 
+// Colour follows the category (its position in `rows`, or its own `color`), so a category
+// keeps its colour when others are empty
 function foldRows(rows) {
-  const sorted = rows.filter((r) => r.value > 0);
-  if (sorted.length <= SERIES_COLORS.length) return sorted.map((r, i) => ({ ...r, color: SERIES_COLORS[i] }));
-  const head = sorted.slice(0, SERIES_COLORS.length - 1).map((r, i) => ({ ...r, color: SERIES_COLORS[i] }));
-  const rest = sorted.slice(SERIES_COLORS.length - 1).reduce((s, r) => s + r.value, 0);
-  return [...head, { label: 'Lain-lain', value: rest, color: OTHER_COLOR }];
+  const coloured = rows.map((r, i) => ({ ...r, color: r.color || SERIES_COLORS[i] || OTHER_COLOR }));
+  if (coloured.length <= SERIES_COLORS.length) return coloured.filter((r) => r.value > 0);
+  const head = coloured.slice(0, SERIES_COLORS.length - 1);
+  const rest = coloured.slice(SERIES_COLORS.length - 1).reduce((s, r) => s + r.value, 0);
+  return [...head, { label: 'Lain-lain', value: rest, color: OTHER_COLOR }].filter((r) => r.value > 0);
+}
+
+// Status colours (reserved for states, always shown with their label)
+export const STATUS_COLORS = { good: '#008300', warning: '#eda100', serious: '#eb6834', critical: '#e34948' };
+
+// Marks over time, one line per subject (j-status.doc: each student result graph)
+export function ResultsChart({ results, height = 180 }) {
+  const [hover, setHover] = useState(null);
+  const points = results.filter((r) => r.mark !== null && r.mark !== undefined && r.exam_date)
+    .map((r) => ({ ...r, t: new Date(`${r.exam_date}T00:00:00`).getTime(), mark: Number(r.mark) }));
+  if (points.length === 0) return <p className="text-xs text-slate-400">Masukkan keputusan dengan markah untuk melihat graf.</p>;
+  const subjects = [...new Set(points.map((p) => p.subject_name))];
+  const color = (s) => SERIES_COLORS[subjects.indexOf(s)] || OTHER_COLOR;
+  const width = 520;
+  const pad = { l: 30, r: 12, t: 10, b: 24 };
+  const tMin = Math.min(...points.map((p) => p.t));
+  const tMax = Math.max(...points.map((p) => p.t));
+  const x = (t) => pad.l + (tMax === tMin ? (width - pad.l - pad.r) / 2 : ((t - tMin) / (tMax - tMin)) * (width - pad.l - pad.r));
+  const y = (m) => pad.t + (1 - m / 100) * (height - pad.t - pad.b);
+  const dates = [...new Set(points.map((p) => p.exam_date))].sort();
+  const fmt = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('ms-MY', { month: 'short', year: '2-digit' });
+
+  return (
+    <div className="space-y-2">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img"
+        aria-label={`Graf markah: ${subjects.join(', ')}`}>
+        {[0, 25, 50, 75, 100].map((m) => (
+          <g key={m}>
+            <line x1={pad.l} x2={width - pad.r} y1={y(m)} y2={y(m)} stroke="#e2e8f0" strokeWidth="1" />
+            <text x={pad.l - 6} y={y(m) + 3} textAnchor="end" fontSize="9" className="fill-slate-400">{m}</text>
+          </g>
+        ))}
+        {dates.map((d) => (
+          <text key={d} x={x(new Date(`${d}T00:00:00`).getTime())} y={height - 6} textAnchor="middle" fontSize="9" className="fill-slate-500">{fmt(d)}</text>
+        ))}
+        {subjects.map((s) => {
+          const series = points.filter((p) => p.subject_name === s).sort((a, b) => a.t - b.t);
+          return (
+            <g key={s}>
+              {series.length > 1 && <polyline points={series.map((p) => `${x(p.t)},${y(p.mark)}`).join(' ')} fill="none" stroke={color(s)} strokeWidth="2" />}
+              {series.map((p) => (
+                <circle key={p.id} cx={x(p.t)} cy={y(p.mark)} r={hover === p.id ? 6 : 4} fill={color(s)} stroke="#fff" strokeWidth="2"
+                  onMouseEnter={() => setHover(p.id)} onMouseLeave={() => setHover(null)}>
+                  <title>{`${s} • ${p.exam_name} (${p.exam_date}): ${p.mark}% gred ${p.grade}`}</title>
+                </circle>
+              ))}
+            </g>
+          );
+        })}
+      </svg>
+      <div className="flex flex-wrap gap-3 text-[11px]">
+        {subjects.map((s) => (
+          <span key={s} className="flex items-center gap-1.5 text-slate-700"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: color(s) }} />{s}</span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // Donut with a legend that doubles as the data table (label, count, %)

@@ -43,7 +43,7 @@ def roster(on):
     notes = defaultdict(list)
     logs = ClassRescheduleLog.objects.select_related(
         'timetable_class__slot', 'timetable_class__subject', 'timetable_class__teacher', 'timetable_class__classroom',
-    ).filter(Q(tarikh_batal=on) | Q(tarikh_ganti=on))
+    ).filter(Q(tarikh_batal=on) | Q(tarikh_ganti=on)).exclude(status='REJECTED')
     for log in logs:
         if log.tarikh_batal == on:
             notes[log.timetable_class_id].append('Dijadual batal (catatan batal/ganti)')

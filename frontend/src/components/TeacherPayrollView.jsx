@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Calculator, MessageSquare, Printer, X, Download } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { teacherPayApi } from '../api/client';
+import { teacherPayApi, downloadPdf } from '../api/client';
 import { downloadCsv, today, waLink } from './studentShared';
 
 const money = (v) => `RM ${Number(v || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -49,6 +49,7 @@ const payslipText = (p, sessions) => [
 ].filter(Boolean).join('\n');
 
 function Payslip({ payment, onClose }) {
+  const { showToast } = useApp();
   const [sessions, setSessions] = useState([]);
   useEffect(() => { teacherPayApi.sessions(payment.id).then(setSessions).catch(() => setSessions([])); }, [payment.id]);
   return (
@@ -87,7 +88,8 @@ function Payslip({ payment, onClose }) {
           <a href={waLink(payment.teacher_phone, payslipText(payment, sessions))} target="_blank" rel="noreferrer"
             className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold inline-flex items-center gap-1"><MessageSquare className="w-4 h-4" /> WhatsApp Slip</a>
         )}
-        <button onClick={() => window.print()} className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold inline-flex items-center gap-1 cursor-pointer"><Printer className="w-4 h-4" /> Cetak / PDF</button>
+        <button onClick={() => downloadPdf(`/teachers/payments/${payment.id}/payslip/`, `slip-gaji-${payment.teacher_code}-${payment.month.slice(0, 7)}.pdf`).catch((err) => showToast(err.message, 'error'))}
+          className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold inline-flex items-center gap-1 cursor-pointer"><Download className="w-4 h-4" /> Slip PDF</button>
       </div>
     </Modal>
   );

@@ -1,9 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Info, TrendingUp, Bell } from 'lucide-react';
 import { dashboardApi } from '../api/client';
+import { Donut, STATUS_COLORS } from './charts';
 
 const ROLE_LEVEL = { ADMIN: 1, SUPERVISOR: 2, MANAGEMENT: 3 };
 const INVOICE_STATUS = { PAID: 'Selesai Bayar', PARTIAL: 'Sebahagian', UNPAID: 'Belum Bayar', OVERDUE: 'Tertunggak' };
+const INVOICE_STATUS_COLOR = { PAID: STATUS_COLORS.good, PARTIAL: STATUS_COLORS.warning, UNPAID: STATUS_COLORS.serious, OVERDUE: STATUS_COLORS.critical };
+const INVOICE_ORDER = ['PAID', 'PARTIAL', 'UNPAID', 'OVERDUE'];
+
+// j-status.doc: pie of subjects per form, one form at a time
+function SubjectsByForm({ rows }) {
+  const [form, setForm] = useState(rows[0]?.form || '');
+  const current = rows.find((f) => f.form === form) || rows[0];
+  if (!current) return <p className="text-xs text-slate-400">Tiada pendaftaran kelas.</p>;
+  return (
+    <div className="space-y-3">
+      <select aria-label="Tingkatan" value={current.form} onChange={(e) => setForm(e.target.value)}
+        className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold">
+        {rows.map((f) => <option key={f.form} value={f.form}>{f.label}</option>)}
+      </select>
+      <Donut rows={current.subjects.map((x) => ({ label: x.subject, value: x.count }))} />
+    </div>
+  );
+}
 
 const money = (v) => `RM ${Number(v || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -156,6 +175,8 @@ export default function DashboardView({ onNavigate, currentRole = 'ADMIN' }) {
   if (approvals.teacher_pay_to_verify) notices.push({ tone: 'info', text: `${approvals.teacher_pay_to_verify} gaji guru menunggu pengesahan Supervisor`, tab: 'teacher_payroll' });
   if (level >= 3 && approvals.teacher_pay_to_approve) notices.push({ tone: 'warning', text: `${approvals.teacher_pay_to_approve} gaji guru menunggu kelulusan Management`, tab: 'teacher_payroll' });
   if (approvals.teacher_pay_to_record) notices.push({ tone: 'info', text: `${approvals.teacher_pay_to_record} gaji guru diluluskan, belum direkod dibayar`, tab: 'teacher_payroll' });
+  if (level >= 3 && approvals.timetable_changes_pending) notices.push({ tone: 'warning', text: `${approvals.timetable_changes_pending} perubahan jadual induk menunggu kelulusan Management`, tab: 'timetable' });
+  if (level >= 3 && approvals.reschedules_to_verify) notices.push({ tone: 'info', text: `${approvals.reschedules_to_verify} kelas ganti/tambahan menunggu pengesahan Management`, tab: 'reschedules' });
   if (approvals.lead_followups_due) notices.push({ tone: 'warning', text: `${approvals.lead_followups_due} lead perlu susulan (lebih seminggu sejak tindakan terakhir)`, tab: 'leads' });
   if (approvals.waitlist_waiting) notices.push({ tone: 'info', text: `${approvals.waitlist_waiting} pelajar dalam senarai menunggu kelas penuh`, tab: 'students' });
   attendance.low_classes.forEach((c) => notices.push({
@@ -253,7 +274,7 @@ export default function DashboardView({ onNavigate, currentRole = 'ADMIN' }) {
         </Card>
 
         <Card title="Pelajar Aktif Mengikut Tingkatan" subtitle="Aktif (bulanan & walk-in)">
-          <Bars rows={students.by_form.map((f) => ({ label: f.label, value: f.count }))} />
+          <Donut rows={students.by_form.map((f) => ({ label: f.label, value: f.count }))} />
         </Card>
       </div>
 
@@ -305,34 +326,17 @@ export default function DashboardView({ onNavigate, currentRole = 'ADMIN' }) {
               ]} />
             </Card>
             <Card title="Status Pelajar" subtitle="Aktif, ditangguh, tidak aktif">
-              <Bars rows={[
-                { label: 'Aktif', value: students.active },
-                { label: 'Ditangguh', value: students.on_hold },
-                { label: 'Tidak Aktif', value: students.inactive },
-              ]} colorClass="bg-blue-600" />
+              <Donut rows={[
+                { label: 'Aktif', value: students.active, color: STATUS_COLORS.good },
+                { label: 'Ditangguh', value: students.on_hold, color: STATUS_COLORS.warning },
+                { label: 'Tidak Aktif', value: students.inactive, color: '#94a3b8' },
+              ]} />
             </Card>
             <Card title="Kategori Sekolah" subtitle="Pelajar aktif">
-              <Bars rows={students.by_school_category.map((c) => ({ label: c.category, value: c.count }))} colorClass="bg-teal-600" />
+              <Donut rows={students.by_school_category.map((c) => ({ label: c.category, value: c.count }))} />
             </Card>
             <Card title="Subjek Mengikut Tingkatan" subtitle="Bilangan pendaftaran kelas">
-              {students.subjects_by_form.length === 0 ? (
-                <p className="text-xs text-slate-400">Tiada pendaftaran kelas.</p>
-              ) : (
-                <div className="space-y-3 text-xs max-h-72 overflow-y-auto pr-1">
-                  {students.subjects_by_form.map((f) => (
-                    <div key={f.form}>
-                      <div className="font-bold text-slate-800 mb-1">{f.label}</div>
-                      <div className="flex flex-wrap gap-1">
-                        {f.subjects.map((s) => (
-                          <span key={s.subject} className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-semibold">
-                            {s.subject}: {s.count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <SubjectsByForm rows={students.subjects_by_form} />
             </Card>
           </div>
         </>
@@ -342,14 +346,10 @@ export default function DashboardView({ onNavigate, currentRole = 'ADMIN' }) {
       {level >= 3 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card title="Status Kutipan Invois" subtitle="Semua invois">
-            <Bars
-              rows={finance.collection_status.map((c) => ({
-                label: INVOICE_STATUS[c.status] || c.status,
-                value: c.count,
-                display: `${c.count} invois`,
-              }))}
-              colorClass="bg-emerald-600"
-            />
+            <Donut rows={INVOICE_ORDER.map((st) => {
+              const c = finance.collection_status.find((x) => x.status === st);
+              return { label: INVOICE_STATUS[st], value: c ? c.count : 0, color: INVOICE_STATUS_COLOR[st] };
+            })} />
           </Card>
           <Card title="Jualan & Perbelanjaan Bulan Ini" action={<TrendingUp className="w-4 h-4 text-indigo-600" />}>
             <div className="space-y-2 text-xs">

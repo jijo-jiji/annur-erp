@@ -398,17 +398,17 @@ class Command(BaseCommand):
         self.stdout.write("Seeding all 21 Dynamic Master Data categories...")
         master_seed_data = [
             # 1. Form / Tingkatan
-            ("1_form", "S1", "Darjah 1", {"level": "Primary", "order": 1}, "APPROVED"),
-            ("1_form", "S2", "Darjah 2", {"level": "Primary", "order": 2}, "APPROVED"),
-            ("1_form", "S3", "Darjah 3", {"level": "Primary", "order": 3}, "APPROVED"),
-            ("1_form", "S4", "Darjah 4", {"level": "Primary", "order": 4}, "APPROVED"),
-            ("1_form", "S5", "Darjah 5", {"level": "Primary", "order": 5}, "APPROVED"),
-            ("1_form", "S6", "Darjah 6", {"level": "Primary", "order": 6}, "APPROVED"),
-            ("1_form", "F1", "Tingkatan 1", {"level": "Lower Sec", "order": 7}, "APPROVED"),
-            ("1_form", "F2", "Tingkatan 2", {"level": "Lower Sec", "order": 8}, "APPROVED"),
-            ("1_form", "F3", "Tingkatan 3", {"level": "Lower Sec", "order": 9}, "APPROVED"),
-            ("1_form", "F4", "Tingkatan 4", {"level": "Upper Sec", "order": 10}, "APPROVED"),
-            ("1_form", "F5", "Tingkatan 5", {"level": "Upper Sec", "order": 11}, "APPROVED"),
+            ("1_form", "S1", "Darjah 1", {"level": "PRIMARY", "order": 1, "next": "S2", "description": ""}, "APPROVED"),
+            ("1_form", "S2", "Darjah 2", {"level": "PRIMARY", "order": 2, "next": "S3", "description": ""}, "APPROVED"),
+            ("1_form", "S3", "Darjah 3", {"level": "PRIMARY", "order": 3, "next": "S4", "description": ""}, "APPROVED"),
+            ("1_form", "S4", "Darjah 4", {"level": "PRIMARY", "order": 4, "next": "S5", "description": ""}, "APPROVED"),
+            ("1_form", "S5", "Darjah 5", {"level": "PRIMARY", "order": 5, "next": "S6", "description": ""}, "APPROVED"),
+            ("1_form", "S6", "Darjah 6", {"level": "PRIMARY", "order": 6, "next": "F1", "description": ""}, "APPROVED"),
+            ("1_form", "F1", "Tingkatan 1", {"level": "LOWER", "order": 7, "next": "F2", "description": ""}, "APPROVED"),
+            ("1_form", "F2", "Tingkatan 2", {"level": "LOWER", "order": 8, "next": "F3", "description": ""}, "APPROVED"),
+            ("1_form", "F3", "Tingkatan 3", {"level": "LOWER", "order": 9, "next": "F4", "description": ""}, "APPROVED"),
+            ("1_form", "F4", "Tingkatan 4", {"level": "UPPER", "order": 10, "next": "F5", "description": ""}, "APPROVED"),
+            ("1_form", "F5", "Tingkatan 5", {"level": "UPPER", "order": 11, "next": "", "description": ""}, "APPROVED"),
 
             # 2. Subjek Diminati (Interested Subjects)
             ("2_interested_sub", "FZ", "Fizik (SPM)", {"stream": "Sains", "code": 4531}, "APPROVED"),

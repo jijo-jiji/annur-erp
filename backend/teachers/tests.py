@@ -10,7 +10,7 @@ from teachers.models import Teacher, TeacherAttendance, TeacherPayment, StaffMem
 FRIDAY = date(2026, 10, 2)  # a Friday (JUMAAT)
 
 
-class TeacherPayrollTests(APITestCase):
+class PayrollBase(APITestCase):
     def setUp(self):
         self.users = {}
         for role in ALL_ROLES:
@@ -35,6 +35,8 @@ class TeacherPayrollTests(APITestCase):
     def save(self, marks, on=FRIDAY):
         return self.client.post('/api/v1/teachers/attendance/roster/', {'date': on.isoformat(), 'marks': marks}, format='json')
 
+
+class TeacherPayrollTests(PayrollBase):
     def test_roster_lists_the_days_classes_plus_moved_classes(self):
         self.as_role(ADMIN)
         ClassRescheduleLog.objects.create(timetable_class=self.sat, tarikh_batal=date(2026, 10, 3), tarikh_ganti=FRIDAY)
@@ -214,3 +216,26 @@ class StaffHRTests(APITestCase):
         staff = self.client.get('/api/v1/dashboard/summary/').data['staff']
         self.assertEqual(staff['contracts_ending'][0]['days_left'], 20)
         self.assertEqual(staff['birthdays'][0]['days_left'], 3)
+
+
+class PdfTests(PayrollBase):
+    def test_payslip_and_receipt_pdfs(self):
+        self.as_role(ADMIN)
+        self.save([{'class_id': self.fz.id, 'status': 'PRESENT'}])
+        self.as_role(SUPERVISOR)
+        pay = self.client.post('/api/v1/teachers/payments/calculate/', {'month': '2026-10'}, format='json').data['payments'][0]
+        res = self.client.get(f"/api/v1/teachers/payments/{pay['id']}/payslip/")
+        self.assertEqual((res.status_code, res['Content-Type']), (200, 'application/pdf'))
+        self.assertTrue(res.content.startswith(b'%PDF'))
+        self.assertIn('slip-gaji-ALI-2026-10.pdf', res['Content-Disposition'])
+        self.as_role(ADMIN)  # pay is hidden from Admin
+        self.assertEqual(self.client.get(f"/api/v1/teachers/payments/{pay['id']}/payslip/").status_code, 403)
+        # Receipt PDF for a payment
+        from students.models import Student
+        from billing.models import Invoice, PaymentReceipt
+        st = Student.objects.create(student_id='AN-X', full_name='Ali', ic_number='1', form_level='F5', phone_number='1', join_date='2026-01-01', status='ACTIVE')
+        inv = Invoice.objects.create(invoice_number='INV-X', student=st, billing_month='2026-10-01', monthly_fee=100, total_payable=100, balance_due=100, due_date='2026-10-07')
+        rec = self.client.post('/api/v1/billing/receipts/', {'invoice': inv.id, 'amount_paid': '100.00', 'payment_method': 'CASH'}, format='json').data
+        res = self.client.get(f"/api/v1/billing/receipts/{rec['id']}/pdf/")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.content.startswith(b'%PDF'))

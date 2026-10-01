@@ -1,15 +1,5 @@
 // Shared labels and helpers for the student screens
 
-export const FORMS = [
-  { value: 'F5', label: 'Tingkatan 5' },
-  { value: 'F4', label: 'Tingkatan 4' },
-  { value: 'F3', label: 'Tingkatan 3' },
-  { value: 'F2', label: 'Tingkatan 2' },
-  { value: 'F1', label: 'Tingkatan 1' },
-  { value: 'S6', label: 'Darjah 6' },
-  { value: 'S5', label: 'Darjah 5' },
-];
-export const FORM_LABELS = Object.fromEntries(FORMS.map((f) => [f.value, f.label]));
 
 export const STATUS_META = {
   PENDING: { label: 'Menunggu Kelulusan', cls: 'bg-amber-100 text-amber-800' },

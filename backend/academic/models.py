@@ -31,15 +31,6 @@ class TimeSlot(models.Model):
         return f"{self.day} {self.start_time}-{self.end_time} ({self.period_label})"
 
 class ClassTimetable(models.Model):
-    FORM_CHOICES = [
-        ('S5', 'Darjah 5'),
-        ('S6', 'Darjah 6'),
-        ('F1', 'Form 1'),
-        ('F2', 'Form 2'),
-        ('F3', 'Form 3'),
-        ('F4', 'Form 4'),
-        ('F5', 'Form 5'),
-    ]
     SECTION_CHOICES = [
         ('A', 'Seksyen A'),
         ('B', 'Seksyen B'),
@@ -48,7 +39,7 @@ class ClassTimetable(models.Model):
     ]
     slot = models.ForeignKey(TimeSlot, on_delete=models.CASCADE, related_name='classes')
     subject = models.ForeignKey(SubjectMaster, on_delete=models.CASCADE)
-    form_level = models.CharField(max_length=10, choices=FORM_CHOICES)
+    form_level = models.CharField(max_length=10)  # grade code from master data 1_form (core.grades)
     section = models.CharField(max_length=5, choices=SECTION_CHOICES, default='A')
     teacher = models.ForeignKey(Teacher, on_delete=models.SET_NULL, null=True, blank=True)
     classroom = models.ForeignKey(Classroom, on_delete=models.SET_NULL, null=True, blank=True)
@@ -96,7 +87,19 @@ class ClassRescheduleLog(models.Model):
     is_extra_class = models.BooleanField(default=False)
     reason_type = models.CharField(max_length=30, choices=REASON_CHOICES, default='OTHER')
     remarks = models.TextField(blank=True)
-    supervisor_approved = models.BooleanField(default=False)
+    STATUS_CHOICES = [
+        ('PENDING', 'Menunggu Kelulusan Supervisor'),
+        ('APPROVED', 'Diluluskan'),
+        ('REJECTED', 'Ditolak'),
+    ]
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    supervisor_approved = models.BooleanField(default=False)  # kept in step with status == APPROVED
+    decided_by = models.CharField(max_length=120, blank=True)
+    decision_comment = models.TextField(blank=True)
+    # j-status.doc: Management verifies extra / cancel classes
+    verified_by = models.CharField(max_length=120, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    recorded_by = models.CharField(max_length=120, blank=True)
     whatsapp_notification_sent = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -132,3 +135,25 @@ class LessonHandout(models.Model):
     def __str__(self):
         return f"[{self.handout_id}] {self.title} ({self.form_level})"
 
+
+
+
+class TimetableChange(models.Model):
+    """A Supervisor's change to the master timetable, applied once Management approves it
+    (j-status.doc: Management sets and approves / rejects the master timetable)."""
+    ACTIONS = [('CREATE', 'Tambah Kelas'), ('UPDATE', 'Ubah Kelas'), ('DELETE', 'Padam Kelas')]
+    STATUS_CHOICES = [('PENDING', 'Menunggu Kelulusan Management'), ('APPROVED', 'Diluluskan'), ('REJECTED', 'Ditolak')]
+    action = models.CharField(max_length=10, choices=ACTIONS)
+    timetable_class = models.ForeignKey(ClassTimetable, on_delete=models.SET_NULL, null=True, blank=True, related_name='changes')
+    class_label = models.CharField(max_length=100, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    summary = models.TextField(blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    requested_by = models.CharField(max_length=120, blank=True)
+    decided_by = models.CharField(max_length=120, blank=True)
+    decision_comment = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']

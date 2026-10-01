@@ -55,7 +55,8 @@ export default function Sidebar({ activeTab, setActiveTab, currentRole }) {
     { id: 'management_config', label: 'Hab Konfigurasi Perniagaan', icon: Sliders, badge: 'No-Code' },
     { id: 'students', label: 'Audit Enrolmen & Hasil Pelajar', icon: UserPlus },
     { id: 'attendance', label: 'Kehadiran Pelajar', icon: CheckSquare },
-    { id: 'timetable', label: 'Pemantauan Kapasiti Premis', icon: Calendar },
+    { id: 'timetable', label: 'Jadual Induk: Kapasiti & Kelulusan', icon: Calendar },
+    { id: 'reschedules', label: 'Pengesahan Kelas Ganti / Tambahan', icon: CalendarSync },
     { id: 'staff_hr', label: 'Staf HR: Profil, Cuti & KPI', icon: Users },
   ];
 

@@ -1,5 +1,7 @@
+from core import grades
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from core.permissions import (
@@ -80,3 +82,10 @@ class DynamicMasterDataViewSet(viewsets.ModelViewSet):
         master_item.rejection_reason = reason
         master_item.save()
         return Response(self.get_serializer(master_item).data)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def grade_list(request):
+    """Approved grades in order, with next grade and description (all roles)."""
+    return Response(grades.grade_list())

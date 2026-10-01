@@ -16,7 +16,7 @@ export const tokenStore = {
   },
 };
 
-async function request(endpoint, options = {}) {
+export async function request(endpoint, options = {}) {
   const token = tokenStore.get();
   const config = {
     ...options,
@@ -54,6 +54,20 @@ const authHeader = () => {
   const token = tokenStore.get();
   return token ? { Authorization: `Token ${token}` } : {};
 };
+
+// Server-generated PDFs (receipts, payslips) need the login token, so they are fetched then saved
+export async function downloadPdf(path, filename) {
+  const res = await fetch(`${BASE_URL}${path}`, { headers: authHeader() });
+  if (!res.ok) throw new Error(`PDF tidak dapat dijana (${res.status})`);
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
 
 export const filesApi = {
   list: (kind, objectId) => request(`/files/?kind=${kind}&object_id=${objectId}`),
@@ -109,6 +123,10 @@ export const masterDataApi = {
     method: 'POST',
     body: JSON.stringify({ approved_by: approverRole }),
   }),
+  update: (id, data) => request(`/business-config/master-data/${id}/`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
   reject: (id, reason = '', approverRole = 'Supervisor') => request(`/business-config/master-data/${id}/reject/`, {
     method: 'POST',
     body: JSON.stringify({ approved_by: approverRole, rejection_reason: reason }),
@@ -141,6 +159,11 @@ export const leadsApi = {
 
 // 3. Students API
 export const studentsApi = {
+  // Year-end move to the next grade; dryRun previews without saving
+  promote: (dryRun, removeOldClasses) => request('/students/students/promote/', {
+    method: 'POST',
+    body: JSON.stringify({ dry_run: dryRun, remove_old_classes: removeOldClasses }),
+  }),
   // Parent / student feedback (photos and videos are attachments of kind FEEDBACK)
   feedback: (params = {}) => request(`/students/feedback/?${new URLSearchParams(params)}`),
   addFeedback: (data) => request('/students/feedback/', { method: 'POST', body: JSON.stringify(data) }),
@@ -256,6 +279,11 @@ export const academicApi = {
   }),
   deleteClass: (id) => request(`/academic/timetable/${id}/`, { method: 'DELETE' }),
   getRescheduleLogs: () => request('/academic/reschedule-logs/'),
+  // approve / reject (Supervisor) and verify (Management)
+  rescheduleAction: (id, name, data = {}) => request(`/academic/reschedule-logs/${id}/${name}/`, { method: 'POST', body: JSON.stringify(data) }),
+  // Supervisor's master-timetable changes waiting for Management
+  getTimetableChanges: (status = '') => request(`/academic/timetable-changes/${status ? `?status=${status}` : ''}`),
+  timetableChangeAction: (id, name, data = {}) => request(`/academic/timetable-changes/${id}/${name}/`, { method: 'POST', body: JSON.stringify(data) }),
   createRescheduleLog: (data) => request('/academic/reschedule-logs/', {
     method: 'POST',
     body: JSON.stringify(data),

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MessageSquare, Printer, Calculator, Download, X, Plus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { billingApi, dashboardApi } from '../api/client';
-import { FORMS, waLink, today, downloadCsv, estimateMonthlyFee } from './studentShared';
+import { useGrades } from './grades';
+import { billingApi, dashboardApi, downloadPdf } from '../api/client';
+import { waLink, today, downloadCsv, estimateMonthlyFee } from './studentShared';
 import { MonthlyRunPanel, DiscountsPanel, InvoiceAdjustModal, OtherInvoiceModal } from './BillingTools';
 
 const METHODS = [
@@ -34,6 +35,7 @@ const followUpLabel = (inv) => (inv.follow_up_week ? `Minggu ${inv.follow_up_wee
 const invoiceTitle = (inv) => (inv.invoice_type === 'OTHER' ? inv.description : monthLabel(inv.billing_month));
 
 export default function BillingView({ currentRole = 'ADMIN' }) {
+  const { forms, formLabel, isForm } = useGrades();
   const { invoices, receipts, payInvoice, pricingTiers, showToast, refreshBilling } = useApp();
   const [discounts, setDiscounts] = useState([]);
   const [adjustFor, setAdjustFor] = useState(null);
@@ -296,7 +298,7 @@ export default function BillingView({ currentRole = 'ADMIN' }) {
           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Calculator className="w-4 h-4 text-indigo-600" /> Kalkulator Yuran</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <label className="font-semibold text-slate-700">Tingkatan
-              <select value={calc.form} onChange={(e) => setCalc({ ...calc, form: e.target.value })} className={`${input} mt-1`}>{FORMS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
+              <select value={calc.form} onChange={(e) => setCalc({ ...calc, form: e.target.value })} className={`${input} mt-1`}>{forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
             </label>
             <label className="font-semibold text-slate-700">Bilangan subjek
               <input type="number" min="1" max="12" value={calc.count} onChange={(e) => setCalc({ ...calc, count: e.target.value })} className={`${input} mt-1`} />
@@ -393,7 +395,8 @@ export default function BillingView({ currentRole = 'ADMIN' }) {
                   onClick={() => showToast('WhatsApp dibuka dengan butiran resit.')}
                   className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold inline-flex items-center gap-1"><MessageSquare className="w-4 h-4" /> WhatsApp Resit</a>
               )}
-              <button onClick={() => window.print()} className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold">Cetak / PDF</button>
+              <button onClick={() => downloadPdf(`/billing/receipts/${receiptView.receipt.id}/pdf/`, `${receiptView.receipt.receipt_number}.pdf`).catch((err) => showToast(err.message, 'error'))}
+                className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold inline-flex items-center gap-1"><Download className="w-4 h-4" /> Resit PDF</button>
             </div>
           </div>
         </div>

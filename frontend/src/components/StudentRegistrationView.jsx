@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { UserPlus, Search, MessageSquare, Phone, Download } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useGrades } from './grades';
 import { studentsApi } from '../api/client';
 import StudentDetailModal from './StudentDetailModal';
 import { FeedbackGallery } from './FeedbackViews';
-import { FORMS, FORM_LABELS, STATUS_META, waLink, today, downloadCsv, estimateMonthlyFee } from './studentShared';
+import PromotionPanel from './PromotionPanel';
+import { STATUS_META, waLink, today, downloadCsv, estimateMonthlyFee } from './studentShared';
 
 const EMPTY_FORM = {
   full_name: '', ic_number: '', student_type: 'MONTHLY', form_level: 'F5', stream: 'GENERAL',
@@ -38,6 +40,7 @@ function startOfWeek() {
 }
 
 export default function StudentRegistrationView({ currentRole = 'ADMIN' }) {
+  const { forms, formLabel, isForm } = useGrades();
   const {
     students, timetable, subjects, pricingTiers, registerStudent, studentAction, refreshStudents,
     getMasterOptions, draftRegistration, setDraftRegistration, showToast,
@@ -69,7 +72,7 @@ export default function StudentRegistrationView({ currentRole = 'ADMIN' }) {
       phone_number: draftRegistration.phone || draftRegistration.phone_number || '',
       parent1_phone: draftRegistration.phone || '',
       email: draftRegistration.email || '',
-      form_level: FORM_LABELS[draftRegistration.form_level] ? draftRegistration.form_level : 'F5',
+      form_level: isForm(draftRegistration.form_level) ? draftRegistration.form_level : 'F5',
       school_key: school?.value || '',
       lead_source: draftRegistration.lead_source || '',
     });
@@ -160,7 +163,7 @@ export default function StudentRegistrationView({ currentRole = 'ADMIN' }) {
 
   const exportList = () => downloadCsv(`senarai-pelajar-${statusFilter.toLowerCase()}-${today()}.csv`,
     ['ID', 'Nama', 'Tingkatan', 'Jenis', 'Status', 'Sekolah', 'Telefon Pelajar', 'Waris', 'Telefon Waris', 'Kelas'],
-    listed.map((s) => [s.student_id, s.full_name, FORM_LABELS[s.form_level], s.student_type, STATUS_META[s.status]?.label,
+    listed.map((s) => [s.student_id, s.full_name, formLabel(s.form_level), s.student_type, STATUS_META[s.status]?.label,
       s.school_name, s.phone_number, s.parent1_name, s.parent1_phone,
       (s.enrolled_classes_details || []).map((c) => c.class_code).join('; ')]));
 
@@ -173,6 +176,7 @@ export default function StudentRegistrationView({ currentRole = 'ADMIN' }) {
     { id: 'waitlist', label: `Senarai Menunggu (${waitlist.length})` },
     { id: 'history', label: 'Laporan Sejarah' },
     { id: 'gallery', label: 'Galeri Maklum Balas' },
+    ...(currentRole === 'SUPERVISOR' || currentRole === 'MANAGEMENT' ? [{ id: 'promote', label: 'Naik Tingkatan' }] : []),
   ];
 
   return (
@@ -207,7 +211,7 @@ export default function StudentRegistrationView({ currentRole = 'ADMIN' }) {
             </select>
             <select aria-label="Tingkatan" value={formFilter} onChange={(e) => setFormFilter(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold">
               <option value="ALL">Semua tingkatan</option>
-              {FORMS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              {forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
             <button onClick={exportList} className="ml-auto px-3 py-2 rounded-xl bg-slate-900 text-white font-bold flex items-center gap-1.5 cursor-pointer">
               <Download className="w-3.5 h-3.5" /> Eksport CSV / Excel
@@ -281,7 +285,7 @@ export default function StudentRegistrationView({ currentRole = 'ADMIN' }) {
               <div>
                 <label htmlFor="r-form" className={label}>Tingkatan *</label>
                 <select id="r-form" value={formData.form_level} onChange={(e) => set({ form_level: e.target.value, class_ids: [] })} className={inputCls}>
-                  {FORMS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  {forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
               </div>
               <div>
@@ -352,7 +356,7 @@ export default function StudentRegistrationView({ currentRole = 'ADMIN' }) {
             {formData.student_type === 'MONTHLY' ? (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-bold text-slate-900">3. Kelas {FORM_LABELS[formData.form_level]} (baki tempat semasa)</h3>
+                  <h3 className="text-sm font-bold text-slate-900">3. Kelas {formLabel(formData.form_level)} (baki tempat semasa)</h3>
                   <span className="font-bold text-indigo-700">{formData.class_ids.length} subjek • anggaran RM {feeEstimate.toFixed(2)}/bulan</span>
                 </div>
                 {formClasses.length === 0 ? <p className="text-slate-400">Tiada kelas untuk tingkatan ini dalam Jadual Master.</p> : (
@@ -531,6 +535,7 @@ export default function StudentRegistrationView({ currentRole = 'ADMIN' }) {
         </div>
       )}
 
+      {activeTab === 'promote' && <PromotionPanel />}
       {activeTab === 'gallery' && <FeedbackGallery canDelete={currentRole === 'SUPERVISOR' || currentRole === 'MANAGEMENT'} />}
 
       {detailId && <StudentDetailModal studentId={detailId} currentRole={currentRole} onClose={() => { setDetailId(null); if (activeTab === 'history') loadHistory(); }} />}

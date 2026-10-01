@@ -5,9 +5,19 @@ import {
   CheckSquare, ArrowRight, FileText, Sparkles, Edit3
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { refreshGrades, LEVEL_LABELS } from './grades';
+
+const GRADE_CATEGORY = '1_form';
+const EMPTY_ITEM = { code: '', label: '', meta: '', comment: '', level: 'UPPER', order: '', next: '', description: '' };
+
+// Grade entries keep structured details: level, order, next grade, description
+function gradeMeta(item) {
+  return { level: item.level || 'UPPER', order: Number(item.order) || 0, next: item.next || '', description: item.description || '' };
+}
 
 export default function DynamicMasterDataView({ currentRole = 'ADMIN' }) {
-  const { masterData, proposeMasterData, approveMasterData, rejectMasterData, isLoading } = useApp();
+  const { masterData, proposeMasterData, approveMasterData, rejectMasterData, updateMasterData, isLoading } = useApp();
+  const [editing, setEditing] = useState(null); // item being corrected by Supervisor / Management
   const isAdmin = currentRole === 'ADMIN';
   const isSupervisor = currentRole === 'SUPERVISOR';
   const isManagement = currentRole === 'MANAGEMENT';
@@ -43,12 +53,10 @@ export default function DynamicMasterDataView({ currentRole = 'ADMIN' }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [newItem, setNewItem] = useState({
-    code: '',
-    label: '',
-    meta: '',
-    comment: ''
-  });
+  const [newItem, setNewItem] = useState(EMPTY_ITEM);
+  const isGrade = selectedEntity === GRADE_CATEGORY;
+  const gradeCodes = masterData.filter((i) => i.category === GRADE_CATEGORY && i.status === 'APPROVED')
+    .sort((a, b) => (a.meta_info?.order ?? 999) - (b.meta_info?.order ?? 999));
 
   const activeCategory = ENTITY_CATEGORIES.find(c => c.id === selectedEntity) || ENTITY_CATEGORIES[0];
 
@@ -71,14 +79,16 @@ export default function DynamicMasterDataView({ currentRole = 'ADMIN' }) {
         category: selectedEntity,
         code: generatedCode,
         label: newItem.label,
-        meta_info: newItem.meta ? { detail: newItem.meta } : {},
+        meta_info: isGrade ? gradeMeta(newItem) : (newItem.meta ? { detail: newItem.meta } : {}),
+        proposal_note: newItem.comment,
         user_role: currentRole,
         created_by: isAdmin ? 'Admin 1 (Kaunter)' : currentRole,
         approved_by: canApprove ? currentRole : '',
       });
 
       setShowAddModal(false);
-      setNewItem({ code: '', label: '', meta: '', comment: '' });
+      setNewItem(EMPTY_ITEM);
+      if (isGrade) refreshGrades();
     } catch (err) {
       console.error(err);
     } finally {
@@ -86,9 +96,27 @@ export default function DynamicMasterDataView({ currentRole = 'ADMIN' }) {
     }
   };
 
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    try {
+      await updateMasterData(editing.id, {
+        label: editing.label,
+        meta_info: editing.category === GRADE_CATEGORY ? gradeMeta(editing) : (editing.meta ? { ...(editing.meta_info || {}), detail: editing.meta } : editing.meta_info),
+      });
+      if (editing.category === GRADE_CATEGORY) refreshGrades();
+      setEditing(null);
+    } catch { /* toast shown */ }
+  };
+
+  const startEdit = (item) => {
+    const m = item.meta_info || {};
+    setEditing({ ...item, meta: m.detail || '', level: m.level || 'UPPER', order: m.order ?? '', next: m.next || '', description: m.description || '' });
+  };
+
   const handleAction = async (id, newStatus) => {
     if (newStatus === 'APPROVED') {
       await approveMasterData(id, currentRole);
+      if (selectedEntity === GRADE_CATEGORY) refreshGrades();
     } else {
       const reason = prompt('Masukkan ulasan/alasan penolakan cadangan ini:', 'Maklumat tidak lengkap atau bertindih');
       if (!reason) return;
@@ -157,7 +185,7 @@ export default function DynamicMasterDataView({ currentRole = 'ADMIN' }) {
           {ENTITY_CATEGORIES.map(cat => {
             const isSelected = selectedEntity === cat.id;
             const Icon = cat.icon;
-            const pendingInCat = masterItems.filter(i => i.entity === cat.id && i.status === 'PENDING').length;
+            const pendingInCat = masterData.filter(i => i.category === cat.id && i.status === 'PENDING').length;
 
             return (
               <button
@@ -249,9 +277,16 @@ export default function DynamicMasterDataView({ currentRole = 'ADMIN' }) {
                           )}
                         </td>
                         <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">
-                          {typeof item.meta_info === 'object' && item.meta_info !== null
+                          {item.category === GRADE_CATEGORY ? (
+                            <span className="font-sans">
+                              {LEVEL_LABELS[item.meta_info?.level] || item.meta_info?.level || '-'} • susunan {item.meta_info?.order ?? '-'}
+                              {' '}• seterusnya: <strong>{item.meta_info?.next || 'tamat'}</strong>
+                              {item.meta_info?.description && <div className="text-slate-500">{item.meta_info.description}</div>}
+                            </span>
+                          ) : typeof item.meta_info === 'object' && item.meta_info !== null
                             ? Object.entries(item.meta_info).map(([k, v]) => `${k}: ${v}`).join(' | ') || '-'
                             : (item.meta || '-')}
+                          {item.proposal_note && <div className="text-[10px] text-slate-500 font-sans mt-0.5">Justifikasi: {item.proposal_note}</div>}
                         </td>
                         <td className="py-3 px-4 text-slate-500">
                           <div>{item.created_by || item.createdBy || 'Admin 1'}</div>
@@ -302,7 +337,7 @@ export default function DynamicMasterDataView({ currentRole = 'ADMIN' }) {
                               <Lock className="w-3.5 h-3.5 text-slate-400" />
                               {canApprove ? (
                                 <button
-                                  onClick={() => alert(`Pengubahsuaian entiti master #${item.code} oleh Supervisor/Management.`)}
+                                  onClick={() => startEdit(item)}
                                   className="text-indigo-600 hover:underline font-semibold cursor-pointer"
                                 >
                                   Laras Semula
@@ -364,6 +399,27 @@ export default function DynamicMasterDataView({ currentRole = 'ADMIN' }) {
                 />
               </div>
 
+              {isGrade ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="font-semibold text-slate-700">Tahap
+                    <select value={newItem.level} onChange={(e) => setNewItem({ ...newItem, level: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white">
+                      {Object.entries(LEVEL_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </label>
+                  <label className="font-semibold text-slate-700">Susunan (1 = terendah)
+                    <input type="number" min="0" required value={newItem.order} onChange={(e) => setNewItem({ ...newItem, order: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200" />
+                  </label>
+                  <label className="col-span-2 font-semibold text-slate-700">Gred seterusnya (untuk naik tingkatan akhir tahun)
+                    <select value={newItem.next} onChange={(e) => setNewItem({ ...newItem, next: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white">
+                      <option value="">Tiada (gred akhir)</option>
+                      {gradeCodes.map((g) => <option key={g.code} value={g.code}>{g.code} - {g.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="col-span-2 font-semibold text-slate-700">Penerangan
+                    <input value={newItem.description} onChange={(e) => setNewItem({ ...newItem, description: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200" />
+                  </label>
+                </div>
+              ) : (
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Maklumat Lanjut (Meta / Kategori / TIN / Pautan Progresi)</label>
                 <input
@@ -374,6 +430,7 @@ export default function DynamicMasterDataView({ currentRole = 'ADMIN' }) {
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none focus:border-indigo-500"
                 />
               </div>
+              )}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Sebab & Justifikasi Cadangan *</label>
@@ -410,6 +467,49 @@ export default function DynamicMasterDataView({ currentRole = 'ADMIN' }) {
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {editing && (
+        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50" role="dialog" aria-modal="true">
+          <form onSubmit={saveEdit} className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-3 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">Laras Data Induk: <span className="font-mono text-indigo-700">{editing.code}</span></h3>
+              <button type="button" onClick={() => setEditing(null)} aria-label="Tutup" className="text-slate-400 cursor-pointer">✕</button>
+            </div>
+            <label className="block font-semibold text-slate-700">Nama / nilai paparan
+              <input required value={editing.label} onChange={(e) => setEditing({ ...editing, label: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200" />
+            </label>
+            {editing.category === GRADE_CATEGORY ? (
+              <div className="grid grid-cols-2 gap-3">
+                <label className="font-semibold text-slate-700">Tahap
+                  <select value={editing.level} onChange={(e) => setEditing({ ...editing, level: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white">
+                    {Object.entries(LEVEL_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </label>
+                <label className="font-semibold text-slate-700">Susunan
+                  <input type="number" min="0" value={editing.order} onChange={(e) => setEditing({ ...editing, order: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200" />
+                </label>
+                <label className="col-span-2 font-semibold text-slate-700">Gred seterusnya
+                  <select value={editing.next} onChange={(e) => setEditing({ ...editing, next: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white">
+                    <option value="">Tiada (gred akhir)</option>
+                    {gradeCodes.filter((g) => g.code !== editing.code).map((g) => <option key={g.code} value={g.code}>{g.code} - {g.label}</option>)}
+                  </select>
+                </label>
+                <label className="col-span-2 font-semibold text-slate-700">Penerangan
+                  <input value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200" />
+                </label>
+              </div>
+            ) : (
+              <label className="block font-semibold text-slate-700">Maklumat lanjut
+                <input value={editing.meta} onChange={(e) => setEditing({ ...editing, meta: e.target.value })} className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200" />
+              </label>
+            )}
+            <p className="text-slate-500">Kod tidak boleh diubah kerana ia digunakan dalam rekod sedia ada.</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEditing(null)} className="px-4 py-2 rounded-xl border border-slate-200 font-semibold cursor-pointer">Batal</button>
+              <button type="submit" className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold cursor-pointer">Simpan</button>
+            </div>
+          </form>
         </div>
       )}
     </div>

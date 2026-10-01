@@ -1,19 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Trash2, Upload, Image as ImageIcon } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useGrades } from './grades';
 import { filesApi, studentsApi } from '../api/client';
 import { ACCEPT, Thumb, openAttachment, uploadError } from './Attachments';
-import { FORMS, FORM_LABELS, today } from './studentShared';
+import { today } from './studentShared';
 
 const GIVEN_BY = [{ id: 'PARENT', label: 'Ibu bapa' }, { id: 'STUDENT', label: 'Pelajar' }];
 const input = 'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white';
 
 function FeedbackCard({ fb, canDelete, onDelete, showStudent }) {
+  const { forms, formLabel, isForm } = useGrades();
   return (
     <div className="p-3 rounded-xl border border-slate-200 space-y-2 bg-white">
       <div className="flex items-start justify-between gap-2">
         <div>
-          {showStudent && <div className="font-bold text-slate-900">{fb.student_name} <span className="text-slate-400 font-normal">({FORM_LABELS[fb.form_level] || fb.form_level})</span></div>}
+          {showStudent && <div className="font-bold text-slate-900">{fb.student_name} <span className="text-slate-400 font-normal">({formLabel(fb.form_level) || fb.form_level})</span></div>}
           <div className="text-[10px] text-slate-500">{fb.date} • {fb.given_by_label} • direkod oleh {fb.recorded_by}</div>
         </div>
         {canDelete && <button onClick={() => onDelete(fb)} aria-label="Padam maklum balas" className="p-1 text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>}
@@ -110,6 +112,7 @@ export function StudentFeedbackPanel({ studentId, canDelete, onChanged }) {
 
 // Gallery of feedback across students, filtered by form and date (j-status.doc: Gallery - feedback)
 export function FeedbackGallery({ canDelete }) {
+  const { forms, formLabel, isForm } = useGrades();
   const { showToast } = useApp();
   const [filters, setFilters] = useState({ form: '', start: '', end: '', media: false });
   const [rows, setRows] = useState([]);
@@ -139,7 +142,7 @@ export function FeedbackGallery({ canDelete }) {
         <ImageIcon className="w-4 h-4 text-slate-400" />
         <select aria-label="Tingkatan" value={filters.form} onChange={(e) => setFilters({ ...filters, form: e.target.value })} className={select}>
           <option value="">Semua tingkatan</option>
-          {FORMS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+          {forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
         <label className="flex items-center gap-1 font-semibold text-slate-600">Dari <input type="date" value={filters.start} onChange={(e) => setFilters({ ...filters, start: e.target.value })} className={select} /></label>
         <label className="flex items-center gap-1 font-semibold text-slate-600">Hingga <input type="date" value={filters.end} onChange={(e) => setFilters({ ...filters, end: e.target.value })} className={select} /></label>

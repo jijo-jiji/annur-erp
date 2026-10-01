@@ -8,15 +8,6 @@ class Student(models.Model):
         ('MONTHLY', 'Bulanan (Tetap)'),
         ('WALK_IN', 'Walk-in / Sambilan'),
     ]
-    FORM_CHOICES = [
-        ('S5', 'Darjah 5'),
-        ('S6', 'Darjah 6'),
-        ('F1', 'Form 1'),
-        ('F2', 'Form 2'),
-        ('F3', 'Form 3'),
-        ('F4', 'Form 4'),
-        ('F5', 'Form 5'),
-    ]
     STREAM_CHOICES = [
         ('SAINS', 'Aliran Sains'),
         ('SASTERA', 'Aliran Sastera'),
@@ -33,7 +24,7 @@ class Student(models.Model):
     full_name = models.CharField(max_length=150)
     ic_number = models.CharField(max_length=20)
     student_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='MONTHLY')
-    form_level = models.CharField(max_length=10, choices=FORM_CHOICES)
+    form_level = models.CharField(max_length=10)  # grade code from master data 1_form (core.grades)
     stream = models.CharField(max_length=20, choices=STREAM_CHOICES, default='GENERAL')
     school_name = models.CharField(max_length=150, blank=True)
     school_code = models.CharField(max_length=30, blank=True)
@@ -215,6 +206,7 @@ class StudentEvent(models.Model):
         ('RESUME', 'Aktif Semula'),
         ('TERMINATE', 'Berhenti'),
         ('NOTE', 'Catatan'),
+        ('PROMOTE', 'Naik Tingkatan'),
         ('FEEDBACK', 'Maklum Balas'),
     ]
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='events')

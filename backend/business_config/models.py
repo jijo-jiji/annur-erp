@@ -73,6 +73,7 @@ class DynamicMasterData(models.Model):
     created_by = models.CharField(max_length=100, default='Admin 1')
     approved_by = models.CharField(max_length=100, blank=True)
     rejection_reason = models.TextField(blank=True)
+    proposal_note = models.TextField(blank=True)  # why the PIC proposed it
     is_locked = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -223,8 +223,11 @@ class ScreenDataTests(RoleTestBase):
             'remarks': 'PH', 'supervisor_approved': True,
         }, format='json')
         self.assertFalse(res.data['supervisor_approved'])
-        self.assertEqual(self.client.patch(f"/api/v1/academic/reschedule-logs/{res.data['id']}/",
-                                           {'supervisor_approved': True}, format='json').status_code, 403)
+        # Approval only happens through the approve action; the flag cannot be written
+        res = self.client.patch(f"/api/v1/academic/reschedule-logs/{res.data['id']}/",
+                                {'supervisor_approved': True}, format='json')
+        self.assertEqual((res.data['supervisor_approved'], res.data['status']), (False, 'PENDING'))
+        self.assertEqual(self.client.post(f"/api/v1/academic/reschedule-logs/{res.data['id']}/approve/").status_code, 403)
 
 
 
@@ -315,3 +318,50 @@ class UploadTests(RoleTestBase):
         self.as_role(SUPERVISOR)
         self.client.delete(f"/api/v1/students/feedback/{fb['id']}/")
         self.assertFalse(Attachment.objects.exists())
+
+
+class TimetableApprovalTests(RoleTestBase):
+    def setUp(self):
+        super().setUp()
+        from academic.models import TimeSlot, ClassTimetable
+        from business_config.models import SubjectMaster
+        self.slot = TimeSlot.objects.create(day='SABTU', start_time='09:00', end_time='10:30', period_label='Pagi')
+        self.subject = SubjectMaster.objects.create(code='FZ', name='Fizik', level_category='UPPER_SEC')
+        self.cls = ClassTimetable.objects.create(slot=self.slot, subject=self.subject, form_level='F5', max_seats=20)
+
+    def test_supervisor_changes_wait_for_management(self):
+        from academic.models import ClassTimetable
+        self.as_role(SUPERVISOR)
+        res = self.client.patch(f'/api/v1/academic/timetable/{self.cls.id}/', {'max_seats': 25}, format='json')
+        self.assertEqual(res.status_code, 202)
+        self.assertEqual(ClassTimetable.objects.get(pk=self.cls.id).max_seats, 20)  # not applied yet
+        change = res.data['pending_change']
+        self.assertIn('20 → 25', change['summary'])
+        self.assertEqual(self.client.post(f"/api/v1/academic/timetable-changes/{change['id']}/approve/").status_code, 403)
+        new = self.client.post('/api/v1/academic/timetable/', {'slot': self.slot.id, 'subject': self.subject.id, 'form_level': 'F4', 'section': 'B', 'max_seats': 15}, format='json')
+        self.assertEqual((new.status_code, ClassTimetable.objects.count()), (202, 1))
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.post(f"/api/v1/academic/timetable-changes/{change['id']}/approve/").data['status'], 'APPROVED')
+        self.assertEqual(ClassTimetable.objects.get(pk=self.cls.id).max_seats, 25)
+        pid = new.data['pending_change']['id']
+        self.assertEqual(self.client.post(f'/api/v1/academic/timetable-changes/{pid}/reject/').status_code, 400)  # reason needed
+        self.client.post(f'/api/v1/academic/timetable-changes/{pid}/reject/', {'comment': 'Bilik penuh'})
+        self.assertEqual(ClassTimetable.objects.count(), 1)
+        # Management's own change applies straight away
+        self.assertEqual(self.client.patch(f'/api/v1/academic/timetable/{self.cls.id}/', {'max_seats': 30}, format='json').status_code, 200)
+
+    def test_extra_cancel_class_approve_reject_verify(self):
+        self.as_role(ADMIN)
+        body = {'timetable_class': self.cls.id, 'month_label': "OKT '26", 'tarikh_batal': '2026-10-03', 'tarikh_ganti': '2026-10-05', 'supervisor_approved': True}
+        log = self.client.post('/api/v1/academic/reschedule-logs/', body, format='json').data
+        self.assertEqual((log['status'], log['supervisor_approved']), ('PENDING', False))  # cannot self-approve
+        other = self.client.post('/api/v1/academic/reschedule-logs/', body, format='json').data
+        self.assertEqual(self.client.post(f"/api/v1/academic/reschedule-logs/{log['id']}/approve/").status_code, 403)
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post(f"/api/v1/academic/reschedule-logs/{other['id']}/reject/").status_code, 400)
+        self.assertEqual(self.client.post(f"/api/v1/academic/reschedule-logs/{other['id']}/reject/", {'comment': 'Bertindih'}).data['status'], 'REJECTED')
+        self.assertEqual(self.client.post(f"/api/v1/academic/reschedule-logs/{log['id']}/approve/").data['status'], 'APPROVED')
+        self.assertEqual(self.client.post(f"/api/v1/academic/reschedule-logs/{log['id']}/verify/").status_code, 403)
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.post(f"/api/v1/academic/reschedule-logs/{other['id']}/verify/").status_code, 400)
+        self.assertEqual(self.client.post(f"/api/v1/academic/reschedule-logs/{log['id']}/verify/").data['verified_by'], 'management')

@@ -1,17 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { Users, Clock, AlertTriangle, CheckCircle, Plus, Edit2, Trash2, X, Save, RefreshCw, MapPin } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import TimetableChangesPanel from './TimetableChangesPanel';
+import { useGrades } from './grades';
 
 const DAYS = ['JUMAAT', 'SABTU', 'ISNIN', 'SELASA', 'RABU', 'KHAMIS'];
-const FORMS = [
-  { value: 'F5', label: 'Tingkatan 5' },
-  { value: 'F4', label: 'Tingkatan 4' },
-  { value: 'F3', label: 'Tingkatan 3' },
-  { value: 'F2', label: 'Tingkatan 2' },
-  { value: 'F1', label: 'Tingkatan 1' },
-  { value: 'S6', label: 'Darjah 6' },
-  { value: 'S5', label: 'Darjah 5' },
-];
 const SECTIONS = ['A', 'B', 'C', 'D'];
 const REASONS = [
   { value: 'PH', label: 'Cuti Umum / Hari Pelepasan Am' },
@@ -30,6 +23,7 @@ function monthLabel(isoDate) {
 }
 
 export default function TimetableView({ currentRole = 'ADMIN' }) {
+  const { forms, formLabel, isForm } = useGrades();
   const { timetable, timeSlots, classrooms, subjects, teachers, saveClass, deleteClass, createReschedule } = useApp();
   const [selectedDay, setSelectedDay] = useState('ALL');
   const [selectedForm, setSelectedForm] = useState('ALL');
@@ -38,9 +32,10 @@ export default function TimetableView({ currentRole = 'ADMIN' }) {
   const [formData, setFormData] = useState({});
   const [rescheduleData, setRescheduleData] = useState({});
   const [saving, setSaving] = useState(false);
+  const [changesKey, setChangesKey] = useState(0); // reloads the pending-changes panel
 
   const isAdmin = currentRole === 'ADMIN';
-  // Supervisor sets the master timetable; Management may also adjust it
+  // Supervisor proposes master-timetable changes; Management approves them (its own edits apply at once)
   const canEdit = currentRole === 'SUPERVISOR' || currentRole === 'MANAGEMENT';
 
   const activeTeachers = useMemo(
@@ -113,6 +108,7 @@ export default function TimetableView({ currentRole = 'ADMIN' }) {
         max_seats: Number(formData.max_seats),
       });
       setModalMode(null);
+      setChangesKey((k) => k + 1);
     } catch {
       // toast already shown
     } finally {
@@ -124,6 +120,7 @@ export default function TimetableView({ currentRole = 'ADMIN' }) {
     if (!window.confirm(`Padam sesi ${cls.class_code} dari Jadual Master?`)) return;
     try {
       await deleteClass(cls.id, cls.class_code);
+      setChangesKey((k) => k + 1);
     } catch {
       // toast already shown
     }
@@ -196,10 +193,12 @@ export default function TimetableView({ currentRole = 'ADMIN' }) {
             className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none cursor-pointer shadow-2xs"
           >
             <option value="ALL">Semua Tingkatan</option>
-            {FORMS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            {forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
           </select>
         </div>
       </div>
+
+      {canEdit && <TimetableChangesPanel currentRole={currentRole} reloadKey={changesKey} />}
 
       {isAdmin && (
         <div className="bg-purple-50 border border-purple-200 p-4 rounded-2xl flex items-center gap-3 text-purple-900 text-xs">
@@ -336,7 +335,7 @@ export default function TimetableView({ currentRole = 'ADMIN' }) {
                 <div>
                   <label htmlFor="tt-form" className="block font-semibold text-slate-700 mb-1">Tingkatan</label>
                   <select id="tt-form" value={formData.form_level} onChange={(e) => setFormData({ ...formData, form_level: e.target.value })} className={inputCls}>
-                    {FORMS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    {forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
                   </select>
                 </div>
                 <div className="col-span-2">

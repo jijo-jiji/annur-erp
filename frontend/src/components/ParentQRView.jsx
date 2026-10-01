@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useGrades } from './grades';
 import QRCode from 'qrcode';
 import { GraduationCap, CheckCircle2, Copy, ExternalLink, Printer } from 'lucide-react';
 import { studentsApi } from '../api/client';
-import { FORMS } from './studentShared';
+
 
 const SUBJECT_CHOICES = ['Bahasa Melayu', 'Bahasa Inggeris', 'Matematik', 'Matematik Tambahan', 'Sains', 'Fizik', 'Kimia', 'Biologi', 'Sejarah', 'Prinsip Perakaunan'];
 
@@ -16,6 +17,7 @@ const publicFormUrl = () => `${window.location.origin}${window.location.pathname
 
 // Public form parents fill in on their own phone (no login)
 function RegistrationForm() {
+  const { forms, formLabel, isForm } = useGrades();
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(null);
@@ -86,7 +88,7 @@ function RegistrationForm() {
         <div>
           <label htmlFor="q-form" className={label}>Tingkatan *</label>
           <select id="q-form" value={form.form_level} onChange={(e) => set({ form_level: e.target.value })} className={`${input} bg-white`}>
-            {FORMS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            {forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
           </select>
         </div>
       </div>
