@@ -18,7 +18,7 @@ from academic.views import (
 )
 from students.views import (
     StudentViewSet, LeadViewSet, StudentEventViewSet, ClassWaitlistViewSet, StudentExamResultViewSet, StudentFeedbackViewSet,
-    parent_self_register, attendance_roster, attendance_summary,
+    parent_self_register, attendance_roster, attendance_summary, attendance_sessions,
 )
 from billing.views import DiscountViewSet, InvoiceViewSet, PaymentReceiptViewSet, calculate_fees
 from expenses.views import VendorViewSet, PaymentVoucherViewSet
@@ -84,6 +84,7 @@ urlpatterns = [
     path('api/v1/students/parent-self-register/', parent_self_register),
     path('api/v1/attendance/roster/', attendance_roster),
     path('api/v1/attendance/summary/', attendance_summary),
+    path('api/v1/attendance/sessions/', attendance_sessions),
     path('api/v1/billing/calculate-fees/', calculate_fees),
 ]
 

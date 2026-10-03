@@ -1,140 +1,189 @@
-import React, { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { cx } from './ui';
 
-// Validated categorical order (colour-blind safe on the white surface). Assigned in this
-// order, never cycled: anything past slot 7 folds into "Lain-lain" in slot 8's grey.
-export const SERIES_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'];
-const OTHER_COLOR = '#94a3b8';
+// Small, dependency-free SVG charts. One hue family (brand green) is used for
+// magnitude; a second series uses a lighter step of the same hue.
 
-// Colour follows the category (its position in `rows`, or its own `color`), so a category
-// keeps its colour when others are empty
-function foldRows(rows) {
-  const coloured = rows.map((r, i) => ({ ...r, color: r.color || SERIES_COLORS[i] || OTHER_COLOR }));
-  if (coloured.length <= SERIES_COLORS.length) return coloured.filter((r) => r.value > 0);
-  const head = coloured.slice(0, SERIES_COLORS.length - 1);
-  const rest = coloured.slice(SERIES_COLORS.length - 1).reduce((s, r) => s + r.value, 0);
-  return [...head, { label: 'Lain-lain', value: rest, color: OTHER_COLOR }].filter((r) => r.value > 0);
+export const SERIES_COLORS = { strong: 'var(--color-brand-600)', light: 'var(--color-brand-200)', muted: 'var(--color-gray-300)' };
+
+// Render SVGs at their real pixel width so text stays at its intended size
+function useWidth(fallback) {
+  const ref = useRef(null);
+  const [width, setWidth] = useState(fallback);
+  useEffect(() => {
+    if (!ref.current) return undefined;
+    const ro = new ResizeObserver(([entry]) => setWidth(Math.round(entry.contentRect.width)));
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width];
 }
 
-// Status colours (reserved for states, always shown with their label)
-export const STATUS_COLORS = { good: '#008300', warning: '#eda100', serious: '#eb6834', critical: '#e34948' };
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const exp = 10 ** Math.floor(Math.log10(v));
+  const n = v / exp;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return step * exp;
+}
 
-// Marks over time, one line per subject (j-status.doc: each student result graph)
-export function ResultsChart({ results, height = 180 }) {
-  const [hover, setHover] = useState(null);
-  const points = results.filter((r) => r.mark !== null && r.mark !== undefined && r.exam_date)
-    .map((r) => ({ ...r, t: new Date(`${r.exam_date}T00:00:00`).getTime(), mark: Number(r.mark) }));
-  if (points.length === 0) return <p className="text-xs text-slate-400">Masukkan keputusan dengan markah untuk melihat graf.</p>;
-  const subjects = [...new Set(points.map((p) => p.subject_name))];
-  const color = (s) => SERIES_COLORS[subjects.indexOf(s)] || OTHER_COLOR;
-  const width = 520;
-  const pad = { l: 30, r: 12, t: 10, b: 24 };
-  const tMin = Math.min(...points.map((p) => p.t));
-  const tMax = Math.max(...points.map((p) => p.t));
-  const x = (t) => pad.l + (tMax === tMin ? (width - pad.l - pad.r) / 2 : ((t - tMin) / (tMax - tMin)) * (width - pad.l - pad.r));
-  const y = (m) => pad.t + (1 - m / 100) * (height - pad.t - pad.b);
-  const dates = [...new Set(points.map((p) => p.exam_date))].sort();
-  const fmt = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('ms-MY', { month: 'short', year: '2-digit' });
-
+export function Legend({ series }) {
+  if (series.length < 2) return null;
   return (
-    <div className="space-y-2">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img"
-        aria-label={`Graf markah: ${subjects.join(', ')}`}>
-        {[0, 25, 50, 75, 100].map((m) => (
-          <g key={m}>
-            <line x1={pad.l} x2={width - pad.r} y1={y(m)} y2={y(m)} stroke="#e2e8f0" strokeWidth="1" />
-            <text x={pad.l - 6} y={y(m) + 3} textAnchor="end" fontSize="9" className="fill-slate-400">{m}</text>
-          </g>
-        ))}
-        {dates.map((d) => (
-          <text key={d} x={x(new Date(`${d}T00:00:00`).getTime())} y={height - 6} textAnchor="middle" fontSize="9" className="fill-slate-500">{fmt(d)}</text>
-        ))}
-        {subjects.map((s) => {
-          const series = points.filter((p) => p.subject_name === s).sort((a, b) => a.t - b.t);
-          return (
-            <g key={s}>
-              {series.length > 1 && <polyline points={series.map((p) => `${x(p.t)},${y(p.mark)}`).join(' ')} fill="none" stroke={color(s)} strokeWidth="2" />}
-              {series.map((p) => (
-                <circle key={p.id} cx={x(p.t)} cy={y(p.mark)} r={hover === p.id ? 6 : 4} fill={color(s)} stroke="#fff" strokeWidth="2"
-                  onMouseEnter={() => setHover(p.id)} onMouseLeave={() => setHover(null)}>
-                  <title>{`${s} • ${p.exam_name} (${p.exam_date}): ${p.mark}% gred ${p.grade}`}</title>
-                </circle>
-              ))}
-            </g>
-          );
-        })}
-      </svg>
-      <div className="flex flex-wrap gap-3 text-[11px]">
-        {subjects.map((s) => (
-          <span key={s} className="flex items-center gap-1.5 text-slate-700"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: color(s) }} />{s}</span>
-        ))}
-      </div>
+    <div className="flex flex-wrap gap-4 text-[13px] text-gray-600">
+      {series.map((s) => (
+        <span key={s.key} className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm" style={{ background: s.color }} aria-hidden />
+          {s.label}
+        </span>
+      ))}
     </div>
   );
 }
 
-// Donut with a legend that doubles as the data table (label, count, %)
-export function Donut({ rows, size = 150, emptyText = 'Tiada data' }) {
+// Vertical grouped bars. data: [{ label, values: { [seriesKey]: number } }]
+export function BarChart({ data, series, format = (v) => v, height = 220 }) {
   const [hover, setHover] = useState(null);
-  const data = foldRows(rows);
-  const total = data.reduce((s, r) => s + r.value, 0);
-  if (!total) return <p className="text-xs text-slate-400 py-6 text-center">{emptyText}</p>;
-
-  const r = size / 2 - 4;
-  const inner = r * 0.6;
-  const c = size / 2;
-  let angle = -Math.PI / 2;
-  const arcs = data.map((d) => {
-    const sweep = (d.value / total) * Math.PI * 2;
-    const start = angle;
-    angle += sweep;
-    return { ...d, start, end: angle, sweep };
-  });
-  const point = (rad, a) => [c + rad * Math.cos(a), c + rad * Math.sin(a)];
-  const path = (a) => {
-    if (a.sweep >= Math.PI * 2 - 1e-6) {
-      // A single category: two half rings, since one arc cannot close on itself
-      return `M ${c} ${c - r} A ${r} ${r} 0 1 1 ${c} ${c + r} A ${r} ${r} 0 1 1 ${c} ${c - r} Z `
-        + `M ${c} ${c - inner} A ${inner} ${inner} 0 1 0 ${c} ${c + inner} A ${inner} ${inner} 0 1 0 ${c} ${c - inner} Z`;
-    }
-    const large = a.sweep > Math.PI ? 1 : 0;
-    const [x1, y1] = point(r, a.start);
-    const [x2, y2] = point(r, a.end);
-    const [x3, y3] = point(inner, a.end);
-    const [x4, y4] = point(inner, a.start);
-    return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} L ${x3} ${y3} A ${inner} ${inner} 0 ${large} 0 ${x4} ${y4} Z`;
-  };
-  const pct = (v) => `${Math.round((v / total) * 100)}%`;
-  const shown = hover !== null ? arcs[hover] : null;
+  const [ref, W] = useWidth(0);
+  const H = height;
+  const pad = { t: 12, r: 8, b: 28, l: 56 };
+  const max = niceMax(Math.max(...data.flatMap((d) => series.map((s) => d.values[s.key] ?? 0))));
+  const innerW = W - pad.l - pad.r;
+  const innerH = H - pad.t - pad.b;
+  const groupW = innerW / data.length;
+  const gap = 2;
+  const barW = Math.min(36, (groupW * 0.6 - gap * (series.length - 1)) / series.length);
+  const y = (v) => pad.t + innerH - (v / max) * innerH;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max);
 
   return (
-    <div className="flex flex-wrap items-center gap-4">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img"
-        aria-label={arcs.map((a) => `${a.label}: ${a.value}`).join(', ')} className="shrink-0">
-        {arcs.map((a, i) => (
-          <path key={a.label} d={path(a)} fill={a.color} fillRule="evenodd" stroke="#fff" strokeWidth="2"
-            opacity={hover === null || hover === i ? 1 : 0.35}
-            onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
-            <title>{`${a.label}: ${a.value} (${pct(a.value)})`}</title>
-          </path>
+    <div ref={ref} className="relative w-full min-w-0" style={{ height: H }}>
+      {W > 0 && (
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block" role="img" aria-label="Carta bar">
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="var(--color-gray-200)" strokeWidth="1" />
+            <text x={pad.l - 8} y={y(t)} textAnchor="end" dominantBaseline="middle" className="fill-gray-500 text-[11px]">
+              {format(t, true)}
+            </text>
+          </g>
         ))}
-        <text x={c} y={c - 2} textAnchor="middle" className="fill-slate-900" fontSize="18" fontWeight="800">
-          {shown ? shown.value : total}
-        </text>
-        <text x={c} y={c + 14} textAnchor="middle" className="fill-slate-500" fontSize="10">
-          {shown ? pct(shown.value) : 'jumlah'}
-        </text>
+        {data.map((d, i) => {
+          const gx = pad.l + i * groupW;
+          const totalW = series.length * barW + (series.length - 1) * gap;
+          return (
+            <g key={d.label} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+              <rect x={gx} y={pad.t} width={groupW} height={innerH} fill={hover === i ? 'var(--color-gray-100)' : 'transparent'} />
+              {series.map((s, j) => {
+                const v = d.values[s.key] ?? 0;
+                const x = gx + (groupW - totalW) / 2 + j * (barW + gap);
+                const h = Math.max(0, pad.t + innerH - y(v));
+                const r = Math.min(4, h);
+                return (
+                  <path
+                    key={s.key}
+                    d={`M${x},${pad.t + innerH} v${-(h - r)} q0,${-r} ${r},${-r} h${barW - 2 * r} q${r},0 ${r},${r} v${h - r} z`}
+                    fill={s.color}
+                  />
+                );
+              })}
+              <text x={gx + groupW / 2} y={H - 8} textAnchor="middle" className="fill-gray-600 text-[12px]">
+                {d.label}
+              </text>
+            </g>
+          );
+        })}
       </svg>
-      <ul className="flex-1 min-w-[140px] space-y-1 text-xs">
-        {arcs.map((a, i) => (
-          <li key={a.label} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
-            className={`flex items-center gap-2 rounded px-1 ${hover === i ? 'bg-slate-100' : ''}`}>
-            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: a.color }} />
-            <span className="flex-1 text-slate-700 truncate">{a.label}</span>
-            <span className="font-bold text-slate-900">{a.value}</span>
-            <span className="w-9 text-right text-slate-500">{pct(a.value)}</span>
-          </li>
+      )}
+      {hover != null && (
+        <div
+          className="pointer-events-none absolute top-2 z-10 min-w-40 -translate-x-1/2 rounded-md bg-gray-900 px-3 py-2 text-xs text-white shadow-lg"
+          style={{ left: `${((pad.l + (hover + 0.5) * groupW) / W) * 100}%` }}
+        >
+          <p className="mb-1 font-medium">{data[hover].label}</p>
+          {series.map((s) => (
+            <p key={s.key} className="flex items-center justify-between gap-4">
+              <span className="flex items-center gap-1.5">
+                <span className="size-2 rounded-sm" style={{ background: s.color }} />
+                {s.label}
+              </span>
+              <span className="tnum">{format(data[hover].values[s.key] ?? 0)}</span>
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Horizontal bars for ranked lists. rows: [{ label, value, max?, hint }]
+export function HBarList({ rows, format = (v) => v, max: fixedMax, danger, labelWidth = '9rem' }) {
+  const max = fixedMax ?? Math.max(...rows.map((r) => r.value), 1);
+  return (
+    <ul className="space-y-2.5">
+      {rows.map((r) => (
+        <li key={r.label} className="grid items-center gap-3 text-sm" style={{ gridTemplateColumns: `${labelWidth} 1fr 3.5rem` }} title={r.hint}>
+          <span className="truncate text-gray-800">{r.label}</span>
+          <span className="h-2 overflow-hidden rounded-full bg-gray-100">
+            <span
+              className={cx('block h-full rounded-full', danger?.(r) ? 'bg-red-600' : 'bg-brand-500')}
+              style={{ width: `${Math.min(100, (r.value / max) * 100)}%` }}
+            />
+          </span>
+          <span className="text-right text-[13px] font-medium text-gray-700 tnum">{format(r.value)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// Small line chart for a score trend (0–100). points: [{ label, value }]
+export function TrendChart({ points, height = 120, suffix = '' }) {
+  const [hover, setHover] = useState(null);
+  const [ref, W] = useWidth(0);
+  const H = height;
+  const pad = { t: 14, r: 16, b: 22, l: 28 };
+  const valid = points.filter((p) => p.value != null);
+  const x = (i) => pad.l + (points.length === 1 ? (W - pad.l - pad.r) / 2 : (i / (points.length - 1)) * (W - pad.l - pad.r));
+  const y = (v) => pad.t + (1 - v / 100) * (H - pad.t - pad.b);
+  const path = points
+    .map((p, i) => (p.value == null ? null : `${x(i)},${y(p.value)}`))
+    .filter(Boolean)
+    .join(' L');
+
+  return (
+    <div ref={ref} className="relative w-full min-w-0" style={{ height: H }}>
+      {W > 0 && (
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block" role="img" aria-label="Carta trend markah">
+        {[0, 50, 100].map((t) => (
+          <g key={t}>
+            <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="var(--color-gray-200)" />
+            <text x={pad.l - 6} y={y(t)} textAnchor="end" dominantBaseline="middle" className="fill-gray-400 text-[10px]">
+              {t}
+            </text>
+          </g>
         ))}
-      </ul>
+        {valid.length > 1 && <path d={`M${path}`} fill="none" stroke="var(--color-brand-600)" strokeWidth="2" strokeLinejoin="round" />}
+        {points.map((p, i) => (
+          <g key={p.label} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+            <rect x={x(i) - 16} y={pad.t} width="32" height={H - pad.t - pad.b} fill="transparent" />
+            {p.value != null && <circle cx={x(i)} cy={y(p.value)} r="4.5" fill="var(--color-brand-600)" stroke="white" strokeWidth="2" />}
+            <text x={x(i)} y={H - 6} textAnchor="middle" className="fill-gray-500 text-[10px]">
+              {p.label}
+            </text>
+          </g>
+        ))}
+      </svg>
+      )}
+      {hover != null && points[hover].value != null && (
+        <div
+          className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded bg-gray-900 px-2 py-1 text-xs text-white"
+          style={{ left: `${(x(hover) / W) * 100}%`, top: `${(y(points[hover].value) / H) * 100}%` }}
+        >
+          {points[hover].label}: {points[hover].value}
+          {suffix}
+        </div>
+      )}
     </div>
   );
 }

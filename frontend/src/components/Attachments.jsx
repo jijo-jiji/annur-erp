@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Paperclip, Upload, Trash2, FileText, Camera, Lock, Eraser, Check } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Camera, Check, Eraser, FileText, Lock, Trash2, Upload } from 'lucide-react';
 import { filesApi } from '../api/client';
-import { useApp } from '../context/AppContext';
+import { date, initials } from '../lib/format';
+import { Button, cx, filterClass, IconButton, inputClass, useToast } from './ui';
 
 // What the file picker offers for each kind (the server checks the content again)
 export const ACCEPT = {
@@ -13,9 +14,9 @@ export const ACCEPT = {
   HANDOUT: '.pdf,.jpg,.jpeg,.png,.doc,.docx,.ppt,.pptx',
 };
 export const DOC_TYPES = [
-  { id: 'IC', label: 'Salinan Kad Pengenalan' },
+  { id: 'IC', label: 'Salinan kad pengenalan' },
   { id: 'RESUME', label: 'Resume' },
-  { id: 'OFFER_LETTER', label: 'Surat Tawaran' },
+  { id: 'OFFER_LETTER', label: 'Surat tawaran' },
   { id: 'OTHER', label: 'Lain-lain' },
 ];
 
@@ -57,10 +58,11 @@ export async function openAttachment(att) {
 
 export function Thumb({ att, large }) {
   const url = useBlobUrl(att.is_image || att.is_video ? att : null);
-  const box = large ? 'w-full aspect-video' : 'w-14 h-14';
-  if (att.is_image) return url ? <img src={url} alt={att.original_name} className={`${box} object-cover rounded-lg border border-slate-200`} /> : <div className={`${box} rounded-lg bg-slate-100 animate-pulse`} />;
-  if (att.is_video) return url ? <video src={url} controls={large} muted className={`${box} object-cover rounded-lg border border-slate-200 bg-black`} /> : <div className={`${box} rounded-lg bg-slate-100 animate-pulse`} />;
-  return <div className={`${box} rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center`}><FileText className="w-6 h-6 text-slate-400" /></div>;
+  const box = large ? 'w-full aspect-video' : 'size-12';
+  const waiting = <div className={cx(box, 'animate-pulse rounded-md bg-gray-100')} />;
+  if (att.is_image) return url ? <img src={url} alt={att.original_name} className={cx(box, 'rounded-md border border-gray-200 object-cover')} /> : waiting;
+  if (att.is_video) return url ? <video src={url} controls={large} muted className={cx(box, 'rounded-md border border-gray-200 bg-black object-cover')} /> : waiting;
+  return <div className={cx(box, 'flex items-center justify-center rounded-md border border-gray-200 bg-gray-50')}><FileText className="size-5 text-gray-400" /></div>;
 }
 
 /**
@@ -68,7 +70,7 @@ export function Thumb({ att, large }) {
  * `locked` says uploads cannot be removed once sent.
  */
 export function AttachmentList({ kind, objectId, title = 'Lampiran', canUpload = true, canDelete = false, docTypes, locked, hint, emptyText = 'Tiada lampiran.', grid, onChanged }) {
-  const { showToast } = useApp();
+  const notify = useToast();
   const [items, setItems] = useState([]);
   const [busy, setBusy] = useState(false);
   const [docType, setDocType] = useState(docTypes ? docTypes[0].id : '');
@@ -92,73 +94,73 @@ export function AttachmentList({ kind, objectId, title = 'Lampiran', canUpload =
         await filesApi.upload(kind, objectId, file, { doc_type: docTypes ? docType : undefined, description: description || undefined });
         ok += 1;
       } catch (err) {
-        showToast(`${file.name}: ${uploadError(err)}`, 'error');
+        notify(`${file.name}: ${uploadError(err)}`, 'error');
       }
     }
     setBusy(false);
     setDescription('');
     if (inputRef.current) inputRef.current.value = '';
-    if (ok) { showToast(`${ok} fail dimuat naik.`); load(); onChanged?.(); }
+    if (ok) { notify(`${ok} fail dimuat naik.`); load(); onChanged?.(); }
   };
 
   const remove = async (att) => {
     if (!window.confirm(`Padam ${att.original_name}?`)) return;
     try {
       await filesApi.remove(att.id);
-      showToast('Fail dipadam.');
+      notify('Fail dipadam.', 'info');
       load();
       onChanged?.();
     } catch (err) {
-      showToast(uploadError(err), 'error');
+      notify(uploadError(err), 'error');
     }
   };
 
   return (
-    <section className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="font-bold text-slate-900 flex items-center gap-1"><Paperclip className="w-3.5 h-3.5" /> {title} {items.length > 0 && <span className="text-slate-400 font-normal">({items.length})</span>}</h4>
-        {locked && <span className="text-[10px] text-slate-500 flex items-center gap-1"><Lock className="w-3 h-3" /> Tidak boleh dipadam selepas dihantar</span>}
+    <section>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-gray-900">{title}{items.length > 0 && <span className="font-normal text-gray-400"> ({items.length})</span>}</h3>
+        {locked && <span className="flex items-center gap-1 text-xs text-gray-500"><Lock className="size-3" /> Tidak boleh dipadam selepas dihantar</span>}
       </div>
       {canUpload && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
           {docTypes && (
-            <select aria-label="Jenis dokumen" value={docType} onChange={(e) => setDocType(e.target.value)} className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white">
+            <select aria-label="Jenis dokumen" value={docType} onChange={(e) => setDocType(e.target.value)} className={filterClass}>
               {docTypes.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
             </select>
           )}
-          <input aria-label="Keterangan fail" placeholder="Keterangan (pilihan)" value={description} onChange={(e) => setDescription(e.target.value)} className="flex-1 min-w-[120px] px-2 py-1.5 rounded-lg border border-slate-200" />
-          <label className={`px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold inline-flex items-center gap-1 cursor-pointer ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
-            <Upload className="w-3.5 h-3.5" /> {busy ? 'Memuat naik…' : 'Muat naik'}
+          <input aria-label="Keterangan fail" placeholder="Keterangan (pilihan)" value={description} onChange={(e) => setDescription(e.target.value)} className={cx(inputClass, 'min-w-32 flex-1 py-1.5')} />
+          <Button as="label" size="sm" variant="primary" icon={Upload} className={cx('cursor-pointer', busy && 'pointer-events-none opacity-60')}>
+            {busy ? 'Memuat naik…' : 'Muat naik'}
             <input ref={inputRef} type="file" multiple={!docTypes} accept={ACCEPT[kind]} className="hidden" onChange={(e) => upload(e.target.files)} />
-          </label>
+          </Button>
         </div>
       )}
-      {hint && <p className="text-[11px] text-slate-400">{hint}</p>}
-      {items.length === 0 ? <p className="text-slate-400">{emptyText}</p> : grid ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      {hint && <p className="mb-2 text-xs text-gray-500">{hint}</p>}
+      {items.length === 0 ? <p className="text-sm text-gray-500">{emptyText}</p> : grid ? (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {items.map((att) => (
-            <div key={att.id} className="space-y-1">
-              <button type="button" onClick={() => openAttachment(att)} className="block w-full cursor-pointer"><Thumb att={att} large /></button>
-              <div className="flex items-center justify-between gap-1 text-[10px] text-slate-500">
+            <div key={att.id}>
+              <button type="button" onClick={() => openAttachment(att)} className="block w-full"><Thumb att={att} large /></button>
+              <div className="mt-1 flex items-center justify-between gap-1 text-xs text-gray-500">
                 <span className="truncate">{att.description || att.original_name}</span>
-                {canDelete && <button onClick={() => remove(att)} aria-label={`Padam ${att.original_name}`} className="text-rose-600 cursor-pointer"><Trash2 className="w-3 h-3" /></button>}
+                {canDelete && <IconButton label={`Padam ${att.original_name}`} icon={Trash2} onClick={() => remove(att)} className="size-6" />}
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <ul className="space-y-1.5">
+        <ul className="divide-y divide-gray-100 rounded-md border border-gray-200">
           {items.map((att) => (
-            <li key={att.id} className="flex items-center gap-2 p-1.5 rounded-lg border border-slate-100">
-              <button type="button" onClick={() => openAttachment(att)} className="shrink-0 cursor-pointer"><Thumb att={att} /></button>
-              <div className="flex-1 min-w-0">
-                <button type="button" onClick={() => openAttachment(att)} className="font-semibold text-indigo-700 hover:underline truncate block max-w-full text-left cursor-pointer">{att.original_name}</button>
-                <div className="text-[10px] text-slate-500">
-                  {att.doc_type_label && `${att.doc_type_label} • `}{sizeLabel(att.size)} • {att.uploaded_by_name} • {String(att.uploaded_at).slice(0, 10)}
-                </div>
-                {att.description && <div className="text-[10px] text-slate-600">{att.description}</div>}
+            <li key={att.id} className="flex items-center gap-3 px-3 py-2">
+              <button type="button" onClick={() => openAttachment(att)} className="shrink-0"><Thumb att={att} /></button>
+              <div className="min-w-0 flex-1">
+                <button type="button" onClick={() => openAttachment(att)} className="block max-w-full truncate text-left text-sm font-medium text-brand-700 hover:underline">{att.original_name}</button>
+                <p className="text-xs text-gray-500">
+                  {att.doc_type_label && `${att.doc_type_label} · `}{sizeLabel(att.size)} · {att.uploaded_by_name} · {date(String(att.uploaded_at).slice(0, 10))}
+                </p>
+                {att.description && <p className="text-xs text-gray-600">{att.description}</p>}
               </div>
-              {canDelete && !locked && <button onClick={() => remove(att)} aria-label={`Padam ${att.original_name}`} className="p-1 text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>}
+              {canDelete && !locked && <IconButton label={`Padam ${att.original_name}`} icon={Trash2} onClick={() => remove(att)} />}
             </li>
           ))}
         </ul>
@@ -168,8 +170,8 @@ export function AttachmentList({ kind, objectId, title = 'Lampiran', canUpload =
 }
 
 // Profile photo (student / staff); a new upload replaces the old one
-export function PhotoBox({ kind, objectId, canUpload, name, size = 'w-20 h-20' }) {
-  const { showToast } = useApp();
+export function PhotoBox({ kind, objectId, canUpload, name, size = 'size-20' }) {
+  const notify = useToast();
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => {
@@ -177,29 +179,28 @@ export function PhotoBox({ kind, objectId, canUpload, name, size = 'w-20 h-20' }
   }, [kind, objectId]);
   useEffect(() => { load(); }, [load]);
   const url = useBlobUrl(photo);
-  const initials = (name || '?').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
   const upload = async (file) => {
     if (!file) return;
     setBusy(true);
     try {
       await filesApi.upload(kind, objectId, file);
-      showToast('Gambar dikemas kini.');
+      notify('Gambar dikemas kini.');
       load();
     } catch (err) {
-      showToast(uploadError(err), 'error');
+      notify(uploadError(err), 'error');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className={`relative ${size} shrink-0`}>
-      {url ? <img src={url} alt={`Gambar ${name}`} className={`${size} rounded-2xl object-cover border border-slate-200`} />
-        : <div className={`${size} rounded-2xl bg-indigo-100 text-indigo-700 font-black text-lg flex items-center justify-center`}>{initials}</div>}
+    <div className={cx('relative shrink-0', size)}>
+      {url ? <img src={url} alt={`Gambar ${name}`} className={cx(size, 'rounded-lg border border-gray-200 object-cover')} />
+        : <div className={cx(size, 'flex items-center justify-center rounded-lg bg-brand-100 text-lg font-semibold text-brand-800')}>{initials(name)}</div>}
       {canUpload && (
-        <label title="Tukar gambar" className={`absolute -bottom-1 -right-1 p-1.5 rounded-full bg-white border border-slate-200 shadow cursor-pointer ${busy ? 'opacity-50 pointer-events-none' : ''}`}>
-          <Camera className="w-3.5 h-3.5 text-slate-700" />
+        <label title="Tukar gambar" className={cx('absolute -bottom-1 -right-1 cursor-pointer rounded-full border border-gray-200 bg-white p-1.5 shadow', busy && 'pointer-events-none opacity-50')}>
+          <Camera className="size-3.5 text-gray-700" />
           <input type="file" accept={ACCEPT[kind]} className="hidden" onChange={(e) => upload(e.target.files?.[0])} />
         </label>
       )}
@@ -209,7 +210,7 @@ export function PhotoBox({ kind, objectId, canUpload, name, size = 'w-20 h-20' }
 
 // Recipient signature drawn with finger / mouse, saved as a PNG attachment
 export function SignaturePad({ objectId, canSign, onSaved }) {
-  const { showToast } = useApp();
+  const notify = useToast();
   const canvasRef = useRef(null);
   const drawing = useRef(false);
   const [dirty, setDirty] = useState(false);
@@ -253,12 +254,12 @@ export function SignaturePad({ objectId, canSign, onSaved }) {
     canvasRef.current.toBlob(async (blob) => {
       try {
         await filesApi.upload('VOUCHER_SIGNATURE', objectId, new File([blob], 'tandatangan-penerima.png', { type: 'image/png' }));
-        showToast('Tandatangan penerima disimpan.');
+        notify('Tandatangan penerima disimpan.');
         clear();
         load();
         onSaved?.();
       } catch (err) {
-        showToast(uploadError(err), 'error');
+        notify(uploadError(err), 'error');
       } finally {
         setBusy(false);
       }
@@ -266,20 +267,29 @@ export function SignaturePad({ objectId, canSign, onSaved }) {
   };
 
   return (
-    <div className="space-y-1.5">
-      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tandatangan Penerima</div>
-      {url && <img src={url} alt="Tandatangan penerima" className="h-20 border border-slate-200 rounded-lg bg-white" />}
+    <section>
+      <h3 className="mb-2 text-sm font-semibold text-gray-900">Tandatangan penerima</h3>
+      {url && <img src={url} alt="Tandatangan penerima" className="mb-2 h-20 rounded-md border border-gray-200 bg-white" />}
       {canSign && (
         <>
-          <canvas ref={canvasRef} width={480} height={140} onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerLeave={end}
-            aria-label="Ruang tandatangan" className="w-full h-24 border border-dashed border-slate-300 rounded-lg bg-white touch-none cursor-crosshair" />
-          <div className="flex justify-end gap-1.5">
-            <button type="button" onClick={clear} className="px-2.5 py-1 rounded-lg border border-slate-200 font-semibold inline-flex items-center gap-1 cursor-pointer"><Eraser className="w-3 h-3" /> Padam</button>
-            <button type="button" onClick={save} disabled={!dirty || busy} className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-semibold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"><Check className="w-3 h-3" /> {existing ? 'Ganti tandatangan' : 'Simpan tandatangan'}</button>
+          <canvas
+            ref={canvasRef}
+            width={480}
+            height={140}
+            onPointerDown={start}
+            onPointerMove={move}
+            onPointerUp={end}
+            onPointerLeave={end}
+            aria-label="Ruang tandatangan"
+            className="h-24 w-full cursor-crosshair touch-none rounded-md border border-dashed border-gray-300 bg-white"
+          />
+          <div className="mt-2 flex justify-end gap-2">
+            <Button size="sm" icon={Eraser} onClick={clear}>Padam</Button>
+            <Button size="sm" variant="primary" icon={Check} onClick={save} disabled={!dirty || busy}>{existing ? 'Ganti tandatangan' : 'Simpan tandatangan'}</Button>
           </div>
         </>
       )}
-      {!url && !canSign && <p className="text-slate-400">Tiada tandatangan.</p>}
-    </div>
+      {!url && !canSign && <p className="text-sm text-gray-500">Tiada tandatangan.</p>}
+    </section>
   );
 }

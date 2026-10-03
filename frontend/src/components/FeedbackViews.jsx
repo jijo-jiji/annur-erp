@@ -1,38 +1,53 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Trash2, Upload, Image as ImageIcon } from 'lucide-react';
-import { useApp } from '../context/AppContext';
-import { useGrades } from './grades';
+import { useCallback, useEffect, useState } from 'react';
+import { MessageSquareQuote, Plus, Trash2 } from 'lucide-react';
 import { filesApi, studentsApi } from '../api/client';
-import { ACCEPT, Thumb, openAttachment, uploadError } from './Attachments';
-import { today } from './studentShared';
+import { date, FORMS, formLabel, todayISO } from '../lib/format';
+import { ACCEPT, openAttachment, Thumb, uploadError } from './Attachments';
+import { Button, Card, Checkbox, cx, EmptyState, filterClass, IconButton, Input, Select, Textarea, useToast } from './ui';
 
 const GIVEN_BY = [{ id: 'PARENT', label: 'Ibu bapa' }, { id: 'STUDENT', label: 'Pelajar' }];
-const input = 'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white';
 
 function FeedbackCard({ fb, canDelete, onDelete, showStudent }) {
-  const { forms, formLabel, isForm } = useGrades();
   return (
-    <div className="p-3 rounded-xl border border-slate-200 space-y-2 bg-white">
+    <div className="rounded-md border border-gray-200 bg-white p-3 text-sm">
       <div className="flex items-start justify-between gap-2">
         <div>
-          {showStudent && <div className="font-bold text-slate-900">{fb.student_name} <span className="text-slate-400 font-normal">({formLabel(fb.form_level) || fb.form_level})</span></div>}
-          <div className="text-[10px] text-slate-500">{fb.date} • {fb.given_by_label} • direkod oleh {fb.recorded_by}</div>
+          {showStudent && (
+            <a href={`#/students/${fb.student_code ?? ''}`} className={cx('font-medium text-gray-900', fb.student_code && 'hover:underline')}>
+              {fb.student_name} <span className="font-normal text-gray-400">· {formLabel(fb.form_level)}</span>
+            </a>
+          )}
+          <p className="text-xs text-gray-500">{date(fb.date)} · {fb.given_by_label} · direkod oleh {fb.recorded_by}</p>
         </div>
-        {canDelete && <button onClick={() => onDelete(fb)} aria-label="Padam maklum balas" className="p-1 text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>}
+        {canDelete && <IconButton label="Padam maklum balas" icon={Trash2} onClick={() => onDelete(fb)} className="-mr-1 -mt-1" />}
       </div>
-      <p className="text-slate-700 whitespace-pre-line">{fb.description}</p>
+      <p className="mt-2 whitespace-pre-line text-gray-700">{fb.description}</p>
       {fb.media.length > 0 && (
-        <div className="grid grid-cols-3 gap-1.5">
-          {fb.media.map((m) => <button key={m.id} type="button" onClick={() => openAttachment(m)} className="cursor-pointer"><Thumb att={m} large /></button>)}
+        <div className="mt-2 grid grid-cols-3 gap-1.5">
+          {fb.media.map((m) => <button key={m.id} type="button" onClick={() => openAttachment(m)}><Thumb att={m} large /></button>)}
         </div>
       )}
     </div>
   );
 }
 
+function useRemove(reload) {
+  const notify = useToast();
+  return async (fb) => {
+    if (!window.confirm('Padam maklum balas ini bersama gambar dan videonya?')) return;
+    try {
+      await studentsApi.deleteFeedback(fb.id);
+      notify('Maklum balas dipadam.', 'info');
+      reload();
+    } catch (err) {
+      notify(uploadError(err), 'error');
+    }
+  };
+}
+
 // Feedback section in the student profile: record feedback with photos / videos
 export function StudentFeedbackPanel({ studentId, canDelete, onChanged }) {
-  const { showToast } = useApp();
+  const notify = useToast();
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -41,6 +56,7 @@ export function StudentFeedbackPanel({ studentId, canDelete, onChanged }) {
     studentsApi.feedback({ student: studentId }).then(setRows).catch(() => setRows([]));
   }, [studentId]);
   useEffect(() => { load(); }, [load]);
+  const remove = useRemove(load);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -51,58 +67,44 @@ export function StudentFeedbackPanel({ studentId, canDelete, onChanged }) {
         try {
           await filesApi.upload('FEEDBACK', fb.id, file);
         } catch (err) {
-          showToast(`${file.name}: ${uploadError(err)}`, 'error');
+          notify(`${file.name}: ${uploadError(err)}`, 'error');
         }
       }
-      showToast('Maklum balas direkodkan.');
+      notify('Maklum balas direkodkan.');
       setForm(null);
       load();
       onChanged?.();
     } catch (err) {
-      showToast(uploadError(err), 'error');
+      notify(uploadError(err), 'error');
     } finally {
       setBusy(false);
     }
   };
 
-  const remove = async (fb) => {
-    if (!window.confirm('Padam maklum balas ini bersama gambar/videonya?')) return;
-    try {
-      await studentsApi.deleteFeedback(fb.id);
-      showToast('Maklum balas dipadam.');
-      load();
-    } catch (err) {
-      showToast(uploadError(err), 'error');
-    }
-  };
-
   return (
-    <section className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h4 className="font-bold text-slate-900">Maklum Balas Ibu Bapa / Pelajar ({rows.length})</h4>
-        {!form && <button onClick={() => setForm({ date: today(), given_by: 'PARENT', description: '', files: [] })} className="px-3 py-1.5 rounded-lg font-semibold text-[11px] border bg-pink-50 border-pink-200 text-pink-700 cursor-pointer">+ Maklum Balas</button>}
+    <section>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-gray-900">Maklum balas ibu bapa / pelajar ({rows.length})</h3>
+        {!form && <Button size="sm" icon={Plus} onClick={() => setForm({ date: todayISO(), given_by: 'PARENT', description: '', files: [] })}>Maklum balas</Button>}
       </div>
       {form && (
-        <form onSubmit={submit} className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            <select aria-label="Daripada" value={form.given_by} onChange={(e) => setForm({ ...form, given_by: e.target.value })} className={input}>
+        <form onSubmit={submit} className="mb-3 space-y-3 rounded-md bg-gray-50 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Select label="Daripada" value={form.given_by} onChange={(e) => setForm({ ...form, given_by: e.target.value })}>
               {GIVEN_BY.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
-            </select>
-            <input type="date" aria-label="Tarikh" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={input} />
+            </Select>
+            <Input label="Tarikh" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
           </div>
-          <textarea required rows="2" placeholder="Maklum balas" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={input} />
-          <label className="flex items-center gap-2 font-semibold text-slate-700 cursor-pointer">
-            <Upload className="w-3.5 h-3.5" /> Gambar / video (pilihan, video maksimum 50 MB)
-            <input type="file" multiple accept={ACCEPT.FEEDBACK} onChange={(e) => setForm({ ...form, files: [...e.target.files] })} className="text-[11px]" />
-          </label>
+          <Textarea label="Maklum balas" required rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <Input label="Gambar / video" hint="Pilihan. Video maksimum 50 MB." type="file" multiple accept={ACCEPT.FEEDBACK} onChange={(e) => setForm({ ...form, files: [...e.target.files] })} />
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setForm(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-semibold cursor-pointer">Batal</button>
-            <button type="submit" disabled={busy} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold cursor-pointer disabled:opacity-60">{busy ? 'Menyimpan…' : 'Simpan'}</button>
+            <Button size="sm" onClick={() => setForm(null)}>Batal</Button>
+            <Button size="sm" type="submit" variant="primary" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
           </div>
         </form>
       )}
-      {rows.length === 0 ? <p className="text-slate-400">Tiada maklum balas.</p> : (
-        <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+      {rows.length === 0 ? <p className="text-sm text-gray-500">Tiada maklum balas.</p> : (
+        <div className="space-y-2">
           {rows.map((fb) => <FeedbackCard key={fb.id} fb={fb} canDelete={canDelete} onDelete={remove} />)}
         </div>
       )}
@@ -110,10 +112,8 @@ export function StudentFeedbackPanel({ studentId, canDelete, onChanged }) {
   );
 }
 
-// Gallery of feedback across students, filtered by form and date (j-status.doc: Gallery - feedback)
+// Gallery of feedback across students, filtered by grade and date
 export function FeedbackGallery({ canDelete }) {
-  const { forms, formLabel, isForm } = useGrades();
-  const { showToast } = useApp();
   const [filters, setFilters] = useState({ form: '', start: '', end: '', media: false });
   const [rows, setRows] = useState([]);
 
@@ -122,37 +122,27 @@ export function FeedbackGallery({ canDelete }) {
     studentsApi.feedback(params).then(setRows).catch(() => setRows([]));
   }, [filters.form, filters.start, filters.end]);
   useEffect(() => { load(); }, [load]);
-
-  const remove = async (fb) => {
-    if (!window.confirm('Padam maklum balas ini bersama gambar/videonya?')) return;
-    try {
-      await studentsApi.deleteFeedback(fb.id);
-      showToast('Maklum balas dipadam.');
-      load();
-    } catch (err) {
-      showToast(uploadError(err), 'error');
-    }
-  };
+  const remove = useRemove(load);
 
   const shown = filters.media ? rows.filter((r) => r.media.length > 0) : rows;
-  const select = 'px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-semibold';
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4 text-xs">
-      <div className="flex flex-wrap items-center gap-2">
-        <ImageIcon className="w-4 h-4 text-slate-400" />
-        <select aria-label="Tingkatan" value={filters.form} onChange={(e) => setFilters({ ...filters, form: e.target.value })} className={select}>
+    <>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <select aria-label="Tingkatan" value={filters.form} onChange={(e) => setFilters({ ...filters, form: e.target.value })} className={filterClass}>
           <option value="">Semua tingkatan</option>
-          {forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+          {FORMS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
         </select>
-        <label className="flex items-center gap-1 font-semibold text-slate-600">Dari <input type="date" value={filters.start} onChange={(e) => setFilters({ ...filters, start: e.target.value })} className={select} /></label>
-        <label className="flex items-center gap-1 font-semibold text-slate-600">Hingga <input type="date" value={filters.end} onChange={(e) => setFilters({ ...filters, end: e.target.value })} className={select} /></label>
-        <label className="flex items-center gap-1.5 font-semibold text-slate-600"><input type="checkbox" checked={filters.media} onChange={(e) => setFilters({ ...filters, media: e.target.checked })} /> Ada gambar/video sahaja</label>
+        <label className="flex items-center gap-2 text-sm text-gray-600">Dari <input type="date" value={filters.start} onChange={(e) => setFilters({ ...filters, start: e.target.value })} className={filterClass} /></label>
+        <label className="flex items-center gap-2 text-sm text-gray-600">Hingga <input type="date" value={filters.end} onChange={(e) => setFilters({ ...filters, end: e.target.value })} className={filterClass} /></label>
+        <Checkbox label="Ada gambar atau video sahaja" checked={filters.media} onChange={(e) => setFilters({ ...filters, media: e.target.checked })} />
       </div>
-      {shown.length === 0 ? <p className="py-8 text-center text-slate-400">Tiada maklum balas. Rekod maklum balas dalam profil pelajar.</p> : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+      {shown.length === 0 ? (
+        <Card><EmptyState icon={MessageSquareQuote} title="Tiada maklum balas">Rekod maklum balas dalam profil pelajar.</EmptyState></Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {shown.map((fb) => <FeedbackCard key={fb.id} fb={fb} canDelete={canDelete} onDelete={remove} showStudent />)}
         </div>
       )}
-    </div>
+    </>
   );
 }

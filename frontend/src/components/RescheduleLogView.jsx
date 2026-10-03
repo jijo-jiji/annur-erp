@@ -1,327 +1,345 @@
-import React, { useMemo, useState } from 'react';
-import { CalendarSync, Plus, MessageSquare, CheckCircle2 } from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { useState } from 'react';
+import { CalendarClock, Check, Copy, Download, Plus } from 'lucide-react';
+import { CENTRE, DAYS } from '../lib/config';
+import { downloadCsv } from '../lib/csv';
+import { useStore } from '../store';
+import { can } from '../lib/permissions';
+import { classLabel } from '../lib/domain';
+import { date, DAY_LABEL, RESCHEDULE_REASON_LABEL, timeRange, todayISO } from '../lib/format';
+import {
+  Badge, Button, Card, EmptyState, Input, Modal, PageHeader, Segmented, Select, Table, Tabs, Td, Textarea, Th, useToast, WhatsAppIcon,
+} from './ui';
 
-const REASONS = [
-  { value: 'PH', label: 'Cuti Umum / Hari Pelepasan Am' },
-  { value: 'MARKING_PAPER', label: 'Guru Menanda Kertas Peperiksaan' },
-  { value: 'TIME_MISTAKE', label: 'Pembetulan Jadual / Masa Bertindih' },
-  { value: 'EMERGENCY_LEAVE', label: 'Kecemasan / Cuti Sakit Guru' },
-  { value: 'EXTRA_SESSION', label: 'Kelas Tambahan Peperiksaan' },
-  { value: 'OTHER', label: 'Lain-lain' },
-];
-const REASON_LABELS = Object.fromEntries(REASONS.map((r) => [r.value, r.label]));
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL', 'OGO', 'SEP', 'OKT', 'NOV', 'DIS'];
 
-// Log book month label, e.g. "SEP '26", taken from the replacement date
-function monthLabel(isoDate) {
-  const d = new Date(isoDate);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${MONTHS[d.getMonth()]} '${String(d.getFullYear()).slice(-2)}`;
+export default function RescheduleLogView({ role }) {
+  const { reschedules, classes, subjects, teachers, rescheduleAction } = useStore();
+  const notify = useToast();
+  // The timetable links here with ?class=<id> to record a cancellation for that class
+  const presetClass = new URLSearchParams(window.location.hash.split('?')[1]).get('class') || '';
+  const [tab, setTab] = useState('all');
+  const [creating, setCreating] = useState(Boolean(presetClass));
+  const [notice, setNotice] = useState(null);
+  const [rejecting, setRejecting] = useState(null);
+
+  const byId = Object.fromEntries(classes.map((c) => [c.id, c]));
+  const pending = reschedules.filter((r) => r.status === 'PENDING');
+  const unverified = reschedules.filter((r) => r.approved && !r.verifiedBy);
+  const rows = tab === 'pending' ? pending : tab === 'unverified' ? unverified : reschedules;
+  const canApprove = can(role, 'reschedules.approve');
+  const canVerify = can(role, 'reschedules.verify');
+  const STATUS_TEXT = { PENDING: 'Menunggu supervisor', APPROVED: 'Diluluskan', REJECTED: 'Ditolak' };
+
+  const decide = (r, name, comment = '') =>
+    rescheduleAction(r.id, name, comment)
+      .then(() => notify({ approve: 'Rekod diluluskan.', reject: 'Rekod ditolak.', verify: 'Rekod disahkan oleh Pengurusan.' }[name], name === 'reject' ? 'info' : 'success'))
+      .catch(() => {});
+
+  const exportCsv = () => downloadCsv('batal-ganti-kelas.csv', ['Kelas', 'Tarikh batal', 'Tarikh ganti', 'Kelas tambahan', 'Sebab', 'Catatan', 'Status', 'Diputuskan oleh', 'Disahkan oleh', 'Direkod oleh', 'Notis dihantar'],
+    reschedules.map((r) => [r.classCode, r.cancelled, r.replacement, r.extra ? 'Ya' : '', RESCHEDULE_REASON_LABEL[r.reason] || r.reason, r.remarks, STATUS_TEXT[r.status], r.decidedBy, r.verifiedBy, r.recordedBy, r.notified ? 'Ya' : '']));
+
+  return (
+    <>
+      <PageHeader
+        title="Batal & ganti kelas"
+        description="Rekod rasmi pembatalan, kelas ganti dan kelas tambahan, termasuk makluman kepada pelajar."
+        actions={
+          <>
+            <Button icon={Download} onClick={exportCsv}>Excel</Button>
+            {can(role, 'reschedules.create') && (
+              <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+                Rekod baharu
+              </Button>
+            )}
+          </>
+        }
+      />
+
+      <Tabs
+        className="mb-4"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'all', label: 'Semua rekod', count: reschedules.length },
+          { value: 'pending', label: 'Menunggu kelulusan', count: pending.length },
+          ...(canVerify ? [{ value: 'unverified', label: 'Belum disahkan Pengurusan', count: unverified.length }] : []),
+        ]}
+      />
+
+      <Card>
+        {rows.length === 0 ? (
+          <EmptyState icon={CalendarClock} title="Tiada rekod" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Kelas</Th>
+                <Th>Tarikh</Th>
+                <Th>Sebab</Th>
+                <Th>Status</Th>
+                <Th className="text-right">Tindakan</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const c = byId[r.classId];
+                return (
+                  <tr key={r.id} className="hover:bg-gray-50">
+                    <Td className="min-w-44">
+                      <p className="font-medium text-gray-900">{c ? classLabel(c, subjects) : r.classCode || '—'}</p>
+                      {teachers.find((t) => t.code === c?.teacher) && <p className="text-[13px] text-gray-500">Cikgu {teachers.find((t) => t.code === c?.teacher).name}</p>}
+                    </Td>
+                    <Td className="whitespace-nowrap">
+                      {r.extra ? (
+                        <>
+                          <p className="text-gray-900">{date(r.replacement)}</p>
+                          <Badge tone="blue" className="mt-1">Kelas tambahan</Badge>
+                        </>
+                      ) : (
+                        <>
+                          {r.cancelled && <p className="text-gray-500 line-through decoration-gray-400">{date(r.cancelled)}</p>}
+                          <p className="text-gray-900">{r.cancelled ? '→ ' : ''}{r.replacement ? date(r.replacement) : 'Tiada ganti'}</p>
+                        </>
+                      )}
+                    </Td>
+                    <Td className="min-w-40">
+                      <p className="text-gray-900">{RESCHEDULE_REASON_LABEL[r.reason] || r.reason}</p>
+                      {r.remarks && <p className="text-[13px] text-gray-500">{r.remarks}</p>}
+                    </Td>
+                    <Td className="min-w-40">
+                      <Badge tone={r.status === 'APPROVED' ? 'green' : r.status === 'REJECTED' ? 'red' : 'amber'}>{STATUS_TEXT[r.status] || r.status}</Badge>
+                      <div className="mt-1 space-y-0.5 text-xs text-gray-500">
+                        {r.decidedBy && <p>{r.rejected ? 'Ditolak' : 'Diluluskan'} oleh {r.decidedBy}</p>}
+                        {r.comment && <p>“{r.comment}”</p>}
+                        {r.verifiedBy && <p className="font-medium text-brand-700">Disahkan oleh {r.verifiedBy}</p>}
+                        {r.recordedBy && <p>Direkod oleh {r.recordedBy}</p>}
+                      </div>
+                    </Td>
+                    <Td className="whitespace-nowrap text-right">
+                      <div className="inline-flex flex-wrap justify-end gap-1.5">
+                        {r.status === 'PENDING' && canApprove && (
+                          <>
+                            <Button size="sm" variant="danger" onClick={() => setRejecting(r)}>Tolak</Button>
+                            <Button size="sm" variant="primary" onClick={() => decide(r, 'approve')}>Luluskan</Button>
+                          </>
+                        )}
+                        {r.approved && canVerify && !r.verifiedBy && (
+                          <Button size="sm" onClick={() => decide(r, 'verify')}>Sahkan</Button>
+                        )}
+                        {r.approved && (
+                          <Button size="sm" onClick={() => setNotice(r)} title={r.notified ? 'Notis telah dihantar' : 'Hantar notis WhatsApp'} className="px-2 xl:px-3">
+                            <WhatsAppIcon className="size-3.5" />
+                            <span className="hidden xl:inline">{r.notified ? 'Dihantar' : 'Hantar notis'}</span>
+                            {r.notified && <Check className="size-3.5 text-brand-600 xl:hidden" aria-label="Dihantar" />}
+                          </Button>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      <CreateModal open={creating} role={role} presetClass={presetClass} onClose={() => setCreating(false)} />
+      <NoticeModal record={notice} cls={notice && byId[notice.classId]} onClose={() => setNotice(null)} />
+      {rejecting && (
+        <RejectModal
+          record={rejecting}
+          onClose={() => setRejecting(null)}
+          onReject={(comment) => decide(rejecting, 'reject', comment).then(() => setRejecting(null))}
+        />
+      )}
+    </>
+  );
 }
 
-const emptyForm = {
-  timetable_class: '',
-  tarikh_batal: '',
-  tarikh_ganti: '',
-  is_extra_class: false,
-  reason_type: 'PH',
-  remarks: '',
-};
-
-export default function RescheduleLogView({ currentRole = 'ADMIN' }) {
-  const { reschedules, timetable, createReschedule, rescheduleAction, markRescheduleNotified, showToast } = useApp();
-
-  const decide = (log, name) => {
-    const comment = name === 'reject' ? window.prompt('Sebab penolakan:') : '';
-    if (name === 'reject' && !comment) return;
-    const messages = { approve: `Gantian ${log.class_code} diluluskan.`, reject: `Gantian ${log.class_code} ditolak.`, verify: `Gantian ${log.class_code} disahkan.` };
-    rescheduleAction(log.id, name, { comment }, messages[name]).catch(() => {});
-  };
-  const [showModal, setShowModal] = useState(false);
-  const [newLog, setNewLog] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-
-  const isAdmin = currentRole === 'ADMIN';
-  const isSupervisor = currentRole === 'SUPERVISOR';
-  const isManagement = currentRole === 'MANAGEMENT';
-  const canApprove = isSupervisor || isManagement;
-
-  const classOptions = useMemo(
-    () => [...timetable].sort((a, b) => a.class_code.localeCompare(b.class_code)),
-    [timetable]
+// A rejection always carries a reason, shown to whoever recorded the entry
+function RejectModal({ record, onClose, onReject }) {
+  const [comment, setComment] = useState('');
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Tolak rekod"
+      description={record.classCode}
+      footer={
+        <>
+          <Button onClick={onClose}>Batal</Button>
+          <Button variant="danger" disabled={!comment.trim()} onClick={() => onReject(comment.trim())}>
+            Tolak rekod
+          </Button>
+        </>
+      }
+    >
+      <Textarea label="Sebab penolakan" required rows={3} value={comment} onChange={(e) => setComment(e.target.value)} />
+    </Modal>
   );
+}
 
-  const handleCreate = async (e) => {
+const MONTH_CODES = ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL', 'OGO', 'SEP', 'OKT', 'NOV', 'DIS'];
+// Log book month, e.g. "SEP '26"
+const logMonth = (iso) => (iso ? `${MONTH_CODES[Number(iso.slice(5, 7)) - 1]} '${iso.slice(2, 4)}` : '');
+
+function CreateModal({ open, role, presetClass, onClose }) {
+  const { classes, subjects, addReschedule } = useStore();
+  const empty = { classId: presetClass || '', cancelled: '', replacement: '', reason: 'PH', remarks: '' };
+  const [kind, setKind] = useState('replace');
+  const [f, setF] = useState(empty);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = (patch) => setF((p) => ({ ...p, ...patch }));
+
+  const submit = async (e) => {
     e.preventDefault();
-    setSaving(true);
-    try {
-      await createReschedule({
-        ...newLog,
-        timetable_class: Number(newLog.timetable_class),
-        tarikh_batal: newLog.tarikh_batal || null,
-        month_label: monthLabel(newLog.tarikh_ganti),
-      });
-      setShowModal(false);
-      setNewLog(emptyForm);
-    } catch {
-      // toast already shown
-    } finally {
-      setSaving(false);
+    if (kind === 'replace' && f.cancelled && f.replacement && f.replacement <= f.cancelled) {
+      setError('Tarikh ganti mesti selepas tarikh batal.');
+      return;
     }
-  };
-
-  const handleNotify = async (log) => {
-    const message = [
-      'Assalamualaikum ibu bapa/pelajar.',
-      `Makluman ${log.is_extra_class ? 'kelas tambahan' : 'gantian kelas'} bagi ${log.class_code}:`,
-      `Tarikh Batal: ${log.tarikh_batal || '-'}`,
-      `Tarikh Ganti: ${log.tarikh_ganti || '-'}`,
-      `Sebab: ${REASON_LABELS[log.reason_type] || ''}${log.remarks ? ` (${log.remarks})` : ''}`,
-      '',
-      'Harap maklum. Terima kasih - Pusat Tuisyen An Nur.',
-    ].join('\n');
+    const extra = kind === 'extra';
+    setBusy(true);
     try {
-      await navigator.clipboard.writeText(message);
-      await markRescheduleNotified(log.id);
-      showToast('Teks notis disalin. Tampal ke grup WhatsApp kelas.');
+      await addReschedule({
+        classId: Number(f.classId),
+        cancelled: extra ? null : f.cancelled,
+        replacement: f.replacement || null,
+        extra,
+        reason: extra ? 'EXTRA_SESSION' : f.reason,
+        remarks: f.remarks,
+        monthLabel: logMonth(f.replacement || f.cancelled),
+      });
+      setF({ ...empty, classId: '' });
+      setError('');
+      onClose();
     } catch {
-      window.prompt('Salin teks notis ini ke grup WhatsApp kelas:', message);
+      // the reason has already been shown
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">Catatan Pembatalan & Gantian Kelas</h2>
-          <p className="text-xs text-slate-500">
-            Buku log rasmi: Tarikh Batal, Tarikh Ganti, Kelas Tambahan & Sebab
-          </p>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Rekod pembatalan / kelas ganti"
+      footer={
+        <>
+          <Button onClick={onClose}>Batal</Button>
+          <Button type="submit" form="reschedule-form" variant="primary" disabled={busy}>
+            {busy ? 'Menyimpan…' : 'Simpan'}
+          </Button>
+        </>
+      }
+    >
+      <form id="reschedule-form" onSubmit={submit} className="space-y-4">
+        <Segmented
+          value={kind}
+          onChange={setKind}
+          items={[
+            { value: 'replace', label: 'Batal & ganti' },
+            { value: 'extra', label: 'Kelas tambahan' },
+          ]}
+        />
+        <Select label="Kelas" required value={f.classId} onChange={(e) => set({ classId: e.target.value })}>
+          <option value="">Pilih kelas…</option>
+          {DAYS.map((day) => (
+            <optgroup key={day} label={DAY_LABEL[day]}>
+              {classes
+                .filter((c) => c.day === day)
+                .sort((a, b) => a.start.localeCompare(b.start))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {classLabel(c, subjects)} — {timeRange(c.start, c.end)}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </Select>
+        <div className="grid grid-cols-2 gap-3">
+          {kind === 'replace' && <Input label="Tarikh batal" type="date" required value={f.cancelled} onChange={(e) => set({ cancelled: e.target.value })} />}
+          <Input
+            label={kind === 'replace' ? 'Tarikh ganti' : 'Tarikh kelas'}
+            hint={kind === 'replace' ? 'Kosongkan jika tiada kelas ganti.' : undefined}
+            type="date"
+            required={kind === 'extra'}
+            min={kind === 'extra' ? todayISO() : undefined}
+            value={f.replacement}
+            onChange={(e) => set({ replacement: e.target.value })}
+          />
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold text-xs hover:bg-indigo-700 shadow-sm flex items-center gap-1.5 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" /> Catat Pembatalan / Gantian
-        </button>
-      </div>
+        {kind === 'replace' && (
+          <Select label="Sebab" value={f.reason} onChange={(e) => set({ reason: e.target.value })}>
+            {Object.entries(RESCHEDULE_REASON_LABEL)
+              .filter(([k]) => k !== 'EXTRA_SESSION')
+              .map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+          </Select>
+        )}
+        <Textarea label="Catatan" rows={2} value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} placeholder="cth. Cuti Hari Raya Aidilfitri" />
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {!can(role, 'reschedules.approve') && <p className="text-[13px] text-gray-500">Rekod akan menunggu kelulusan supervisor sebelum dimaklumkan.</p>}
+      </form>
+    </Modal>
+  );
+}
 
-      {isAdmin && (
-        <div className="bg-purple-50 border border-purple-200 p-4 rounded-2xl flex items-center gap-3 text-purple-900 text-xs">
-          <CalendarSync className="w-5 h-5 text-purple-600 shrink-0" />
-          <p>
-            <span className="font-bold">Admin merekod</span> pembatalan/gantian atas arahan guru. Rekod menunggu kelulusan Supervisor sebelum notis dihantar kepada waris.
-          </p>
-        </div>
-      )}
+function NoticeModal({ record: r, cls, onClose }) {
+  const { subjects, markRescheduleNotified } = useStore();
+  const notify = useToast();
+  if (!r || !cls) return null;
 
-      {canApprove && (
-        <div className="bg-blue-50 border border-blue-200 p-4 rounded-2xl flex items-center gap-3 text-blue-900 text-xs">
-          <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-          <p>
-            <span className="font-bold">Kelulusan gantian:</span> Supervisor meluluskan atau menolak (dengan sebab); Management mengesahkan rekod yang diluluskan.
-          </p>
-        </div>
-      )}
+  const label = classLabel(cls, subjects);
+  const message = r.extra
+    ? `Assalamualaikum ibu bapa dan pelajar.\n\nMakluman kelas tambahan ${label} pada ${date(r.replacement)}, ${timeRange(cls.start, cls.end)}.${r.remarks ? `\n\n${r.remarks}` : ''}\n\nTerima kasih.\n— ${CENTRE.name} ${CENTRE.branch}`
+    : `Assalamualaikum ibu bapa dan pelajar.\n\nKelas ${label} pada ${date(r.cancelled)} dibatalkan (${(RESCHEDULE_REASON_LABEL[r.reason] || 'lain-lain').toLowerCase()}). ${r.replacement ? `Kelas ganti pada ${date(r.replacement)}, ${timeRange(cls.start, cls.end)}.` : 'Tarikh kelas ganti akan dimaklumkan kemudian.'}${r.remarks ? `\n\n${r.remarks}` : ''}\n\nHarap maklum. Terima kasih.\n— ${CENTRE.name} ${CENTRE.branch}`;
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold text-[11px]">
-            <tr>
-              <th className="py-3.5 px-4">Bulan</th>
-              <th className="py-3.5 px-4">Kelas</th>
-              <th className="py-3.5 px-4">Tarikh Batal</th>
-              <th className="py-3.5 px-4">Tarikh Ganti</th>
-              <th className="py-3.5 px-4 text-center">Extra Class</th>
-              <th className="py-3.5 px-4">Sebab & Catatan</th>
-              <th className="py-3.5 px-4">Status</th>
-              <th className="py-3.5 px-4 text-right">Tindakan</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {reschedules.length === 0 && (
-              <tr>
-                <td colSpan={8} className="py-10 text-center text-slate-400">Tiada rekod pembatalan atau gantian kelas.</td>
-              </tr>
-            )}
-            {reschedules.map((log) => (
-              <tr key={log.id} className="hover:bg-slate-50 transition">
-                <td className="py-3.5 px-4 font-bold text-indigo-700">{log.month_label || '-'}</td>
-                <td className="py-3.5 px-4">
-                  <div className="font-semibold text-slate-900">{log.class_code}</div>
-                  <div className="text-[10px] text-slate-400">{log.teacher_name || 'Guru belum ditetapkan'}</div>
-                </td>
-                <td className="py-3.5 px-4 text-rose-600 font-medium">{log.tarikh_batal || '-'}</td>
-                <td className="py-3.5 px-4 text-emerald-600 font-bold">{log.tarikh_ganti || '-'}</td>
-                <td className="py-3.5 px-4 text-center">
-                  {log.is_extra_class ? (
-                    <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-bold text-[10px]">YA</span>
-                  ) : (
-                    <span className="text-slate-400">-</span>
-                  )}
-                </td>
-                <td className="py-3.5 px-4 text-slate-700">
-                  <div className="font-semibold">{REASON_LABELS[log.reason_type] || log.reason_type}</div>
-                  {log.remarks && <div className="text-[11px] text-slate-500">{log.remarks}</div>}
-                </td>
-                <td className="py-3.5 px-4">
-                  {log.status === 'APPROVED' && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                      <CheckCircle2 className="w-3 h-3" /> Diluluskan
-                    </span>
-                  )}
-                  {log.status === 'REJECTED' && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">Ditolak</span>
-                  )}
-                  {log.status === 'PENDING' && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                      Menunggu Supervisor
-                    </span>
-                  )}
-                  {log.decided_by && <div className="text-[10px] text-slate-500 mt-1">{log.status === 'REJECTED' ? 'Ditolak' : 'Diluluskan'} oleh {log.decided_by}</div>}
-                  {log.decision_comment && <div className="text-[10px] text-slate-500">"{log.decision_comment}"</div>}
-                  {log.verified_by && <div className="text-[10px] text-indigo-700 font-semibold">✓ Disahkan {log.verified_by}</div>}
-                  {log.recorded_by && <div className="text-[10px] text-slate-400">Direkod {log.recorded_by}</div>}
-                  {log.whatsapp_notification_sent && (
-                    <div className="text-[10px] text-emerald-700 mt-1">Notis dihantar</div>
-                  )}
-                </td>
-                <td className="py-3.5 px-4 text-right">
-                  {log.status === 'REJECTED' ? (
-                    <span className="text-[10px] text-slate-400 italic">Tiada tindakan</span>
-                  ) : log.status === 'PENDING' ? (
-                    canApprove ? (
-                      <div className="inline-flex gap-1.5">
-                        <button
-                          onClick={() => decide(log, 'reject')}
-                          className="px-3 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px] cursor-pointer"
-                        >
-                          ✕ Tolak
-                        </button>
-                        <button
-                          onClick={() => decide(log, 'approve')}
-                          className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] shadow-xs cursor-pointer"
-                        >
-                          ✓ Luluskan
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-[10px] text-slate-400 italic">Perlu Kelulusan</span>
-                    )
-                  ) : (
-                    <div className="inline-flex flex-wrap justify-end gap-1.5">
-                    {isManagement && !log.verified_by && (
-                      <button
-                        onClick={() => decide(log, 'verify')}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold text-[11px] cursor-pointer"
-                      >
-                        Sahkan
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleNotify(log)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition font-semibold text-[11px] cursor-pointer"
-                    >
-                      <MessageSquare className="w-3.5 h-3.5 text-[#25D366]" /> Salin Notis WhatsApp
-                    </button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+  const markSent = () => markRescheduleNotified(r.id).catch(() => {});
 
-      {showModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl border border-slate-200 space-y-4">
-            <h3 className="text-base font-bold text-slate-900">Rekod Pembatalan & Gantian Kelas</h3>
-            <form onSubmit={handleCreate} className="space-y-3 text-xs">
-              <div>
-                <label htmlFor="rs-class" className="block font-semibold text-slate-700 mb-1">Kelas *</label>
-                <select
-                  id="rs-class"
-                  required
-                  value={newLog.timetable_class}
-                  onChange={(e) => setNewLog({ ...newLog, timetable_class: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
-                >
-                  <option value="">Pilih kelas…</option>
-                  {classOptions.map((c) => (
-                    <option key={c.id} value={c.id}>{c.class_code} • {c.day} {c.period_label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="rs-batal" className="block font-semibold text-slate-700 mb-1">Tarikh Batal (jika ada)</label>
-                  <input
-                    id="rs-batal"
-                    type="date"
-                    value={newLog.tarikh_batal}
-                    onChange={(e) => setNewLog({ ...newLog, tarikh_batal: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="rs-ganti" className="block font-semibold text-slate-700 mb-1">Tarikh Ganti *</label>
-                  <input
-                    id="rs-ganti"
-                    type="date"
-                    required
-                    value={newLog.tarikh_ganti}
-                    onChange={(e) => setNewLog({ ...newLog, tarikh_ganti: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200"
-                  />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="rs-reason" className="block font-semibold text-slate-700 mb-1">Sebab *</label>
-                <select
-                  id="rs-reason"
-                  value={newLog.reason_type}
-                  onChange={(e) => setNewLog({ ...newLog, reason_type: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white"
-                >
-                  {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={newLog.is_extra_class}
-                  onChange={(e) => setNewLog({ ...newLog, is_extra_class: e.target.checked })}
-                />
-                Kelas Tambahan (Extra Class)
-              </label>
-              <div>
-                <label htmlFor="rs-remarks" className="block font-semibold text-slate-700 mb-1">Catatan</label>
-                <textarea
-                  id="rs-remarks"
-                  rows="2"
-                  value={newLog.remarks}
-                  onChange={(e) => setNewLog({ ...newLog, remarks: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200"
-                />
-              </div>
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold"
-                >
-                  Batal
-                </button>
-                <button type="submit" disabled={saving} className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold disabled:opacity-60">
-                  {saving ? 'Menyimpan…' : 'Simpan'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Notis WhatsApp"
+      description={`Hantar ke kumpulan WhatsApp ${label}.`}
+      footer={
+        <>
+          <Button
+            icon={Copy}
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(message);
+                markSent();
+                notify('Mesej disalin. Tampal ke kumpulan WhatsApp kelas.', 'info');
+              } catch {
+                notify('Tidak dapat menyalin. Sila salin secara manual.', 'error');
+              }
+            }}
+          >
+            Salin mesej
+          </Button>
+          <Button
+            as="a"
+            variant="primary"
+            href={`https://wa.me/?text=${encodeURIComponent(message)}`}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => {
+              markSent();
+              onClose();
+            }}
+          >
+            Buka WhatsApp
+          </Button>
+        </>
+      }
+    >
+      {!r.approved && <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-800">Rekod ini belum diluluskan oleh supervisor.</p>}
+      <pre className="whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-4 font-sans text-sm text-gray-800">{message}</pre>
+    </Modal>
   );
 }

@@ -6,7 +6,14 @@ import {
 
 const AppContext = createContext(null);
 
-export function AppProvider({ children }) {
+// Old screen ids -> routes in the new shell
+const ROUTE_OF = {
+  staff_hr: 'staff', expenses: 'vouchers', dynamic_master_data: 'master-data', reports_suite: 'reports',
+  management_config: 'settings', parent_qr: 'parent-qr', teacher_attendance: 'teacher-attendance', teacher_payroll: 'payroll',
+};
+export const routeOf = (tab) => ROUTE_OF[tab] || tab;
+
+export function AppProvider({ children, notify }) {
   // Session: user = { username, full_name, role } from the server
   const [user, setUser] = useState(null);
   // No saved token means there is no session to verify
@@ -14,7 +21,6 @@ export function AppProvider({ children }) {
 
   // Navigation & Toasts
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [toastMessage, setToastMessage] = useState(null);
   const [draftRegistration, setDraftRegistration] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -39,10 +45,10 @@ export function AppProvider({ children }) {
   const [pricingTiers, setPricingTiers] = useState([]);
 
   // Stable identity so screens can use it in effect dependencies
+  // Messages are shown by the shell's toast system
   const showToast = useCallback((message, type = 'success') => {
-    setToastMessage({ text: message, type });
-    setTimeout(() => setToastMessage(null), 4000);
-  }, []);
+    notify?.(message, type);
+  }, [notify]);
 
   // Initial Load from Django REST backend
   const refreshAllData = useCallback(async () => {
@@ -154,7 +160,7 @@ export function AppProvider({ children }) {
     try {
       const created = await masterDataApi.propose(payload);
       setMasterData((prev) => [...prev, created]);
-      showToast(`Cadangan data induk "${created.label}" berjaya dihantar untuk kelulusan.`);
+      showToast(created.status === 'APPROVED' ? `Data induk "${created.label}" ditambah.` : `Cadangan data induk "${created.label}" dihantar untuk kelulusan.`);
       return created;
     } catch (err) {
       showToast(err.message || 'Ralat semasa menghantar cadangan data induk.', 'error');
@@ -534,6 +540,7 @@ export function AppProvider({ children }) {
   const navigateTo = (tabName, payload = null) => {
     if (payload) setDraftRegistration(payload);
     setActiveTab(tabName);
+    window.location.hash = `/${routeOf(tabName)}`;
   };
 
   const value = {
@@ -548,7 +555,6 @@ export function AppProvider({ children }) {
     activeTab,
     setActiveTab,
     navigateTo,
-    toastMessage,
     showToast,
     draftRegistration,
     setDraftRegistration,
@@ -614,21 +620,6 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider value={value}>
       {children}
-      {/* Toast Notification Container */}
-      {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 animate-bounce">
-          <div className={`px-5 py-3.5 rounded-2xl shadow-2xl border text-sm font-bold flex items-center gap-3 ${
-            toastMessage.type === 'error'
-              ? 'bg-rose-900 text-white border-rose-700'
-              : toastMessage.type === 'info'
-              ? 'bg-blue-900 text-white border-blue-700'
-              : 'bg-slate-900 text-white border-emerald-500'
-          }`}>
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-            <span>{toastMessage.text}</span>
-          </div>
-        </div>
-      )}
     </AppContext.Provider>
   );
 }

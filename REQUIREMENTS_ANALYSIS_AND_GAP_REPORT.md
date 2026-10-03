@@ -51,6 +51,14 @@ Roughly **85% of the requirement works end to end.** Phase 2 added the records t
 - Configurable grade list (master data: code, name, level, order, next grade, description) used by every form field, with a year-end "naik tingkatan" promotion (preview, then apply; logged in each student's history).
 - Master timetable: Supervisor changes wait for Management approval or rejection. Extra / cancel classes: Supervisor approves or rejects with a reason; Management verifies.
 
+### Frontend redesign (integrated)
+
+The redesigned interface (green theme, sidebar, search with Ctrl+K, page addresses such as `#/students/AN-2026-001`) is kept and every screen now reads and saves through the server. Nothing is stored in the browser.
+
+- Every screen uses the redesigned components: dashboard (short and detailed views), reports, leads, students and student profile, QR registration, timetable, student attendance (present / late / absent), exam results by class, cancel and replace classes, handouts, teachers, teacher attendance, teacher payroll, fees and receipts, payment vouchers, staff HR and staff profile, master data, settings. The shared panels (attachments, signature, feedback, year-end promotion, timetable changes) use them too; no screen is left on the earlier layout.
+- Removed from the redesign because they were demo-only and are not in the requirement: role switcher, demo reset, teacher and parent logins, student portal, online payment page, the office checklist and the automatic sibling discount (a sibling discount is now a standing discount set on the student).
+- Added for the redesigned screens: late marking in attendance, saving one exam's marks for a whole class.
+
 ### Main gaps
 
 1. **WhatsApp is manual**: buttons open WhatsApp with a message; nothing is sent automatically.

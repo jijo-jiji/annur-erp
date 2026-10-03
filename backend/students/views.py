@@ -23,6 +23,14 @@ from .serializers import (
 from billing.serializers import InvoiceSerializer
 
 
+# SPM grading scale
+GRADE_SCALE = [(90, 'A+'), (80, 'A'), (70, 'A-'), (65, 'B+'), (60, 'B'), (55, 'C+'), (50, 'C'), (45, 'D'), (40, 'E'), (0, 'G')]
+
+
+def grade_for(mark):
+    return next(g for floor, g in GRADE_SCALE if mark >= floor)
+
+
 def get_class(value, field='class_id'):
     try:
         return ClassTimetable.objects.select_related('subject', 'teacher').get(pk=int(value))
@@ -390,6 +398,40 @@ class StudentExamResultViewSet(viewsets.ModelViewSet):
             exam_date=serializer.validated_data.get('exam_date') or date.today(),
         )
 
+    @action(detail=False, methods=['post'])
+    def bulk(self, request):
+        """Save one exam's marks for a whole class: {class_id, exam_name, exam_date, marks: {student_code: mark}}.
+        A blank mark removes that student's result for the exam."""
+        cls = get_class(request.data.get('class_id'))
+        exam_name = (request.data.get('exam_name') or '').strip()
+        exam_date = get_date(request.data.get('exam_date'), 'exam_date')
+        if not exam_name or not exam_date:
+            raise ValidationError({'detail': 'Nama dan tarikh peperiksaan diperlukan.'})
+        students = {s.student_id: s for s in cls.students.all()}
+        saved = 0
+        with transaction.atomic():
+            for code, mark in (request.data.get('marks') or {}).items():
+                student = students.get(code)
+                if not student:
+                    raise ValidationError({'marks': f'Pelajar {code} tiada dalam kelas ini.'})
+                existing = StudentExamResult.objects.filter(student=student, subject=cls.subject, exam_name=exam_name)
+                if mark in (None, ''):
+                    existing.delete()
+                    continue
+                try:
+                    mark = int(mark)
+                except (TypeError, ValueError):
+                    raise ValidationError({'marks': f'Markah {code} tidak sah.'})
+                if not 0 <= mark <= 100:
+                    raise ValidationError({'marks': f'Markah {code} mesti antara 0 dan 100.'})
+                fields = {'mark': mark, 'grade': grade_for(mark), 'exam_date': exam_date, 'form_level': student.form_level}
+                if existing.exists():
+                    existing.update(**fields)
+                else:
+                    StudentExamResult.objects.create(student=student, subject=cls.subject, exam_name=exam_name, **fields)
+                saved += 1
+        return Response({'saved': saved})
+
 
 def _roster_students(cls):
     # Active students in the class; on-hold students are listed but marked
@@ -416,7 +458,9 @@ def attendance_roster(request):
                     raise ValidationError({'marks': f'Pelajar {sid} tiada dalam kelas ini.'})
                 StudentAttendance.objects.update_or_create(
                     session=session, student_id=sid,
-                    defaults={'present': bool(mark.get('present')), 'note': mark.get('note', '')},
+                    defaults={'present': bool(mark.get('present')),
+                              'late': bool(mark.get('present')) and bool(mark.get('late')),
+                              'note': mark.get('note', '')},
                 )
 
     session = ClassAttendanceSession.objects.filter(timetable_class=cls, date=on).first()
@@ -428,6 +472,7 @@ def attendance_roster(request):
         'status': s.status,
         'parent_phone': s.parent1_phone,
         'present': marks[s.id].present if s.id in marks else None,
+        'late': marks[s.id].late if s.id in marks else False,
         'note': marks[s.id].note if s.id in marks else '',
     } for s in _roster_students(cls)]
     return Response({
@@ -441,6 +486,33 @@ def attendance_roster(request):
         'present': sum(1 for r in rows if r['present']),
         'total': len(rows),
     })
+
+
+@api_view(['GET'])
+def attendance_sessions(request):
+    """Recorded class sessions in a period: who was on the roster, absent and late."""
+    p = request.query_params
+    qs = ClassAttendanceSession.objects.prefetch_related('marks__student').order_by('date', 'timetable_class_id')
+    if p.get('start'):
+        qs = qs.filter(date__gte=get_date(p['start'], 'start'))
+    if p.get('end'):
+        qs = qs.filter(date__lte=get_date(p['end'], 'end'))
+    if p.get('class_id'):
+        qs = qs.filter(timetable_class_id=p['class_id'])
+    if p.get('student'):
+        qs = qs.filter(marks__student_id=p['student']).distinct()
+    out = []
+    for session in qs:
+        marks = list(session.marks.all())
+        out.append({
+            'id': session.id, 'class_id': session.timetable_class_id, 'date': session.date,
+            'note': session.note, 'taken_by': session.recorded_by,
+            'roster': [m.student.student_id for m in marks],
+            'absent': [m.student.student_id for m in marks if not m.present],
+            'late': [m.student.student_id for m in marks if m.present and m.late],
+            'notes': {m.student.student_id: m.note for m in marks if m.note},
+        })
+    return Response(out)
 
 
 def attendance_rates(start, end, class_ids=None):

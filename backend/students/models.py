@@ -263,6 +263,7 @@ class StudentAttendance(models.Model):
     session = models.ForeignKey(ClassAttendanceSession, on_delete=models.CASCADE, related_name='marks')
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='attendance')
     present = models.BooleanField(default=True)
+    late = models.BooleanField(default=False)  # present but arrived late
     note = models.CharField(max_length=200, blank=True)
 
     class Meta:

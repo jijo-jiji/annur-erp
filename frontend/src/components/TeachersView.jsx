@@ -1,594 +1,401 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ShieldCheck, Phone, AlertTriangle, Calendar, CheckCircle2, TrendingUp, FileWarning, Search, Plus, X } from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, Download, GraduationCap, Plus, Search } from 'lucide-react';
 import { staffApi } from '../api/client';
+import { useApp } from '../context/AppContext';
+import { DAYS } from '../lib/config';
+import { useStore } from '../store';
+import { can } from '../lib/permissions';
+import { navigate } from '../lib/nav';
+import { classLabel } from '../lib/domain';
+import { CURRENT_MONTH, date, DAY_LABEL, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
+import { downloadCsv } from '../lib/csv';
+import FormModal from './FormModal';
+import { Avatar, Badge, Button, Card, CardHeader, Checkbox, EmptyState, PageHeader, SearchInput, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon } from './ui';
 
-const DAYS = ['JUMAAT', 'SABTU', 'ISNIN', 'SELASA', 'RABU', 'KHAMIS'];
+const WEEKS_PER_MONTH = 4;
 const PERMIT_WARNING_DAYS = 60;
-const SEVERITY = { LOW: 'Rendah', MEDIUM: 'Sederhana', HIGH: 'Tinggi' };
-const COMPLAINT_STATUS = { OPEN: 'Baru', IN_PROGRESS: 'Dalam Tindakan', RESOLVED: 'Selesai' };
-const today = () => new Date().toISOString().split('T')[0];
+const SEVERITY = { LOW: { label: 'Rendah', tone: 'blue' }, MEDIUM: { label: 'Sederhana', tone: 'amber' }, HIGH: { label: 'Tinggi', tone: 'red' } };
+const COMPLAINT_STATUS = { OPEN: 'Baru', IN_PROGRESS: 'Dalam tindakan', RESOLVED: 'Selesai' };
+const INCREMENT_STATUS = { PENDING: { label: 'Menunggu Pengurusan', tone: 'amber' }, APPROVED: { label: 'Diluluskan', tone: 'green' }, REJECTED: { label: 'Ditolak', tone: 'red' } };
 
 function permitInfo(expiry) {
   if (!expiry) return { state: 'MISSING', label: 'Tiada rekod' };
-  const days = Math.ceil((new Date(expiry) - new Date(today())) / 86400000);
-  if (days < 0) return { state: 'EXPIRED', label: `Luput ${expiry}`, days };
-  if (days <= PERMIT_WARNING_DAYS) return { state: 'SOON', label: `Luput ${expiry} (${days} hari)`, days };
-  return { state: 'VALID', label: `Sah hingga ${expiry}`, days };
+  const days = Math.ceil((new Date(`${expiry}T00:00:00`) - new Date(`${todayISO()}T00:00:00`)) / 86400000);
+  if (days < 0) return { state: 'EXPIRED', label: `Luput ${date(expiry)}` };
+  if (days <= PERMIT_WARNING_DAYS) return { state: 'SOON', label: `Luput ${date(expiry)} (${days} hari)` };
+  return { state: 'VALID', label: `Sah hingga ${date(expiry)}` };
 }
 
-function waLink(phone, text) {
-  const digits = (phone || '').replace(/[^0-9]/g, '').replace(/^0/, '');
-  return `https://wa.me/60${digits}${text ? `?text=${encodeURIComponent(text)}` : ''}`;
-}
-
-const money = (v) => `RM ${Number(v || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-export default function TeachersView({ currentRole = 'ADMIN' }) {
-  const { teachers, timetable, refreshTeachers, showToast } = useApp();
-  const [activeSubTab, setActiveSubTab] = useState('directory');
-  const [filterType, setFilterType] = useState('ALL');
-  const [showInactive, setShowInactive] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+export default function TeachersView({ role }) {
+  // Rates, complaints and increments are for Supervisor and Management; the server leaves them out for Admin
+  const showPay = can(role, 'teachers.pay');
+  const canDecide = can(role, 'payroll.approve');
+  const { teachers, classes, subjects } = useStore();
+  const { refreshTeachers } = useApp();
+  const notify = useToast();
+  const [view, setView] = useState('directory');
+  const [type, setType] = useState('ALL');
+  const [inactive, setInactive] = useState(false);
+  const [q, setQ] = useState('');
   const [complaints, setComplaints] = useState([]);
   const [increments, setIncrements] = useState([]);
-  const [modal, setModal] = useState(null); // 'complaint' | 'increment' | 'action'
-  const [form, setForm] = useState({});
-  const [saving, setSaving] = useState(false);
+  const [dialog, setDialog] = useState(null);
 
-  const isAdmin = currentRole === 'ADMIN';
-  const isManagement = currentRole === 'MANAGEMENT';
-
-  const loadExtras = useCallback(async () => {
-    if (isAdmin) return;
-    try {
-      const [c, i] = await Promise.all([staffApi.getComplaints(), staffApi.getRateIncrements()]);
-      setComplaints(c);
-      setIncrements(i);
-    } catch {
-      showToast('Gagal memuat aduan / kenaikan kadar guru.', 'error');
-    }
-  }, [isAdmin, showToast]);
-
+  const loadExtras = useCallback(() => {
+    if (!showPay) return Promise.resolve();
+    return Promise.all([staffApi.getComplaints(), staffApi.getRateIncrements()])
+      .then(([c, i]) => { setComplaints(c); setIncrements(i); })
+      .catch(() => notify('Gagal memuat aduan dan kenaikan kadar guru.', 'error'));
+  }, [showPay, notify]);
   useEffect(() => { loadExtras(); }, [loadExtras]);
 
-  // Classes each teacher is assigned to in the master timetable
-  const classesByTeacher = useMemo(() => {
-    const map = {};
-    timetable.forEach((c) => {
-      if (!c.teacher) return;
-      (map[c.teacher] ||= []).push(c);
-    });
-    return map;
-  }, [timetable]);
-
-  const rows = useMemo(() => teachers.map((t) => {
-    const classes = classesByTeacher[t.id] || [];
-    const forms = [...new Set(classes.map((c) => c.form_level))].sort();
-    return {
-      ...t,
-      classes,
-      forms,
-      subjectNames: (t.subjects_qualified_details || []).map((s) => s.name),
-      permit: permitInfo(t.teaching_permit_expiry),
-    };
-  }), [teachers, classesByTeacher]);
-
-  const activeRows = useMemo(() => rows.filter((t) => t.is_active), [rows]);
-  const expiringPermits = activeRows.filter((t) => t.permit.state === 'SOON' || t.permit.state === 'EXPIRED');
-  const term = searchTerm.toLowerCase();
-  const filtered = rows.filter((t) =>
-    t.is_active !== showInactive &&
-    (filterType === 'ALL' || t.teacher_type === filterType) &&
-    (!term || t.full_name.toLowerCase().includes(term) || t.teacher_code.toLowerCase().includes(term) ||
-      t.subjectNames.some((s) => s.toLowerCase().includes(term)))
-  );
-
-  // Estimate only: weekly scheduled sessions × 4 weeks × current rate
-  const rateSummary = useMemo(() => {
-    const avg = (list) => (list.length ? list.reduce((s, t) => s + Number(t.rate_per_session || 0), 0) / list.length : 0);
-    const monthly = activeRows.reduce((s, t) => s + t.classes.length * 4 * Number(t.rate_per_session || 0), 0);
-    return {
-      permanentAvg: avg(activeRows.filter((t) => t.teacher_type === 'PERMANENT')),
-      replacementAvg: avg(activeRows.filter((t) => t.teacher_type === 'REPLACEMENT')),
-      monthlyEstimate: monthly,
-    };
-  }, [activeRows]);
-
-  const openModal = (type, preset = {}) => {
-    setForm(preset);
-    setModal(type);
-  };
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
+  // Runs a server call, then reloads; a failure is shown and re-thrown so the dialog stays open
+  const run = async (call, message) => {
     try {
-      if (modal === 'complaint') {
-        await staffApi.createComplaint({ ...form, teacher: Number(form.teacher) });
-        showToast('Aduan direkodkan.');
-      } else if (modal === 'action') {
-        await staffApi.updateComplaint(form.id, {
-          status: form.status, action_taken: form.action_taken, action_pic: form.action_pic, action_date: form.action_date || null,
-        });
-        showToast('Tindakan aduan dikemaskini.');
-      } else if (modal === 'increment') {
-        await staffApi.proposeRateIncrement({ ...form, teacher: Number(form.teacher) });
-        showToast('Cadangan kenaikan kadar dihantar kepada Management.');
-      }
-      setModal(null);
+      await call();
       await loadExtras();
+      if (message) notify(message);
     } catch (err) {
-      showToast(err.message || 'Ralat menyimpan.', 'error');
-    } finally {
-      setSaving(false);
+      const detail = err?.data && typeof err.data === 'object' ? Object.values(err.data).flat().join(' ') : '';
+      notify(detail || err?.message || 'Ralat menyimpan.', 'error');
+      throw err;
     }
   };
 
-  const decideIncrement = async (inc, approve) => {
-    const comment = approve ? '' : window.prompt('Sebab penolakan (wajib):');
-    if (!approve && !comment?.trim()) return;
-    try {
-      if (approve) await staffApi.approveRateIncrement(inc.id);
-      else await staffApi.rejectRateIncrement(inc.id, comment.trim());
-      showToast(approve ? `Kadar baharu ${inc.teacher_code} berkuat kuasa.` : 'Cadangan ditolak.', approve ? 'success' : 'info');
-      await Promise.all([loadExtras(), approve ? refreshTeachers() : null]);
-    } catch (err) {
-      showToast(err.message || 'Ralat memproses cadangan.', 'error');
-    }
+  const taught = (code) => classes.filter((c) => c.teacher === code);
+  const active = teachers.filter((t) => t.active);
+  const needle = q.trim().toLowerCase();
+  const rows = teachers
+    .filter((t) => t.active !== inactive && (type === 'ALL' || t.type === type) && (!needle || `${t.name} ${t.code} ${t.subjects}`.toLowerCase().includes(needle)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const count = (kind) => active.filter((t) => t.type === kind).length;
+  const monthlyTotal = active.reduce((a, t) => a + taught(t.code).length * WEEKS_PER_MONTH * (t.rate || 0), 0);
+  const avgRate = (kind) => {
+    const list = active.filter((t) => t.type === kind);
+    return list.length ? list.reduce((a, t) => a + (t.rate || 0), 0) / list.length : 0;
   };
+  const permitAlerts = active.map((t) => ({ t, permit: permitInfo(t.permitExpiry) })).filter((x) => x.permit.state === 'SOON' || x.permit.state === 'EXPIRED');
+  const teacherOptions = [...active].sort((a, b) => a.name.localeCompare(b.name));
 
-  const tabs = [
-    { id: 'directory', label: `Direktori Guru (${activeRows.length})` },
-    { id: 'assigned', label: 'Kelas Ditugaskan' },
-    ...(!isAdmin ? [
-      { id: 'complaints', label: `Aduan & Tindakan (${complaints.length})` },
-      { id: 'increments', label: 'Kenaikan Kadar' },
-    ] : []),
-  ];
-  const inputCls = 'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-800';
-  const teacherOptions = activeRows.slice().sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const exportCsv = () => downloadCsv('senarai-guru.csv',
+    ['Kod', 'Nama', 'Kategori', 'Subjek', 'Tingkatan', 'Kelas seminggu', 'Telefon', 'Permit mengajar', ...(showPay ? ['Kadar sesi (RM)'] : [])],
+    rows.map((t) => [t.code, t.name, t.type === 'PERMANENT' ? 'Tetap' : 'Ganti', t.subjects, [...new Set(taught(t.code).map((c) => formShort(c.form)))].sort().join(' '),
+      taught(t.code).length, t.phone, t.permitExpiry || '', ...(showPay ? [t.rate] : [])]));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">Pengurusan Guru</h2>
-          <p className="text-xs text-slate-500">Guru tetap & ganti, kelas ditugaskan, permit mengajar{!isAdmin && ', aduan dan kadar elaun'}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 text-xs">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveSubTab(t.id)}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
-                activeSubTab === t.id ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+    <>
+      <PageHeader
+        title={showPay ? 'Guru & elaun' : 'Guru'}
+        description={showPay ? 'Guru tetap dan ganti, kelas ditugaskan, permit mengajar, aduan dan kadar elaun.' : 'Guru tetap, guru ganti dan jadual mengajar mingguan.'}
+        actions={
+          <>
+            <Button icon={Download} onClick={exportCsv}>Excel</Button>
+            {can(role, 'payroll.view') && <Button onClick={() => navigate('payroll')}>Bayaran elaun</Button>}
+          </>
+        }
+      />
 
-      {expiringPermits.length > 0 && (
-        <div className="bg-amber-50 border border-amber-300 p-4 rounded-2xl flex items-start gap-3 text-amber-900 text-xs">
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+      {permitAlerts.length > 0 && (
+        <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
           <div>
-            <span className="font-bold">{expiringPermits.length} permit mengajar luput atau hampir luput ({PERMIT_WARNING_DAYS} hari)</span>
-            <p className="mt-1">{expiringPermits.map((t) => `${t.full_name} (${t.permit.label})`).join(' • ')}</p>
+            <p className="font-medium">{permitAlerts.length} permit mengajar luput atau hampir luput</p>
+            <p className="mt-0.5 text-[13px]">{permitAlerts.map(({ t, permit }) => `Cikgu ${t.name} (${permit.label})`).join(' · ')}</p>
           </div>
         </div>
       )}
 
-      {isAdmin && (
-        <div className="bg-purple-50 border border-purple-200 p-4 rounded-2xl flex items-center gap-3 text-purple-900 text-xs">
-          <ShieldCheck className="w-5 h-5 text-purple-600 shrink-0" />
-          <p>Senarai guru untuk Admin tidak memaparkan kadar elaun (hanya Supervisor & Management).</p>
-        </div>
-      )}
+      <Tabs
+        className="mb-4"
+        value={view}
+        onChange={setView}
+        items={[
+          { value: 'directory', label: 'Direktori', count: active.length },
+          { value: 'assigned', label: 'Kelas ditugaskan' },
+          ...(showPay ? [
+            { value: 'complaints', label: 'Aduan & tindakan', count: complaints.filter((c) => c.status !== 'RESOLVED').length },
+            { value: 'increments', label: 'Kenaikan kadar', count: increments.filter((i) => i.status === 'PENDING').length },
+          ] : []),
+        ]}
+      />
 
-      {activeSubTab === 'directory' && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 text-xs">
-            <div className="flex items-center gap-2 flex-1 min-w-[200px] max-w-sm">
-              <Search className="w-4 h-4 text-slate-400 shrink-0" />
-              <input
-                type="search"
-                aria-label="Cari guru"
-                placeholder="Cari nama, kod atau subjek…"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 font-medium text-slate-800 outline-none"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {[
-                ['ALL', 'Semua'],
-                ['PERMANENT', `Tetap (${activeRows.filter((t) => t.teacher_type === 'PERMANENT').length})`],
-                ['REPLACEMENT', `Ganti (${activeRows.filter((t) => t.teacher_type === 'REPLACEMENT').length})`],
-              ].map(([value, label]) => (
-                <button
-                  key={value}
-                  onClick={() => setFilterType(value)}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition ${
-                    filterType === value ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-              <label className="flex items-center gap-1.5 ml-2 font-semibold text-slate-600 cursor-pointer">
-                <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-                Guru tidak aktif ({rows.length - activeRows.length})
-              </label>
-            </div>
-          </div>
-
-          {!isAdmin && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-indigo-50/70 border border-indigo-200 rounded-2xl text-xs">
-              <div>
-                <span className="text-slate-500 block font-medium">Anggaran elaun sebulan</span>
-                <span className="text-lg font-black text-indigo-950">{money(rateSummary.monthlyEstimate)}</span>
-                <span className="block text-[10px] text-slate-500">Sesi dijadualkan seminggu × 4 × kadar semasa</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block font-medium">Purata kadar guru tetap</span>
-                <span className="text-lg font-black text-slate-800">{money(rateSummary.permanentAvg)} / sesi</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block font-medium">Purata kadar guru ganti</span>
-                <span className="text-lg font-black text-slate-800">{money(rateSummary.replacementAvg)} / sesi</span>
-              </div>
+      {view === 'directory' && (
+        <>
+          {showPay && (
+            <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Stat label={`Anggaran elaun ${monthLabel(CURRENT_MONTH)}`} value={rm(monthlyTotal)} hint={`Sesi seminggu × ${WEEKS_PER_MONTH} × kadar semasa`} />
+              <Stat label="Purata kadar guru tetap" value={rm(avgRate('PERMANENT'))} hint="setiap sesi" />
+              <Stat label="Purata kadar guru ganti" value={rm(avgRate('REPLACEMENT'))} hint="setiap sesi" />
             </div>
           )}
-
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-semibold text-[11px]">
-                <tr>
-                  <th className="py-3.5 px-4">Kod</th>
-                  <th className="py-3.5 px-4">Nama Guru</th>
-                  <th className="py-3.5 px-4">Kategori</th>
-                  <th className="py-3.5 px-4">Subjek</th>
-                  <th className="py-3.5 px-4">Tingkatan Diajar</th>
-                  <th className="py-3.5 px-4">Permit Mengajar</th>
-                  {!isAdmin && <th className="py-3.5 px-4">Kadar / Sesi</th>}
-                  <th className="py-3.5 px-4 text-right">Hubungi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.length === 0 && (
-                  <tr><td colSpan={8} className="py-10 text-center text-slate-400">Tiada guru sepadan.</td></tr>
-                )}
-                {filtered.map((t) => (
-                  <tr key={t.id} className="hover:bg-slate-50 transition">
-                    <td className="py-3 px-4 font-bold text-indigo-600">{t.teacher_code}</td>
-                    <td className="py-3 px-4">
-                      <div className="font-semibold text-slate-900">{t.full_name}</div>
-                      <div className="text-slate-400 text-[10px]">{t.phone_number}{t.joined_date ? ` • Sejak ${t.joined_date.slice(0, 4)}` : ''}</div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${t.teacher_type === 'PERMANENT' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {t.teacher_type === 'PERMANENT' ? 'Tetap' : 'Ganti'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-700">{t.subjectNames.join(', ') || '-'}</td>
-                    <td className="py-3 px-4 text-slate-700">{t.forms.join(', ') || '-'}</td>
-                    <td className="py-3 px-4">
-                      {t.permit.state === 'VALID' ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 text-emerald-700">
-                          <CheckCircle2 className="w-3 h-3" /> {t.permit.label}
-                        </span>
-                      ) : t.permit.state === 'MISSING' ? (
-                        <span className="text-[10px] text-slate-400">{t.permit.label}</span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800">
-                          <AlertTriangle className="w-3 h-3" /> {t.permit.label}
-                        </span>
-                      )}
-                    </td>
-                    {!isAdmin && <td className="py-3 px-4 font-bold text-emerald-600">{money(t.rate_per_session)}</td>}
-                    <td className="py-3 px-4 text-right">
-                      <a
-                        href={waLink(t.phone_number)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition font-semibold text-[11px]"
-                      >
-                        <Phone className="w-3 h-3" /> WhatsApp
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <Tabs
+              value={type}
+              onChange={setType}
+              items={[
+                { value: 'ALL', label: 'Semua' },
+                { value: 'PERMANENT', label: 'Guru tetap', count: count('PERMANENT') },
+                { value: 'REPLACEMENT', label: 'Guru ganti', count: count('REPLACEMENT') },
+              ]}
+            />
+            <Checkbox label={`Tidak aktif (${teachers.length - active.length})`} checked={inactive} onChange={(e) => setInactive(e.target.checked)} />
+            <SearchInput icon={Search} value={q} onChange={setQ} placeholder="Cari guru atau subjek" className="w-full sm:ml-auto sm:w-72" />
           </div>
-        </div>
+
+          <Card>
+            {rows.length === 0 ? (
+              <EmptyState icon={GraduationCap} title="Tiada guru ditemui" />
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Guru</Th>
+                    <Th className="hidden xl:table-cell">Subjek</Th>
+                    <Th className="hidden md:table-cell">Tingkatan</Th>
+                    <Th className="text-right">Kelas / minggu</Th>
+                    <Th>Permit mengajar</Th>
+                    {showPay && <Th className="text-right">Kadar / sesi</Th>}
+                    <Th className="w-0"><span className="sr-only">Hubungi</span></Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((t) => {
+                    const mine = taught(t.code);
+                    const permit = permitInfo(t.permitExpiry);
+                    return (
+                      <tr key={t.code} className="hover:bg-gray-50">
+                        <Td className="min-w-64">
+                          <div className="flex items-center gap-3">
+                            <Avatar text={initials(t.name)} />
+                            <div>
+                              <p className="font-medium text-gray-900">
+                                Cikgu {t.name} <span className="font-normal text-gray-400">· {t.code}</span>
+                              </p>
+                              <p className="text-[13px] text-gray-500">
+                                {t.type === 'PERMANENT' ? 'Guru tetap' : 'Guru ganti'}{t.since ? ` · sejak ${t.since}` : ''} · {t.phone}
+                                <span className="xl:hidden">{t.subjects && ` · ${t.subjects}`}</span>
+                              </p>
+                            </div>
+                          </div>
+                        </Td>
+                        <Td className="hidden text-gray-700 xl:table-cell">{t.subjects || '—'}</Td>
+                        <Td className="hidden text-gray-700 md:table-cell">{[...new Set(mine.map((c) => formShort(c.form)))].sort().join(', ') || '—'}</Td>
+                        <Td className="text-right tnum">{mine.length || <Badge>Atas panggilan</Badge>}</Td>
+                        <Td className="whitespace-nowrap">
+                          {permit.state === 'VALID' ? <Badge tone="green">{permit.label}</Badge>
+                            : permit.state === 'MISSING' ? <span className="text-[13px] text-gray-400">{permit.label}</span>
+                              : <Badge tone={permit.state === 'EXPIRED' ? 'red' : 'amber'}>{permit.label}</Badge>}
+                        </Td>
+                        {showPay && <Td className="text-right font-medium tnum">{rm(t.rate)}</Td>}
+                        <Td>
+                          {t.phone && (
+                            <Button as="a" size="sm" href={waLink(t.phone)} target="_blank" rel="noreferrer" title="WhatsApp" className="px-2">
+                              <WhatsAppIcon className="size-3.5" />
+                            </Button>
+                          )}
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            )}
+          </Card>
+          {showPay && (
+            <p className="mt-3 text-[13px] text-gray-500">
+              Anggaran dikira daripada jadual semasa ({WEEKS_PER_MONTH} minggu sebulan). Bayaran sebenar dikira daripada kehadiran guru dalam Bayaran elaun.
+            </p>
+          )}
+        </>
       )}
 
-      {activeSubTab === 'assigned' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-indigo-600" /> Kelas Ditugaskan Mengikut Hari
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">Daripada Jadual Master semasa. Guru tanpa kelas tidak disenaraikan.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px]">
-                <tr>
-                  <th className="py-3 px-3">Guru</th>
-                  {DAYS.map((d) => <th key={d} className="py-3 px-3">{d}</th>)}
+      {view === 'assigned' && (
+        <Card>
+          <CardHeader title="Kelas ditugaskan mengikut hari" description="Daripada jadual induk semasa. Guru tanpa kelas tidak disenaraikan." />
+          <Table>
+            <thead>
+              <tr>
+                <Th>Guru</Th>
+                {DAYS.map((d) => <Th key={d}>{DAY_LABEL[d]}</Th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {teacherOptions.filter((t) => taught(t.code).length).map((t) => (
+                <tr key={t.code} className="align-top">
+                  <Td className="whitespace-nowrap">
+                    <p className="font-medium text-gray-900">Cikgu {t.name}</p>
+                    <p className="text-[13px] text-gray-500">{t.code} · {taught(t.code).length} sesi seminggu</p>
+                  </Td>
+                  {DAYS.map((d) => {
+                    const dayClasses = taught(t.code).filter((c) => c.day === d).sort((a, b) => a.start.localeCompare(b.start));
+                    return (
+                      <Td key={d} className="min-w-36 space-y-1">
+                        {dayClasses.length === 0 ? <span className="text-gray-300">—</span> : dayClasses.map((c) => (
+                          <span key={c.id} className="block rounded-md border border-brand-100 bg-brand-50 px-2 py-1 text-xs text-brand-800">
+                            {time(c.start)} · {classLabel(c, subjects)}
+                          </span>
+                        ))}
+                      </Td>
+                    );
+                  })}
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {activeRows.filter((t) => t.classes.length).map((t) => (
-                  <tr key={t.id} className="hover:bg-slate-50 align-top">
-                    <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
-                      <div>{t.full_name}</div>
-                      <span className="text-[10px] text-indigo-600 font-semibold">{t.teacher_code} • {t.classes.length} sesi/minggu</span>
-                    </td>
-                    {DAYS.map((d) => {
-                      const dayClasses = t.classes.filter((c) => c.day === d).sort((a, b) => a.start_time.localeCompare(b.start_time));
-                      return (
-                        <td key={d} className="py-3 px-3 space-y-1">
-                          {dayClasses.length === 0 ? (
-                            <span className="text-slate-300">-</span>
-                          ) : dayClasses.map((c) => (
-                            <span key={c.id} className="block px-2 py-1 rounded-md text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
-                              {c.start_time} {c.form_level} {c.subject_details?.code} ({c.section})
-                            </span>
-                          ))}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
       )}
 
-      {activeSubTab === 'complaints' && !isAdmin && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <FileWarning className="w-4 h-4 text-rose-600" /> Aduan & Laporan Tindakan
-            </h3>
-            <button
-              onClick={() => openModal('complaint', { teacher: '', date_reported: today(), complained_by: '', category: '', description: '', severity: 'LOW' })}
-              className="px-3 py-1.5 rounded-xl bg-rose-600 text-white font-semibold text-xs hover:bg-rose-700 flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" /> Rekod Aduan
-            </button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px]">
+      {view === 'complaints' && showPay && (
+        <Card>
+          <CardHeader
+            title="Aduan & laporan tindakan"
+            actions={<Button size="sm" variant="primary" icon={Plus} onClick={() => setDialog({ type: 'complaint' })}>Rekod aduan</Button>}
+          />
+          {complaints.length === 0 ? <EmptyState title="Tiada aduan direkodkan" /> : (
+            <Table>
+              <thead>
                 <tr>
-                  <th className="py-3 px-3">Tarikh</th>
-                  <th className="py-3 px-3">Guru</th>
-                  <th className="py-3 px-3">Pengadu</th>
-                  <th className="py-3 px-3">Aduan</th>
-                  <th className="py-3 px-3">Tahap</th>
-                  <th className="py-3 px-3">Status</th>
-                  <th className="py-3 px-3">Tindakan (PIC, tarikh)</th>
-                  <th className="py-3 px-3"></th>
+                  <Th>Tarikh</Th><Th>Guru</Th><Th>Aduan</Th><Th>Tahap</Th><Th>Status</Th><Th>Tindakan</Th><Th className="w-0"><span className="sr-only">Kemas kini</span></Th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {complaints.length === 0 && (
-                  <tr><td colSpan={8} className="py-10 text-center text-slate-400">Tiada aduan direkodkan.</td></tr>
-                )}
+              <tbody>
                 {complaints.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50 align-top">
-                    <td className="py-3 px-3 whitespace-nowrap">{c.date_reported}</td>
-                    <td className="py-3 px-3 font-semibold text-indigo-700">{c.teacher_name} ({c.teacher_code})</td>
-                    <td className="py-3 px-3 text-slate-700">{c.complained_by}</td>
-                    <td className="py-3 px-3 text-slate-700 max-w-xs">
-                      {c.category && <div className="font-semibold">{c.category}</div>}
-                      {c.description}
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        c.severity === 'HIGH' ? 'bg-rose-100 text-rose-800' : c.severity === 'MEDIUM' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                      }`}>{SEVERITY[c.severity]}</span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${c.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                        {COMPLAINT_STATUS[c.status]}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-slate-600 text-[11px] max-w-xs">
-                      {c.action_taken ? <>{c.action_taken}<div className="text-slate-400">{c.action_pic}{c.action_date ? `, ${c.action_date}` : ''}</div></> : '-'}
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      <button
-                        onClick={() => openModal('action', {
-                          id: c.id, status: c.status, action_taken: c.action_taken, action_pic: c.action_pic, action_date: c.action_date || today(),
-                        })}
-                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold text-[11px] cursor-pointer"
-                      >
-                        Kemaskini
-                      </button>
-                    </td>
+                  <tr key={c.id} className="align-top">
+                    <Td className="whitespace-nowrap">{date(c.date_reported)}</Td>
+                    <Td className="whitespace-nowrap font-medium text-gray-900">{c.teacher_name} <span className="font-normal text-gray-400">· {c.teacher_code}</span></Td>
+                    <Td className="max-w-xs text-gray-700">
+                      {c.category && <p className="font-medium text-gray-900">{c.category}</p>}
+                      <p>{c.description}</p>
+                      <p className="text-[13px] text-gray-500">Diadu oleh {c.complained_by}</p>
+                    </Td>
+                    <Td><Badge tone={SEVERITY[c.severity]?.tone}>{SEVERITY[c.severity]?.label}</Badge></Td>
+                    <Td><Badge tone={c.status === 'RESOLVED' ? 'green' : 'amber'}>{COMPLAINT_STATUS[c.status]}</Badge></Td>
+                    <Td className="max-w-xs text-gray-700">
+                      {c.action_taken ? (
+                        <>
+                          <p>{c.action_taken}</p>
+                          <p className="text-[13px] text-gray-500">{[c.action_pic, c.action_date && date(c.action_date)].filter(Boolean).join(' · ')}</p>
+                        </>
+                      ) : '—'}
+                    </Td>
+                    <Td><Button size="sm" onClick={() => setDialog({ type: 'action', complaint: c })}>Kemas kini</Button></Td>
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
-        </div>
+            </Table>
+          )}
+        </Card>
       )}
 
-      {activeSubTab === 'increments' && !isAdmin && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-emerald-600" /> Kenaikan Kadar Elaun Guru
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">Supervisor/Management mencadang; Management meluluskan. Sejarah kenaikan setiap guru disimpan.</p>
-            </div>
-            <button
-              onClick={() => openModal('increment', { teacher: '', proposed_rate: '', effective_date: `${new Date().getFullYear() + 1}-01-01`, reason: '' })}
-              className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" /> Cadang Kenaikan
-            </button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px]">
+      {view === 'increments' && showPay && (
+        <Card>
+          <CardHeader
+            title="Kenaikan kadar elaun"
+            description="Supervisor atau Pengurusan mencadang; Pengurusan meluluskan. Sejarah kenaikan setiap guru disimpan."
+            actions={<Button size="sm" variant="primary" icon={Plus} onClick={() => setDialog({ type: 'increment' })}>Cadang kenaikan</Button>}
+          />
+          {increments.length === 0 ? <EmptyState title="Tiada cadangan atau sejarah kenaikan kadar" /> : (
+            <Table>
+              <thead>
                 <tr>
-                  <th className="py-3 px-3">Guru</th>
-                  <th className="py-3 px-3">Kadar Lama</th>
-                  <th className="py-3 px-3">Kadar Baharu</th>
-                  <th className="py-3 px-3">Kuat Kuasa</th>
-                  <th className="py-3 px-3">Justifikasi</th>
-                  <th className="py-3 px-3">Status</th>
-                  <th className="py-3 px-3 text-right">Tindakan</th>
+                  <Th>Guru</Th><Th className="text-right">Kadar lama</Th><Th className="text-right">Kadar baharu</Th><Th>Kuat kuasa</Th><Th>Justifikasi</Th><Th>Status</Th>
+                  <Th className="w-0"><span className="sr-only">Tindakan</span></Th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {increments.length === 0 && (
-                  <tr><td colSpan={7} className="py-10 text-center text-slate-400">Tiada cadangan atau sejarah kenaikan kadar.</td></tr>
-                )}
+              <tbody>
                 {increments.map((inc) => (
-                  <tr key={inc.id} className="hover:bg-slate-50 align-top">
-                    <td className="py-3 px-3 font-bold text-slate-900">{inc.teacher_name} ({inc.teacher_code})</td>
-                    <td className="py-3 px-3">{money(inc.previous_rate)}</td>
-                    <td className="py-3 px-3 font-bold text-emerald-600">{money(inc.proposed_rate)}</td>
-                    <td className="py-3 px-3">{inc.effective_date}</td>
-                    <td className="py-3 px-3 text-slate-600 max-w-sm">
-                      {inc.reason}
-                      <div className="text-[10px] text-slate-400">Dicadang: {inc.proposed_by}</div>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                        inc.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800' : inc.status === 'REJECTED' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {inc.status === 'APPROVED' ? 'Diluluskan' : inc.status === 'REJECTED' ? 'Ditolak' : 'Menunggu Management'}
-                      </span>
-                      {inc.decided_by && <div className="text-[10px] text-slate-400 mt-1">{inc.decided_by}{inc.decision_comment ? `: ${inc.decision_comment}` : ''}</div>}
-                    </td>
-                    <td className="py-3 px-3 text-right space-x-1">
-                      {inc.status === 'PENDING' && isManagement && (
-                        <>
-                          <button onClick={() => decideIncrement(inc, true)} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold text-[11px] hover:bg-emerald-700 cursor-pointer">Luluskan</button>
-                          <button onClick={() => decideIncrement(inc, false)} className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-semibold text-[11px] hover:bg-rose-100 cursor-pointer">Tolak</button>
-                        </>
+                  <tr key={inc.id} className="align-top">
+                    <Td className="whitespace-nowrap font-medium text-gray-900">{inc.teacher_name} <span className="font-normal text-gray-400">· {inc.teacher_code}</span></Td>
+                    <Td className="text-right tnum">{rm(inc.previous_rate)}</Td>
+                    <Td className="text-right font-medium tnum">{rm(inc.proposed_rate)}</Td>
+                    <Td className="whitespace-nowrap">{date(inc.effective_date)}</Td>
+                    <Td className="max-w-sm text-gray-700">
+                      <p>{inc.reason || '—'}</p>
+                      <p className="text-[13px] text-gray-500">Dicadang oleh {inc.proposed_by}</p>
+                    </Td>
+                    <Td>
+                      <Badge tone={INCREMENT_STATUS[inc.status]?.tone}>{INCREMENT_STATUS[inc.status]?.label}</Badge>
+                      {inc.decided_by && <p className="mt-1 text-xs text-gray-500">{inc.decided_by}{inc.decision_comment ? `: ${inc.decision_comment}` : ''}</p>}
+                    </Td>
+                    <Td className="whitespace-nowrap">
+                      {inc.status === 'PENDING' && canDecide && (
+                        <div className="flex gap-1.5">
+                          <Button size="sm" variant="danger" onClick={() => setDialog({ type: 'reject', increment: inc })}>Tolak</Button>
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => run(() => staffApi.approveRateIncrement(inc.id), `Kadar baharu ${inc.teacher_code} diluluskan.`).then(refreshTeachers).catch(() => {})}
+                          >
+                            Luluskan
+                          </Button>
+                        </div>
                       )}
-                    </td>
+                    </Td>
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
-        </div>
+            </Table>
+          )}
+        </Card>
       )}
 
-      {modal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">
-                {modal === 'complaint' ? 'Rekod Aduan Guru' : modal === 'action' ? 'Kemaskini Tindakan Aduan' : 'Cadang Kenaikan Kadar'}
-              </h3>
-              <button onClick={() => setModal(null)} aria-label="Tutup" className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-5 h-5" /></button>
-            </div>
-            <form onSubmit={submit} className="space-y-3 text-xs">
-              {(modal === 'complaint' || modal === 'increment') && (
-                <div>
-                  <label htmlFor="f-teacher" className="block font-semibold text-slate-700 mb-1">Guru *</label>
-                  <select id="f-teacher" required value={form.teacher} onChange={(e) => setForm({ ...form, teacher: e.target.value })} className={inputCls}>
-                    <option value="">Pilih guru…</option>
-                    {teacherOptions.map((t) => (
-                      <option key={t.id} value={t.id}>{t.full_name} ({t.teacher_code}){modal === 'increment' ? ` - ${money(t.rate_per_session)}` : ''}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {modal === 'complaint' && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="f-date" className="block font-semibold text-slate-700 mb-1">Tarikh Aduan *</label>
-                      <input id="f-date" type="date" required value={form.date_reported} onChange={(e) => setForm({ ...form, date_reported: e.target.value })} className={inputCls} />
-                    </div>
-                    <div>
-                      <label htmlFor="f-sev" className="block font-semibold text-slate-700 mb-1">Tahap</label>
-                      <select id="f-sev" value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })} className={inputCls}>
-                        {Object.entries(SEVERITY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label htmlFor="f-by" className="block font-semibold text-slate-700 mb-1">Diadu Oleh *</label>
-                    <input id="f-by" required value={form.complained_by} onChange={(e) => setForm({ ...form, complained_by: e.target.value })} className={inputCls} />
-                  </div>
-                  <div>
-                    <label htmlFor="f-cat" className="block font-semibold text-slate-700 mb-1">Kategori</label>
-                    <input id="f-cat" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className={inputCls} />
-                  </div>
-                  <div>
-                    <label htmlFor="f-desc" className="block font-semibold text-slate-700 mb-1">Keterangan *</label>
-                    <textarea id="f-desc" rows="3" required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inputCls} />
-                  </div>
-                </>
-              )}
-              {modal === 'action' && (
-                <>
-                  <div>
-                    <label htmlFor="f-status" className="block font-semibold text-slate-700 mb-1">Status</label>
-                    <select id="f-status" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={inputCls}>
-                      {Object.entries(COMPLAINT_STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="f-action" className="block font-semibold text-slate-700 mb-1">Tindakan Diambil</label>
-                    <textarea id="f-action" rows="3" value={form.action_taken} onChange={(e) => setForm({ ...form, action_taken: e.target.value })} className={inputCls} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="f-pic" className="block font-semibold text-slate-700 mb-1">PIC</label>
-                      <input id="f-pic" value={form.action_pic} onChange={(e) => setForm({ ...form, action_pic: e.target.value })} className={inputCls} />
-                    </div>
-                    <div>
-                      <label htmlFor="f-adate" className="block font-semibold text-slate-700 mb-1">Tarikh Tindakan</label>
-                      <input id="f-adate" type="date" value={form.action_date} onChange={(e) => setForm({ ...form, action_date: e.target.value })} className={inputCls} />
-                    </div>
-                  </div>
-                </>
-              )}
-              {modal === 'increment' && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="f-rate" className="block font-semibold text-slate-700 mb-1">Kadar Baharu (RM) *</label>
-                      <input id="f-rate" type="number" step="0.01" min="0" required value={form.proposed_rate} onChange={(e) => setForm({ ...form, proposed_rate: e.target.value })} className={inputCls} />
-                    </div>
-                    <div>
-                      <label htmlFor="f-eff" className="block font-semibold text-slate-700 mb-1">Tarikh Kuat Kuasa *</label>
-                      <input id="f-eff" type="date" required value={form.effective_date} onChange={(e) => setForm({ ...form, effective_date: e.target.value })} className={inputCls} />
-                    </div>
-                  </div>
-                  <div>
-                    <label htmlFor="f-reason" className="block font-semibold text-slate-700 mb-1">Justifikasi</label>
-                    <textarea id="f-reason" rows="3" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} className={inputCls} />
-                  </div>
-                </>
-              )}
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setModal(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold">Batal</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold disabled:opacity-60">{saving ? 'Menyimpan…' : 'Simpan'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {dialog?.type === 'complaint' && (
+        <FormModal
+          title="Rekod aduan guru"
+          initial={{ teacher: '', date_reported: todayISO(), severity: 'LOW', complained_by: '', category: '', description: '' }}
+          fields={[
+            { name: 'teacher', label: 'Guru', type: 'select', required: true, options: teacherOptions.map((t) => ({ value: t.pk, label: `Cikgu ${t.name} (${t.code})` })) },
+            { name: 'date_reported', label: 'Tarikh aduan', type: 'date', required: true },
+            { name: 'severity', label: 'Tahap', type: 'select', required: true, options: Object.entries(SEVERITY).map(([value, s]) => ({ value, label: s.label })) },
+            { name: 'complained_by', label: 'Diadu oleh', required: true, hint: 'cth. ibu bapa, pelajar, staf' },
+            { name: 'category', label: 'Kategori' },
+            { name: 'description', label: 'Keterangan', type: 'textarea', required: true },
+          ]}
+          onSubmit={(v) => run(() => staffApi.createComplaint({ ...v, teacher: Number(v.teacher) }), 'Aduan direkodkan.')}
+          onClose={() => setDialog(null)}
+        />
       )}
-    </div>
+      {dialog?.type === 'action' && (
+        <FormModal
+          title="Kemas kini tindakan aduan"
+          description={`${dialog.complaint.teacher_name} · ${date(dialog.complaint.date_reported)}`}
+          initial={{ status: dialog.complaint.status, action_taken: dialog.complaint.action_taken || '', action_pic: dialog.complaint.action_pic || '', action_date: dialog.complaint.action_date || todayISO() }}
+          fields={[
+            { name: 'status', label: 'Status', type: 'select', required: true, options: Object.entries(COMPLAINT_STATUS).map(([value, label]) => ({ value, label })) },
+            { name: 'action_taken', label: 'Tindakan diambil', type: 'textarea' },
+            { name: 'action_pic', label: 'Pegawai bertanggungjawab (PIC)' },
+            { name: 'action_date', label: 'Tarikh tindakan', type: 'date' },
+          ]}
+          onSubmit={(v) => run(() => staffApi.updateComplaint(dialog.complaint.id, { ...v, action_date: v.action_date || null }), 'Tindakan aduan dikemas kini.')}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'increment' && (
+        <FormModal
+          title="Cadang kenaikan kadar"
+          description="Cadangan dihantar kepada Pengurusan untuk kelulusan."
+          initial={{ teacher: '', proposed_rate: '', effective_date: `${Number(todayISO().slice(0, 4)) + 1}-01-01`, reason: '' }}
+          fields={[
+            { name: 'teacher', label: 'Guru', type: 'select', required: true, options: teacherOptions.map((t) => ({ value: t.pk, label: `Cikgu ${t.name} (${t.code}) · ${rm(t.rate)}` })) },
+            { name: 'proposed_rate', label: 'Kadar baharu (RM)', type: 'number', min: '0', step: '0.01', required: true },
+            { name: 'effective_date', label: 'Tarikh kuat kuasa', type: 'date', required: true },
+            { name: 'reason', label: 'Justifikasi', type: 'textarea' },
+          ]}
+          onSubmit={(v) => run(() => staffApi.proposeRateIncrement({ ...v, teacher: Number(v.teacher) }), 'Cadangan kenaikan kadar dihantar kepada Pengurusan.')}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'reject' && (
+        <FormModal
+          title="Tolak cadangan kenaikan"
+          description={`${dialog.increment.teacher_name} · ${rm(dialog.increment.proposed_rate)}`}
+          danger
+          submitLabel="Tolak cadangan"
+          fields={[{ name: 'comment', label: 'Sebab penolakan', type: 'textarea', required: true }]}
+          onSubmit={(v) => run(() => staffApi.rejectRateIncrement(dialog.increment.id, v.comment.trim()), 'Cadangan ditolak.')}
+          onClose={() => setDialog(null)}
+        />
+      )}
+    </>
   );
 }

@@ -1,411 +1,1017 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { MessageSquare, Printer, Calculator, Download, X, Plus } from 'lucide-react';
-import { useApp } from '../context/AppContext';
-import { useGrades } from './grades';
-import { billingApi, dashboardApi, downloadPdf } from '../api/client';
-import { waLink, today, downloadCsv, estimateMonthlyFee } from './studentShared';
-import { MonthlyRunPanel, DiscountsPanel, InvoiceAdjustModal, OtherInvoiceModal } from './BillingTools';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Calculator, Download, FilePlus2, Plus, Printer, Receipt, Search, Tag } from 'lucide-react';
+import { CENTRE } from '../lib/config';
+import { downloadPdf } from '../api/client';
+import { useStore } from '../store';
+import { can } from '../lib/permissions';
+import {
+  addMonths, arrearsCases, invoiceBalance, invoiceStatus, monthlyFee, preferredContact,
+} from '../lib/domain';
+import {
+  CURRENT_MONTH, date, formLabel, monthLabel, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, rm, TIER_CATEGORY_LABEL, todayISO, waLink,
+} from '../lib/format';
+import { downloadCsv } from '../lib/csv';
+import {
+  Badge, Button, Card, Checkbox, EmptyState, Input, Modal, PageHeader, SearchInput, Segmented, Select, Stat, Table, Tabs, Td, Textarea, Th,
+  useToast, WhatsAppIcon,
+} from './ui';
 
-const METHODS = [
-  { value: 'DUITNOW_QR', label: 'DuitNow QR' },
-  { value: 'CASH', label: 'Tunai' },
-  { value: 'ONLINE_BANKING', label: 'Online Banking / FPX' },
-  { value: 'CARD', label: 'Kad Debit / Kredit' },
-];
-const PAYMENT_TYPES = [
-  { value: 'MONTHLY', label: 'Yuran Bulanan' },
-  { value: 'REG_FEE', label: 'Yuran Pendaftaran' },
-  { value: 'SEMINAR', label: 'Seminar' },
-  { value: 'OUTSTANDING', label: 'Tunggakan' },
-];
-const METHOD_LABELS = Object.fromEntries(METHODS.map((m) => [m.value, m.label]));
-const TYPE_LABELS = Object.fromEntries(PAYMENT_TYPES.map((t) => [t.value, t.label]));
-const STATUS = {
-  PAID: { label: 'Selesai', cls: 'bg-emerald-100 text-emerald-800' },
-  PARTIAL: { label: 'Sebahagian', cls: 'bg-amber-100 text-amber-800' },
-  UNPAID: { label: 'Belum Bayar', cls: 'bg-rose-100 text-rose-800' },
-  OVERDUE: { label: 'Tertunggak', cls: 'bg-rose-200 text-rose-900' },
+const STATUS_BADGE = {
+  PAID: <Badge tone="green">Dibayar</Badge>,
+  PARTIAL: <Badge tone="amber">Separa</Badge>,
+  UNPAID: <Badge tone="red">Belum bayar</Badge>,
+  OVERDUE: <Badge tone="red">Tertunggak</Badge>,
 };
 
-const money = (v) => `RM ${Number(v || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const daysOverdue = (inv) => (inv.status === 'PAID' ? 0 : Math.max(0, Math.floor((new Date() - new Date(inv.due_date)) / 86400000)));
-const monthLabel = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('ms-MY', { month: 'long', year: 'numeric' }) : '');
-// j-status.doc: payment follow-up in weeks 2-5 of the month; older balances are arrears
-const followUpLabel = (inv) => (inv.follow_up_week ? `Minggu ${inv.follow_up_week}` : 'Tunggakan bulan lepas');
-const invoiceTitle = (inv) => (inv.invoice_type === 'OTHER' ? inv.description : monthLabel(inv.billing_month));
+// What an invoice is for: its month, or its description for other charges (seminar etc.)
+export const invoiceTitle = (inv) => (inv.type === 'OTHER' ? inv.description : monthLabel(inv.month));
 
-export default function BillingView({ currentRole = 'ADMIN' }) {
-  const { forms, formLabel, isForm } = useGrades();
-  const { invoices, receipts, payInvoice, pricingTiers, showToast, refreshBilling } = useApp();
-  const [discounts, setDiscounts] = useState([]);
-  const [adjustFor, setAdjustFor] = useState(null);
+// Payment follow-up runs through weeks 2-5 of the month; older balances are arrears
+const followUpLabel = (inv) => (inv.followUpWeek ? `Minggu ${inv.followUpWeek}` : 'Bulan lepas');
+
+// The wording firms up with the week, and only says "overdue" once the due date has passed
+function reminderMessage(inv, contact, studentName) {
+  const what = `yuran ${CENTRE.name} bagi ${studentName}: baki ${rm(invoiceBalance(inv))} (invois ${inv.no}, ${invoiceTitle(inv)})`;
+  if (inv.status !== 'OVERDUE') {
+    return inv.followUpWeek && inv.followUpWeek <= 2
+      ? `Assalamualaikum ${contact?.name}, sekadar peringatan mesra ${what}, tarikh akhir ${date(inv.dueDate)}. Abaikan mesej ini jika sudah membuat bayaran. Terima kasih.`
+      : `Assalamualaikum ${contact?.name}, peringatan ${what}, tarikh akhir ${date(inv.dueDate)}. Mohon jelaskan bayaran sebelum tarikh akhir. Terima kasih.`;
+  }
+  return inv.followUpWeek
+    ? `Assalamualaikum ${contact?.name}, ${what} masih belum dijelaskan selepas tarikh akhir ${date(inv.dueDate)}. Mohon jelaskan minggu ini atau hubungi kaunter. Terima kasih.`
+    : `Assalamualaikum ${contact?.name}, notis tunggakan ${what}. Mohon hubungi kaunter untuk penyelesaian. Terima kasih.`;
+}
+
+const PAGE = 50;
+
+function clearPayLink() {
+  if (window.location.hash.includes('?')) window.history.replaceState(null, '', '#/billing');
+}
+
+export default function BillingView({ role }) {
+  const { invoices, receipts, students, settings } = useStore();
+  const query = new URLSearchParams(window.location.hash.split('?')[1]);
+  const [tab, setTab] = useState(query.get('tab') ?? 'invoices');
+  const [status, setStatus] = useState('ALL');
+  const [month, setMonth] = useState(() => (invoices.some((i) => i.month === CURRENT_MONTH) ? CURRENT_MONTH : 'ALL'));
+  const [q, setQ] = useState('');
+  const [limit, setLimit] = useState(PAGE);
+  const canRecord = can(role, 'billing.record');
+  // Deep link from the dashboard: #/billing?pay=INV-2026-0004
+  const [paying, setPaying] = useState(() => {
+    const inv = invoices.find((i) => i.no === query.get('pay'));
+    return inv && canRecord && invoiceBalance(inv) > 0 ? inv : null;
+  });
+  const [viewing, setViewing] = useState(null);
+  const [calc, setCalc] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [adjusting, setAdjusting] = useState(null);
   const [addingOther, setAddingOther] = useState(false);
-  const loadDiscounts = () => billingApi.getDiscounts().then(setDiscounts).catch(() => setDiscounts([]));
-  useEffect(() => { loadDiscounts(); }, []);
-  const [tab, setTab] = useState('invoices');
-  const [filter, setFilter] = useState('OPEN');
-  const [search, setSearch] = useState('');
-  const [payFor, setPayFor] = useState(null);
-  const [payment, setPayment] = useState({});
-  const [saving, setSaving] = useState(false);
-  const [receiptView, setReceiptView] = useState(null);
-  const [calc, setCalc] = useState({ form: 'F5', count: 4, reg: true });
-  const [regSetting, setRegSetting] = useState(0);
 
-  useEffect(() => {
-    dashboardApi.getSettings()
-      .then((rows) => setRegSetting(Number(rows.find((r) => r.key === 'REGISTRATION_FEE')?.value || 0)))
-      .catch(() => {});
-  }, []);
+  const studentById = useMemo(() => Object.fromEntries(students.map((s) => [s.id, s])), [students]);
+  const months = [...new Set(invoices.map((i) => i.month))].sort().reverse();
+  const needle = q.trim().toLowerCase();
+  const matches = (no, sid) => !needle || `${no} ${studentById[sid]?.name} ${sid}`.toLowerCase().includes(needle);
 
-  const isManagement = currentRole === 'MANAGEMENT';
-  const open = invoices.filter((i) => i.status !== 'PAID');
-  const outstanding = open.reduce((s, i) => s + Number(i.balance_due || 0), 0);
-  const overdue2m = open.filter((i) => daysOverdue(i) >= 60);
+  const invoiceRows = invoices.filter((i) => {
+    if (month !== 'ALL' && i.month !== month) return false;
+    const st = invoiceStatus(i);
+    if (status === 'UNPAID' && st === 'PAID') return false;
+    if (status === 'PAID' && st !== 'PAID') return false;
+    return matches(i.no, i.studentId);
+  });
+  const invoiceByNo = useMemo(() => Object.fromEntries(invoices.map((i) => [i.no, i])), [invoices]);
+  const receiptRows = receipts.filter((r) => (month === 'ALL' || r.date.startsWith(month)) && matches(r.no, invoiceByNo[r.invoiceNo]?.studentId));
+  const cases = arrearsCases(students, invoices, settings.unpaidMonthsLimit);
+  const openInvoices = invoices.filter((i) => invoiceBalance(i) > 0);
+  const collectedToday = receipts.filter((r) => r.date === todayISO()).reduce((a, r) => a + r.amount, 0);
 
-  const term = search.trim().toLowerCase();
-  const listed = invoices.filter((i) =>
-    (filter === 'ALL' || (filter === 'OPEN' ? i.status !== 'PAID' : i.status === filter)) &&
-    (!term || [i.student_name, i.invoice_number, i.student_code, i.parent_name].some((v) => (v || '').toLowerCase().includes(term)))
-  );
+  const monthInv = invoices.filter((i) => i.month === CURRENT_MONTH);
+  const billed = monthInv.reduce((a, i) => a + i.total - i.discount, 0);
+  const collected = monthInv.reduce((a, i) => a + i.paid, 0);
+  const outstanding = invoices.reduce((a, i) => a + invoiceBalance(i), 0);
 
-  const todayTotal = useMemo(() => receipts.filter((r) => r.payment_date === today()).reduce((s, r) => s + Number(r.amount_paid), 0), [receipts]);
-  const calcFee = estimateMonthlyFee(pricingTiers, calc.form, Number(calc.count));
-
-  const startPayment = (inv) => {
-    setPayFor(inv);
-    setPayment({
-      amount_paid: Number(inv.balance_due).toFixed(2),
-      payment_method: 'DUITNOW_QR',
-      payment_type: Number(inv.registration_fee) > 0 && Number(inv.total_paid) === 0 ? 'REG_FEE' : 'MONTHLY',
-      payment_month: inv.billing_month,
-      payment_date: today(),
-      reference_number: '',
-      notes: '',
-    });
-  };
-
-  const submitPayment = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      const receipt = await payInvoice(payFor.id, {
-        ...payment,
-        // The month only applies to monthly fees
-        payment_month: payment.payment_type === 'MONTHLY' ? payment.payment_month || null : null,
-      });
-      setPayFor(null);
-      setReceiptView({ receipt, invoice: payFor });
-    } catch {
-      // toast already shown
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const receiptMessage = (r, inv) => [
-    `Assalamualaikum ${inv.parent_name}, terima kasih atas bayaran yuran Pusat Tuisyen An Nur bagi ${inv.student_name}.`,
-    `No. Resit: ${r.receipt_number}`,
-    `Tarikh: ${r.payment_date}`,
-    `Jumlah: ${money(r.amount_paid)} (${TYPE_LABELS[r.payment_type] || ''}${r.payment_month ? `, ${monthLabel(r.payment_month)}` : ''})`,
-    Number(r.overpaid_amount) > 0 ? `Lebihan ${money(r.overpaid_amount)} disimpan sebagai kredit.` : '',
-  ].filter(Boolean).join('\n');
-
-  // Wording firms up with the week of the month, but only says "overdue" once the due date has passed
-  const reminderMessage = (inv) => {
-    const what = `yuran Pusat Tuisyen An Nur bagi ${inv.student_name}: baki ${money(inv.balance_due)} (invois ${inv.invoice_number}, ${invoiceTitle(inv)})`;
-    const week = inv.follow_up_week;
-    if (inv.status !== 'OVERDUE') {
-      return week && week <= 2
-        ? `Assalamualaikum ${inv.parent_name}, sekadar peringatan mesra ${what}, tarikh akhir ${inv.due_date}. Abaikan mesej ini jika sudah membuat bayaran. Terima kasih.`
-        : `Assalamualaikum ${inv.parent_name}, peringatan ${what}, tarikh akhir ${inv.due_date}. Mohon jelaskan bayaran sebelum tarikh akhir. Terima kasih.`;
-    }
-    if (week) return `Assalamualaikum ${inv.parent_name}, ${what} masih belum dijelaskan selepas tarikh akhir ${inv.due_date}. Mohon jelaskan minggu ini atau hubungi kaunter. Terima kasih.`;
-    return `Assalamualaikum ${inv.parent_name}, notis tunggakan ${what}. Mengikut syarat pusat, kelas boleh digugurkan selepas 2 bulan tunggakan. Mohon hubungi kaunter untuk penyelesaian. Terima kasih.`;
-  };
-  // Opens WhatsApp with the message and records that a reminder went out
-  const sendReminder = (inv) => {
-    billingApi.invoiceAction(inv.id, 'remind').then(refreshBilling).catch(() => {});
-  };
-  const reminderLink = (inv, cls) => (
-    <a href={waLink(inv.preferred_phone, reminderMessage(inv))} target="_blank" rel="noreferrer" onClick={() => sendReminder(inv)}
-      className={`${cls} inline-flex items-center gap-1 font-semibold`}><MessageSquare className="w-3.5 h-3.5" /> Peringatan</a>
-  );
-
-  const invoiceFor = (r) => invoices.find((i) => i.id === r.invoice) || { student_name: r.student_name, parent_name: '', invoice_number: r.invoice_number };
-  const tabBtn = (id, label) => (
-    <button key={id} onClick={() => setTab(id)} className={`px-3 py-1.5 rounded-lg font-semibold cursor-pointer ${tab === id ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>{label}</button>
-  );
-  const input = 'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white';
+  const rows = tab === 'invoices' ? invoiceRows : receiptRows;
 
   return (
-    <div className="space-y-6 text-xs">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">Kutipan Yuran</h2>
-          <p className="text-slate-500">Invois pertama dijana apabila pendaftaran diluluskan; invois bulanan melalui tab Invois Bulanan. Lebihan bayaran disimpan sebagai kredit pelajar.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => setAddingOther(true)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold flex items-center gap-1 cursor-pointer"><Plus className="w-3.5 h-3.5" /> Invois Lain</button>
-          <div className="flex flex-wrap gap-1 bg-white p-1 rounded-xl border border-slate-200">
-            {tabBtn('invoices', `Invois (${invoices.length})`)}
-            {tabBtn('run', 'Invois Bulanan')}
-            {tabBtn('outstanding', `Tertunggak (${open.length})`)}
-            {tabBtn('receipts', `Resit (${receipts.length})`)}
-            {tabBtn('discounts', 'Diskaun')}
-            {tabBtn('calculator', 'Kalkulator Yuran')}
-          </div>
-        </div>
+    <>
+      <PageHeader
+        title="Yuran & resit"
+        description={`Invois bulanan, rekod bayaran dan resit rasmi · ${monthLabel(CURRENT_MONTH)}`}
+        actions={
+          <>
+            <Button icon={Calculator} onClick={() => setCalc(true)}>
+              Kalkulator yuran
+            </Button>
+            {canRecord && (
+              <Button icon={Plus} onClick={() => setAddingOther(true)}>
+                Invois lain
+              </Button>
+            )}
+            {can(role, 'billing.run') && (
+              <Button variant="primary" icon={FilePlus2} onClick={() => setRunning(true)}>
+                Jana invois bulanan
+              </Button>
+            )}
+          </>
+        }
+      />
+
+      <div className={`mb-6 grid grid-cols-1 gap-4 ${can(role, 'finance.summary') ? 'sm:grid-cols-4' : 'sm:grid-cols-2'}`}>
+        <Stat label="Kutipan hari ini" value={rm(collectedToday)} hint={date(todayISO())} />
+        {!can(role, 'finance.summary') && <Stat label="Invois belum selesai" value={openInvoices.length} hint={rm(outstanding)} tone={outstanding ? 'red' : undefined} />}
+        {can(role, 'finance.summary') && (
+          <>
+          <Stat label={`Dibilkan ${monthLabel(CURRENT_MONTH)}`} value={rm(billed)} hint={`${monthInv.length} invois`} />
+          <Stat label="Dikutip" value={rm(collected)} hint={`${billed ? Math.round((collected / billed) * 100) : 0}% daripada jumlah dibilkan`} />
+          <Stat label="Tertunggak (semua bulan)" value={rm(outstanding)} hint={`${openInvoices.length} invois`} tone={outstanding ? 'red' : undefined} />
+          </>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          ['Kutipan Hari Ini', money(todayTotal), 'text-purple-700'],
-          ['Jumlah Tertunggak', money(outstanding), outstanding > 0 ? 'text-rose-600' : 'text-emerald-600'],
-          ['Invois Belum Selesai', open.length, 'text-slate-900'],
-          ['Tertunggak > 2 Bulan', overdue2m.length, overdue2m.length ? 'text-rose-600' : 'text-slate-900'],
-        ].map(([l, v, tone]) => (
-          <div key={l} className="p-4 bg-white rounded-2xl border border-slate-200">
-            <span className="text-slate-500 font-semibold block">{l}</span>
-            <span className={`text-xl font-black ${tone}`}>{v}</span>
-          </div>
-        ))}
-      </div>
+      <Tabs
+        className="mb-4"
+        value={tab}
+        onChange={(t) => {
+          setTab(t);
+          setLimit(PAGE);
+        }}
+        items={[
+          { value: 'invoices', label: 'Invois' },
+          { value: 'receipts', label: 'Resit' },
+          ...(can(role, 'billing.arrears') ? [{ value: 'arrears', label: 'Tunggakan & susulan', count: openInvoices.length }] : []),
+        ]}
+      />
 
-      {tab === 'invoices' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <input type="search" aria-label="Cari invois" placeholder="Cari pelajar, invois, waris…" value={search} onChange={(e) => setSearch(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 min-w-[220px]" />
-            <select aria-label="Status invois" value={filter} onChange={(e) => setFilter(e.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold">
-              <option value="OPEN">Belum selesai</option>
-              <option value="ALL">Semua</option>
-              {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+      {tab === 'arrears' ? (
+        <ArrearsPanel cases={cases} role={role} openInvoices={openInvoices} onPay={setPaying} />
+      ) : (
+        <Card>
+          <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 p-4">
+            <SearchInput icon={Search} value={q} onChange={setQ} placeholder="Cari no. invois / resit atau pelajar" className="w-full sm:w-72" />
+            <select
+              value={month}
+              onChange={(e) => {
+                setMonth(e.target.value);
+                setLimit(PAGE);
+              }}
+              aria-label="Bulan"
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-brand-600 focus:outline-none"
+            >
+              {months.map((m) => (
+                <option key={m} value={m}>
+                  {monthLabel(m)}
+                </option>
+              ))}
+              <option value="ALL">Semua bulan</option>
             </select>
+            {tab === 'invoices' && (
+              <Segmented
+                value={status}
+                onChange={setStatus}
+                items={[
+                  { value: 'ALL', label: 'Semua' },
+                  { value: 'UNPAID', label: 'Belum selesai' },
+                  { value: 'PAID', label: 'Dibayar' },
+                ]}
+              />
+            )}
+            <span className="ml-auto text-sm text-gray-500">{rows.length} rekod</span>
+            <Button
+              size="sm"
+              icon={Download}
+              onClick={() => (tab === 'invoices'
+                ? downloadCsv(`invois-${month}.csv`, ['Invois', 'Untuk', 'Pelajar', 'ID', 'Jumlah', 'Diskaun', 'Dibayar', 'Baki', 'Status', 'Tarikh akhir'],
+                  invoiceRows.map((i) => [i.no, invoiceTitle(i), studentById[i.studentId]?.name, i.studentId, i.total - i.discount, i.discount, i.paid, invoiceBalance(i), invoiceStatus(i), i.dueDate]))
+                : downloadCsv(`resit-${month}.csv`, ['Resit', 'Tarikh', 'Pelajar', 'Invois', 'Jenis', 'Bulan', 'Kaedah', 'Rujukan', 'Amaun', 'Lebihan', 'Diterima oleh', 'Catatan'],
+                  receiptRows.map((r) => [r.no, r.date, r.studentName, r.invoiceNo, PAYMENT_TYPE_LABEL[r.type], r.month, PAYMENT_METHOD_LABEL[r.method], r.ref, r.amount, r.overpaid, r.by, r.notes])))}
+            >
+              CSV
+            </Button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-slate-500 uppercase text-[11px]">
-                <tr><th className="py-2.5 px-3">Invois</th><th className="px-3">Pelajar</th><th className="px-3">Bulan</th><th className="px-3">Jumlah</th><th className="px-3">Dibayar</th><th className="px-3">Baki</th><th className="px-3">Status</th><th className="px-3 text-right">Tindakan</th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {listed.length === 0 && <tr><td colSpan={8} className="py-8 text-center text-slate-400">Tiada invois.</td></tr>}
-                {listed.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-slate-50">
-                    <td className="py-2.5 px-3 font-bold">{inv.invoice_number}<div className="text-[10px] text-slate-400 font-normal">Akhir {inv.due_date}</div></td>
-                    <td className="px-3">
-                      <div className="font-semibold">{inv.student_name} <span className="text-slate-400">({inv.student_form})</span></div>
-                      <div className="text-[10px] text-slate-500">{inv.parent_name} • {inv.preferred_phone}</div>
-                      {Number(inv.student_credit) > 0 && <div className="text-[10px] text-emerald-700 font-semibold">Kredit {money(inv.student_credit)}</div>}
-                    </td>
-                    <td className="px-3">{invoiceTitle(inv)}<div className="text-[10px] text-slate-400">{inv.invoice_type_label}</div></td>
-                    <td className="px-3 font-bold">
-                      {money(inv.total_payable)}
-                      {Number(inv.registration_fee) > 0 && <div className="text-[10px] text-slate-400 font-normal">termasuk pendaftaran {money(inv.registration_fee)}</div>}
-                      {inv.discount_remarks && <div className="text-[10px] text-indigo-600 font-normal">{inv.discount_remarks}{Number(inv.discount_amount) > 0 ? ` -${money(inv.discount_amount)}` : ''}</div>}
-                    </td>
-                    <td className="px-3">{money(inv.total_paid)}{Number(inv.credit_applied) > 0 && <div className="text-[10px] text-emerald-700">termasuk kredit {money(inv.credit_applied)}</div>}</td>
-                    <td className="px-3 font-bold text-rose-600">{Number(inv.balance_due) > 0 ? money(inv.balance_due) : '-'}</td>
-                    <td className="px-3"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS[inv.status]?.cls}`}>{STATUS[inv.status]?.label}</span></td>
-                    <td className="px-3 text-right">
-                      <div className="inline-flex gap-1.5">
-                        {inv.status !== 'PAID' && <button onClick={() => startPayment(inv)} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold cursor-pointer">Terima Bayaran</button>}
-                        {inv.status !== 'PAID' && <button onClick={() => setAdjustFor(inv)} className="px-2 py-1.5 rounded-lg bg-slate-100 font-semibold cursor-pointer">Diskaun / Kredit</button>}
-                        {inv.status !== 'PAID' && reminderLink(inv, 'px-2 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200')}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
-      {tab === 'outstanding' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Senarai Tertunggak</h3>
-              <p className="text-slate-500">Susulan minggu 2 hingga 5: tekan Peringatan untuk membuka WhatsApp dengan mesej mengikut minggu (dihantar seorang demi seorang). Setiap peringatan direkodkan.</p>
-            </div>
-            <button onClick={() => downloadCsv(`tertunggak-${today()}.csv`, ['Invois', 'Pelajar', 'Tingkatan', 'Waris', 'Telefon', 'Baki', 'Hari Lewat', 'Susulan', 'Peringatan Dihantar', 'Peringatan Terakhir'],
-              open.map((i) => [i.invoice_number, i.student_name, i.student_form, i.parent_name, i.preferred_phone, i.balance_due, daysOverdue(i), followUpLabel(i), i.reminder_count, i.last_reminder_at || '']))}
-              className="px-3 py-2 rounded-xl bg-slate-900 text-white font-bold flex items-center gap-1.5 cursor-pointer"><Download className="w-3.5 h-3.5" /> CSV</button>
-          </div>
-          {open.length === 0 ? <p className="py-8 text-center text-emerald-700">Tiada tunggakan.</p> : (
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-slate-500 uppercase text-[11px]"><tr><th className="py-2.5 px-3">Pelajar</th><th className="px-3">Waris</th><th className="px-3">Baki</th><th className="px-3">Hari Lewat</th><th className="px-3">Susulan</th><th className="px-3 text-right">Tindakan</th></tr></thead>
-              <tbody className="divide-y divide-slate-100">
-                {[...open].sort((a, b) => daysOverdue(b) - daysOverdue(a)).map((inv) => {
-                  const days = daysOverdue(inv);
+          {rows.length === 0 ? (
+            <EmptyState icon={Receipt} title={tab === 'invoices' ? 'Tiada invois' : 'Tiada resit'} />
+          ) : tab === 'invoices' ? (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Invois</Th>
+                  <Th>Pelajar</Th>
+                  <Th className="text-right">Jumlah</Th>
+                  <Th className="hidden text-right md:table-cell">Baki</Th>
+                  <Th>Status</Th>
+                  <Th className="text-right">Tindakan</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoiceRows.slice(0, limit).map((inv) => {
+                  const s = studentById[inv.studentId];
+                  const st = invoiceStatus(inv);
+                  const receipt = inv.receipt && receipts.find((r) => r.no === inv.receipt);
                   return (
-                    <tr key={inv.id} className={days >= 60 ? 'bg-rose-50/60' : ''}>
-                      <td className="py-2.5 px-3 font-semibold">{inv.student_name} <span className="text-slate-400">({inv.student_form})</span></td>
-                      <td className="px-3">{inv.parent_name}<div className="text-[10px] text-slate-500">{inv.preferred_phone}</div></td>
-                      <td className="px-3 font-bold text-rose-600">{money(inv.balance_due)}</td>
-                      <td className="px-3 font-semibold">{days} hari{days >= 60 && <span className="ml-1 text-rose-700">(&gt; 2 bulan)</span>}</td>
-                      <td className="px-3">
-                        <span className="font-semibold">{followUpLabel(inv)}</span>
-                        <div className="text-[10px] text-slate-500">{inv.reminder_count ? `${inv.reminder_count} peringatan, terakhir ${inv.last_reminder_at}` : 'Belum diingatkan'}</div>
-                      </td>
-                      <td className="px-3 text-right space-x-1.5">
-                        {reminderLink(inv, 'px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200')}
-                        <button onClick={() => startPayment(inv)} className="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold cursor-pointer">Terima Bayaran</button>
-                      </td>
+                    <tr key={inv.no} className="hover:bg-gray-50">
+                      <Td className="whitespace-nowrap">
+                        <p className="font-medium text-gray-900">{inv.no}</p>
+                        <p className="text-[13px] text-gray-500">{invoiceTitle(inv)}</p>
+                      </Td>
+                      <Td>
+                        <a href={`#/students/${s?.id}?tab=fees`} className="text-gray-900 hover:text-brand-700 hover:underline">
+                          {s?.name}
+                        </a>
+                        <p className="text-[13px] text-gray-500">{formLabel(s?.form)}</p>
+                      </Td>
+                      <Td className="text-right tnum">
+                        {rm(inv.total - inv.discount)}
+                        {inv.discount > 0 && <p className="text-xs text-gray-500">diskaun {rm(inv.discount)}</p>}
+                        {inv.creditApplied > 0 && <p className="text-xs text-gray-500">kredit {rm(inv.creditApplied)}</p>}
+                      </Td>
+                      <Td className="hidden text-right tnum md:table-cell">{invoiceBalance(inv) ? rm(invoiceBalance(inv)) : '—'}</Td>
+                      <Td>{STATUS_BADGE[st]}</Td>
+                      <Td className="whitespace-nowrap text-right">
+                        {st !== 'PAID'
+                          ? canRecord && (
+                              <div className="flex justify-end gap-2">
+                                <Button size="sm" icon={Tag} onClick={() => setAdjusting(inv)} title="Kod baucar atau kredit pelajar">
+                                  Diskaun
+                                </Button>
+                                <Button size="sm" variant="primary" onClick={() => setPaying(inv)}>
+                                  Rekod bayaran
+                                </Button>
+                              </div>
+                            )
+                          : receipt && (
+                              <Button size="sm" onClick={() => setViewing(receipt)}>
+                                Lihat resit
+                              </Button>
+                            )}
+                      </Td>
                     </tr>
                   );
                 })}
               </tbody>
-            </table>
+            </Table>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Resit</Th>
+                  <Th>Pelajar</Th>
+                  <Th className="hidden md:table-cell">Kaedah</Th>
+                  <Th className="text-right">Amaun</Th>
+                  <Th className="text-right">Tindakan</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {receiptRows.slice(0, limit).map((r) => {
+                  const s = studentById[invoiceByNo[r.invoiceNo]?.studentId];
+                  return (
+                    <tr key={r.no} className="hover:bg-gray-50">
+                      <Td className="whitespace-nowrap">
+                        <p className="font-medium text-gray-900">{r.no}</p>
+                        <p className="text-[13px] text-gray-500">{date(r.date)}</p>
+                      </Td>
+                      <Td>
+                        <p className="text-gray-900">{s?.name ?? r.studentName}</p>
+                        <p className="text-[13px] text-gray-500">{r.invoiceNo} · {PAYMENT_TYPE_LABEL[r.type]}{r.month ? ` ${monthLabel(r.month)}` : ''}</p>
+                      </Td>
+                      <Td className="hidden md:table-cell">
+                        <p className="text-gray-900">{PAYMENT_METHOD_LABEL[r.method]}</p>
+                        {r.ref && <p className="text-[13px] text-gray-500">{r.ref}</p>}
+                      </Td>
+                      <Td className="text-right font-medium tnum">{rm(r.amount)}</Td>
+                      <Td className="text-right">
+                        <Button size="sm" onClick={() => setViewing(r)}>
+                          Lihat
+                        </Button>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          )}
+          {rows.length > limit && (
+            <div className="border-t border-gray-200 p-3 text-center">
+              <Button variant="ghost" size="sm" onClick={() => setLimit((l) => l + PAGE)}>
+                Tunjuk {Math.min(PAGE, rows.length - limit)} lagi ({rows.length - limit} baki)
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {paying && (
+        <PaymentModal
+          invoice={paying}
+          role={role}
+          onClose={() => {
+            setPaying(null);
+            clearPayLink();
+          }}
+          onPaid={(receipt) => {
+            setPaying(null);
+            clearPayLink();
+            setViewing(receipt);
+          }}
+        />
+      )}
+      <ReceiptModal receipt={viewing} onClose={() => setViewing(null)} hideActions={!canRecord} />
+      <CalculatorModal open={calc} onClose={() => setCalc(false)} />
+      {running && <MonthlyRunModal onClose={() => setRunning(false)} onDone={(m) => { setMonth(m); setTab('invoices'); setRunning(false); }} />}
+      {adjusting && <InvoiceAdjustModal invoice={adjusting} onClose={() => setAdjusting(null)} />}
+      {addingOther && <OtherInvoiceModal onClose={() => setAddingOther(false)} />}
+    </>
+  );
+}
+
+// ---- Arrears (unpaid-months rule) --------------------------------------------
+
+function ArrearsPanel({ cases, role, openInvoices, onPay }) {
+  const { settings, students, warnArrears, studentAction, invoiceAction } = useStore();
+  const notify = useToast();
+  const studentById = Object.fromEntries(students.map((x) => [x.id, x]));
+  const today = todayISO();
+  const daysLate = (inv) => Math.max(0, Math.round((new Date(today) - new Date(inv.dueDate)) / 86400000));
+  const open = [...openInvoices].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+  return (
+    <div className="space-y-6">
+      {cases.length > 0 && (
+        <Card>
+          <div className="flex items-start gap-3 border-b border-gray-200 bg-amber-50/60 px-5 py-3.5 text-sm text-amber-900">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <p>
+              Polisi: pelajar yang tertunggak yuran <strong>{settings.unpaidMonthsLimit} bulan</strong> tanpa makluman boleh diberhentikan. Hantar amaran
+              terlebih dahulu.
+            </p>
+          </div>
+          <Table>
+            <thead>
+              <tr>
+                <Th>Pelajar</Th>
+                <Th>Bulan tertunggak</Th>
+                <Th className="text-right">Jumlah</Th>
+                <Th>Status</Th>
+                <Th className="text-right">Tindakan</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {cases.map(({ student: s, overdue, amount }) => {
+                const contact = preferredContact(s);
+                const warned = overdue.map((i) => i.lastReminder).filter(Boolean).sort().pop();
+                const msg = `Assalamualaikum ${contact.name}. Yuran ${s.name} bagi ${overdue.map((i) => monthLabel(i.month)).join(' dan ')} berjumlah ${rm(amount)} masih belum dijelaskan. Mengikut syarat pendaftaran, pelajar boleh diberhentikan jika yuran tertunggak ${settings.unpaidMonthsLimit} bulan. Sila jelaskan bayaran atau hubungi kaunter.`;
+                return (
+                  <tr key={s.id}>
+                    <Td>
+                      <a href={`#/students/${s.id}?tab=fees`} className="font-medium text-gray-900 hover:text-brand-700 hover:underline">
+                        {s.name}
+                      </a>
+                      <p className="text-[13px] text-gray-500">
+                        {contact.name} · {contact.phone}
+                      </p>
+                    </Td>
+                    <Td className="text-gray-700">{overdue.map((i) => monthLabel(i.month)).join(', ')}</Td>
+                    <Td className="text-right font-medium text-red-700 tnum">{rm(amount)}</Td>
+                    <Td className="whitespace-nowrap">{warned ? <Badge tone="blue">Amaran {date(warned)}</Badge> : <Badge>Belum diberi amaran</Badge>}</Td>
+                    <Td className="whitespace-nowrap text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          as="a"
+                          size="sm"
+                          href={waLink(contact.phone, msg)}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => warnArrears(s.id).then(() => notify('Amaran direkodkan.', 'info')).catch(() => {})}
+                        >
+                          <WhatsAppIcon className="size-3.5" /> Amaran
+                        </Button>
+                        {s.status === 'ACTIVE' && can(role, 'students.approve') && (
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            disabled={!warned}
+                            title={warned ? undefined : 'Hantar amaran dahulu'}
+                            onClick={() => {
+                              if (!window.confirm(`Berhentikan ${s.name} kerana tunggakan yuran? Tempat dalam kelas akan dilepaskan.`)) return;
+                              studentAction(s.id, 'terminate', { reason_code: 'TUNGGAKAN', reason_text: `Yuran tertunggak ${overdue.length} bulan` })
+                                .then(() => notify(`${s.name} diberhentikan. Tempat kelas dilepaskan.`, 'info'))
+                                .catch(() => {});
+                            }}
+                          >
+                            Berhentikan
+                          </Button>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        </Card>
+      )}
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-3.5">
+          <div>
+            <h2 className="text-[15px] font-semibold text-gray-900">Senarai tertunggak & susulan bayaran</h2>
+            <p className="mt-0.5 text-[13px] text-gray-500">Susulan minggu 2 hingga 5: butang Peringatan membuka WhatsApp dengan mesej mengikut minggu dan merekodkannya.</p>
+          </div>
+          <Button
+            size="sm"
+            icon={Download}
+            onClick={() => downloadCsv(`tertunggak-${today}.csv`, ['Invois', 'Pelajar', 'Penjaga', 'Telefon', 'Baki', 'Tarikh akhir', 'Hari lewat', 'Susulan', 'Peringatan', 'Terakhir'],
+              open.map((i) => [i.no, i.studentName, i.parentName, i.phone, invoiceBalance(i), i.dueDate, daysLate(i), followUpLabel(i), i.reminders, i.lastReminder || '']))}
+          >
+            CSV
+          </Button>
+        </div>
+        {open.length === 0 ? (
+          <EmptyState title="Tiada invois tertunggak" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Pelajar</Th>
+                <Th>Invois</Th>
+                <Th className="text-right">Baki</Th>
+                <Th>Tarikh akhir</Th>
+                <Th>Susulan</Th>
+                <Th className="text-right">Tindakan</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {open.map((inv) => {
+                const s = studentById[inv.studentId];
+                const contact = preferredContact(s) || { name: inv.parentName, phone: inv.phone };
+                const late = daysLate(inv);
+                return (
+                  <tr key={inv.no}>
+                    <Td>
+                      <a href={`#/students/${inv.studentId}?tab=fees`} className="font-medium text-gray-900 hover:text-brand-700 hover:underline">
+                        {inv.studentName}
+                      </a>
+                      <p className="text-[13px] text-gray-500">{contact.name} · {contact.phone}</p>
+                    </Td>
+                    <Td className="whitespace-nowrap">
+                      <p className="text-gray-900">{inv.no}</p>
+                      <p className="text-[13px] text-gray-500">{invoiceTitle(inv)}</p>
+                    </Td>
+                    <Td className="text-right font-medium text-red-700 tnum">{rm(invoiceBalance(inv))}</Td>
+                    <Td className="whitespace-nowrap">
+                      {date(inv.dueDate)}
+                      {late > 0 && <p className="text-[13px] text-red-700">{late} hari lewat</p>}
+                    </Td>
+                    <Td className="whitespace-nowrap">
+                      <Badge tone={inv.status === 'OVERDUE' ? 'red' : 'amber'}>{followUpLabel(inv)}</Badge>
+                      <p className="mt-0.5 text-[13px] text-gray-500">{inv.reminders ? `${inv.reminders} peringatan · ${date(inv.lastReminder)}` : 'Belum diingatkan'}</p>
+                    </Td>
+                    <Td className="whitespace-nowrap text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          as="a"
+                          size="sm"
+                          href={waLink(contact.phone, reminderMessage(inv, contact, inv.studentName))}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => invoiceAction(inv.no, 'remind').catch(() => {})}
+                        >
+                          <WhatsAppIcon className="size-3.5" /> Peringatan
+                        </Button>
+                        {can(role, 'billing.record') && (
+                          <Button size="sm" variant="primary" onClick={() => onPay(inv)}>
+                            Rekod bayaran
+                          </Button>
+                        )}
+                      </div>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ---- Monthly invoice run ------------------------------------------------------
+
+function MonthlyRunModal({ onClose, onDone }) {
+  const { invoices, runMonthlyInvoices } = useStore();
+  const notify = useToast();
+  const latest = invoices.reduce((m, i) => (i.month > m ? i.month : m), CURRENT_MONTH);
+  const [month, setMonth] = useState(CURRENT_MONTH);
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const options = [...new Set([CURRENT_MONTH, addMonths(CURRENT_MONTH, 1), addMonths(latest, 1)])].sort();
+
+  // The server works out who is billed and how much; this only shows its answer
+  useEffect(() => {
+    let cancelled = false;
+    setPreview(null);
+    runMonthlyInvoices(month, true).then((r) => { if (!cancelled) setPreview(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [month, runMonthlyInvoices]);
+
+  const ready = preview?.rows.filter((r) => r.result === 'READY') ?? [];
+  const skipped = preview?.rows.filter((r) => r.result === 'SKIPPED') ?? [];
+  const sum = (key) => ready.reduce((a, r) => a + Number(r[key] || 0), 0);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      const done = await runMonthlyInvoices(month, false);
+      notify(`${done.created} invois ${monthLabel(month)} dijana.`);
+      onDone(month);
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title="Jana invois bulanan"
+      description="Untuk pelajar bulanan aktif yang belum ada invois bulan itu. Selamat dijalankan semula: tiada pelajar dibilkan dua kali."
+      footer={
+        <>
+          <Button onClick={onClose}>Batal</Button>
+          <Button variant="primary" disabled={busy || ready.length === 0} onClick={run}>
+            {busy ? 'Menjana…' : `Jana ${ready.length} invois`}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Select label="Bulan" value={month} onChange={(e) => setMonth(e.target.value)}>
+          {options.map((m) => (
+            <option key={m} value={m}>
+              {monthLabel(m)}
+            </option>
+          ))}
+        </Select>
+        {!preview ? (
+          <p className="text-sm text-gray-500">Menyemak…</p>
+        ) : (
+          <>
+            <dl className="space-y-2 rounded-md bg-gray-50 p-4 text-sm">
+              <div className="flex justify-between">
+                <dt className="text-gray-600">Pelajar akan dibilkan</dt>
+                <dd className="font-medium tnum">{ready.length}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-gray-600">Jumlah yuran</dt>
+                <dd className="tnum">{rm(sum('monthly_fee'))}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-gray-600">Diskaun tetap</dt>
+                <dd className="tnum">− {rm(sum('discount'))}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-gray-600">Kredit pelajar digunakan</dt>
+                <dd className="tnum">− {rm(sum('credit'))}</dd>
+              </div>
+              <div className="flex justify-between border-t border-gray-200 pt-2 font-semibold">
+                <dt>Perlu dibayar</dt>
+                <dd className="tnum">{rm(sum('balance'))}</dd>
+              </div>
+            </dl>
+            {ready.length > 0 && (
+              <div className="max-h-56 overflow-y-auto rounded-md border border-gray-200">
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Pelajar</Th>
+                      <Th className="text-right">Yuran</Th>
+                      <Th className="text-right">Diskaun</Th>
+                      <Th className="text-right">Perlu dibayar</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ready.map((r) => (
+                      <tr key={r.student_id}>
+                        <Td>
+                          <p className="text-gray-900">{r.name}</p>
+                          <p className="text-[13px] text-gray-500">{formLabel(r.form_level)} · {r.subjects} subjek</p>
+                        </Td>
+                        <Td className="text-right tnum">{rm(r.monthly_fee)}</Td>
+                        <Td className="text-right tnum">{Number(r.discount) ? `− ${rm(r.discount)}` : '—'}</Td>
+                        <Td className="text-right font-medium tnum">{rm(r.balance)}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            )}
+            {skipped.length > 0 && (
+              <details className="text-[13px] text-gray-600">
+                <summary className="cursor-pointer font-medium">{skipped.length} pelajar dilangkau</summary>
+                <ul className="mt-2 space-y-1">
+                  {skipped.map((r) => (
+                    <li key={r.student_id}>{r.name}: {r.reason}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ---- Voucher code, student credit, other charges ------------------------------
+
+function InvoiceAdjustModal({ invoice: inv, onClose }) {
+  const { invoiceAction } = useStore();
+  const notify = useToast();
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const credit = Math.min(inv.studentCredit, invoiceBalance(inv));
+  const canDiscount = inv.discount === 0 && inv.monthlyFee > 0;
+  const run = async (name, payload, message) => {
+    setBusy(true);
+    try {
+      await invoiceAction(inv.no, name, payload);
+      notify(message);
+      onClose();
+    } catch {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal open onClose={onClose} title="Diskaun & kredit" description={`${inv.no} · ${inv.studentName} · baki ${rm(invoiceBalance(inv))}`} size="sm">
+      <div className="space-y-5">
+        {canDiscount ? (
+          <form onSubmit={(e) => { e.preventDefault(); run('apply_discount', { code }, 'Diskaun digunakan.'); }} className="space-y-3">
+            <Input label="Kod baucar" required value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} hint="Diskaun hanya untuk yuran bulanan, bukan yuran pendaftaran." />
+            <Button type="submit" variant="primary" disabled={busy}>Guna kod</Button>
+          </form>
+        ) : (
+          <p className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            {inv.discount > 0 ? `Diskaun sudah digunakan: ${inv.discounts[0]?.label} (− ${rm(inv.discount)}).` : 'Invois ini tiada yuran bulanan untuk didiskaun.'}
+          </p>
+        )}
+        <div className="border-t border-gray-200 pt-4">
+          <p className="text-sm text-gray-700">Kredit pelajar (lebihan bayaran): <strong>{rm(inv.studentCredit)}</strong></p>
+          {credit > 0 ? (
+            <Button className="mt-3" disabled={busy} onClick={() => run('apply_credit', {}, `Kredit ${rm(credit)} ditolak daripada baki.`)}>
+              Tolak {rm(credit)} daripada baki
+            </Button>
+          ) : (
+            <p className="mt-1 text-[13px] text-gray-500">Tiada kredit untuk digunakan.</p>
           )}
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+function OtherInvoiceModal({ onClose }) {
+  const { students, createOtherInvoice } = useStore();
+  const notify = useToast();
+  const [f, setF] = useState({ student: '', description: '', amount: '' });
+  const active = students.filter((x) => x.status === 'ACTIVE' || x.status === 'ON_HOLD');
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      const inv = await createOtherInvoice(f.student, f.description, f.amount);
+      notify(`Invois ${inv.invoice_number} dijana.`);
+      onClose();
+    } catch {
+      // reason already shown
+    }
+  };
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Invois lain"
+      description="Caj selain yuran bulanan, cth. seminar atau buku. Tarikh akhir 7 hari."
+      footer={
+        <>
+          <Button onClick={onClose}>Batal</Button>
+          <Button type="submit" form="other-invoice" variant="primary">Jana invois</Button>
+        </>
+      }
+    >
+      <form id="other-invoice" onSubmit={submit} className="space-y-4">
+        <Select label="Pelajar" required value={f.student} onChange={(e) => setF({ ...f, student: e.target.value })}>
+          <option value="">Pilih pelajar</option>
+          {active.map((x) => (
+            <option key={x.id} value={x.id}>{x.name} ({x.id})</option>
+          ))}
+        </Select>
+        <Input label="Keterangan" required value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="cth. Seminar Teknik Menjawab SPM" />
+        <Input label="Jumlah (RM)" type="number" required min="0.01" step="0.01" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
+      </form>
+    </Modal>
+  );
+}
+
+// ---- Payment & receipt --------------------------------------------------------
+
+export function InvoiceLines({ inv, showPaid = true }) {
+  return (
+    <dl className="space-y-1.5 text-sm">
+      <div className="flex justify-between gap-4">
+        <dt className="text-gray-600">{inv.type === 'OTHER' ? inv.description : `Yuran bulanan (${monthLabel(inv.month)})`}</dt>
+        <dd className="tnum">{rm(inv.monthlyFee)}</dd>
+      </div>
+      {inv.regFee > 0 && (
+        <div className="flex justify-between gap-4">
+          <dt className="text-gray-600">Yuran pendaftaran</dt>
+          <dd className="tnum">{rm(inv.regFee)}</dd>
+        </div>
       )}
+      {inv.discounts?.map((d) => (
+        <div key={d.id} className="flex justify-between gap-4">
+          <dt className="text-gray-600">{d.label}</dt>
+          <dd className="tnum">− {rm(d.amount)}</dd>
+        </div>
+      ))}
+      {inv.creditApplied > 0 && (
+        <div className="flex justify-between gap-4">
+          <dt className="text-gray-600">Kredit pelajar</dt>
+          <dd className="tnum">− {rm(inv.creditApplied)}</dd>
+        </div>
+      )}
+      {showPaid && inv.paid - inv.creditApplied > 0 && (
+        <div className="flex justify-between gap-4">
+          <dt className="text-gray-600">Telah dibayar</dt>
+          <dd className="tnum">− {rm(inv.paid - inv.creditApplied)}</dd>
+        </div>
+      )}
+      <div className="flex justify-between gap-4 border-t border-gray-200 pt-2 font-semibold">
+        <dt>{showPaid ? 'Baki perlu dibayar' : 'Jumlah'}</dt>
+        <dd className="tnum">{rm(showPaid ? invoiceBalance(inv) : inv.total - inv.discount)}</dd>
+      </div>
+    </dl>
+  );
+}
 
-      {tab === 'run' && <MonthlyRunPanel />}
-      {tab === 'discounts' && <DiscountsPanel currentRole={currentRole} discounts={discounts} onChanged={loadDiscounts} />}
+export function PaymentModal({ invoice: inv, onClose, onPaid }) {
+  const { students, recordPayment } = useStore();
+  const notify = useToast();
+  const balance = invoiceBalance(inv);
+  const [amount, setAmount] = useState(balance.toFixed(2));
+  const [method, setMethod] = useState('DUITNOW_QR');
+  const [type, setType] = useState(inv.type === 'OTHER' ? 'SEMINAR' : inv.regFee > 0 && inv.paid === 0 ? 'REG_FEE' : inv.status === 'OVERDUE' ? 'OUTSTANDING' : 'MONTHLY');
+  const [payMonth, setPayMonth] = useState(inv.month);
+  const [ref, setRef] = useState('');
+  const [notes, setNotes] = useState('');
+  const [payDate, setPayDate] = useState(todayISO());
+  const [busy, setBusy] = useState(false);
+  const s = students.find((x) => x.id === inv.studentId);
+  const amt = Number(amount) || 0;
 
-      {tab === 'receipts' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-          <div className="flex justify-end">
-            <button onClick={() => downloadCsv(`resit-${today()}.csv`, ['No. Resit', 'Tarikh', 'Pelajar', 'Invois', 'Jenis', 'Bulan', 'Kaedah', 'Jumlah', 'Lebihan', 'Diterima Oleh', 'Catatan'],
-              receipts.map((r) => [r.receipt_number, r.payment_date, r.student_name, r.invoice_number, TYPE_LABELS[r.payment_type], r.payment_month, METHOD_LABELS[r.payment_method], r.amount_paid, r.overpaid_amount, r.received_by, r.notes]))}
-              className="px-3 py-2 rounded-xl bg-slate-900 text-white font-bold flex items-center gap-1.5 cursor-pointer"><Download className="w-3.5 h-3.5" /> CSV</button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-slate-500 uppercase text-[11px]"><tr><th className="py-2.5 px-3">Resit</th><th className="px-3">Tarikh</th><th className="px-3">Pelajar</th><th className="px-3">Jenis</th><th className="px-3">Kaedah</th><th className="px-3">Jumlah</th><th className="px-3 text-right">Tindakan</th></tr></thead>
-              <tbody className="divide-y divide-slate-100">
-                {receipts.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-slate-400">Tiada resit.</td></tr>}
-                {receipts.map((r) => (
-                  <tr key={r.id}>
-                    <td className="py-2.5 px-3 font-bold text-indigo-700">{r.receipt_number}</td>
-                    <td className="px-3">{r.payment_date}</td>
-                    <td className="px-3">{r.student_name}<div className="text-[10px] text-slate-400">{r.invoice_number}</div></td>
-                    <td className="px-3">{TYPE_LABELS[r.payment_type]}{r.payment_month ? <div className="text-[10px] text-slate-400">{monthLabel(r.payment_month)}</div> : null}</td>
-                    <td className="px-3">{METHOD_LABELS[r.payment_method]}</td>
-                    <td className="px-3 font-bold">{money(r.amount_paid)}{Number(r.overpaid_amount) > 0 && <div className="text-[10px] text-emerald-700 font-normal">lebihan {money(r.overpaid_amount)}</div>}</td>
-                    <td className="px-3 text-right"><button onClick={() => setReceiptView({ receipt: r, invoice: invoiceFor(r) })} className="px-2.5 py-1.5 rounded-lg bg-slate-100 font-semibold inline-flex items-center gap-1 cursor-pointer"><Printer className="w-3.5 h-3.5" /> Resit</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const receipt = await recordPayment(inv.no, { amount: amt, method, ref: ref.trim(), date: payDate, type, month: payMonth, notes: notes.trim() });
+      notify(`Bayaran ${rm(amt)} direkodkan. Resit ${receipt.no} dikeluarkan.`);
+      onPaid(receipt);
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Rekod bayaran"
+      description={`${inv.no} · ${s?.name ?? inv.studentName}`}
+      footer={
+        <>
+          <Button onClick={onClose}>Batal</Button>
+          <Button type="submit" form="payment-form" variant="primary" disabled={busy}>
+            {busy ? 'Menyimpan…' : 'Simpan & keluarkan resit'}
+          </Button>
+        </>
+      }
+    >
+      <form id="payment-form" onSubmit={submit} className="space-y-4">
+        <div className="rounded-md bg-gray-50 p-4">
+          <InvoiceLines inv={inv} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Amaun diterima (RM)" type="number" required min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <Input label="Tarikh bayaran" type="date" required max={todayISO()} value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+          <Select label="Jenis bayaran" value={type} onChange={(e) => setType(e.target.value)}>
+            {Object.entries(PAYMENT_TYPE_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </Select>
+          {type === 'MONTHLY' ? (
+            <Input label="Bulan" type="month" value={payMonth} onChange={(e) => setPayMonth(e.target.value)} />
+          ) : (
+            <div />
+          )}
+          <Select label="Kaedah bayaran" value={method} onChange={(e) => setMethod(e.target.value)}>
+            {Object.entries(PAYMENT_METHOD_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </Select>
+          <Input label="No. rujukan transaksi" required={method !== 'CASH'} value={ref} onChange={(e) => setRef(e.target.value)} placeholder={method === 'CASH' ? 'Pilihan' : 'Seperti pada bukti pindahan'} />
+        </div>
+        <Textarea label="Catatan untuk pembayar" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        {amt > balance && (
+          <p className="rounded-md bg-brand-50 px-3 py-2 text-[13px] text-brand-900">Lebihan {rm(amt - balance)} akan disimpan sebagai kredit pelajar.</p>
+        )}
+        {amt > 0 && amt < balance && (
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-900">Bayaran separa: baki {rm(balance - amt)} kekal tertunggak.</p>
+        )}
+      </form>
+    </Modal>
+  );
+}
+
+export function ReceiptModal({ receipt: r, onClose, hideActions }) {
+  if (!r) return null;
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Resit ${r.no}`}
+      footer={<ReceiptActions receipt={r} hideActions={hideActions} />}
+    >
+      <ReceiptDocument receipt={r} />
+    </Modal>
+  );
+}
+
+function ReceiptActions({ receipt: r, hideActions }) {
+  const { invoices, students } = useStore();
+  const inv = invoices.find((i) => i.no === r.invoiceNo);
+  const s = students.find((x) => x.id === inv?.studentId);
+  const contact = preferredContact(s);
+  const notify = useToast();
+  const message = `Assalamualaikum ${contact?.name}. Terima kasih atas bayaran yuran ${CENTRE.name} bagi ${s?.name}.\n\nNo. resit: ${r.no}\nTarikh: ${date(r.date)}\nAmaun: ${rm(r.amount)} (${PAYMENT_TYPE_LABEL[r.type] ?? ''}${r.month ? ` ${monthLabel(r.month)}` : ''})\nKaedah: ${PAYMENT_METHOD_LABEL[r.method]}${r.overpaid > 0 ? `\nLebihan ${rm(r.overpaid)} disimpan sebagai kredit.` : ''}\n\nSila simpan mesej ini sebagai rekod.`;
+  return (
+    <>
+      {!hideActions && contact?.phone && (
+        <Button as="a" href={waLink(contact.phone, message)} target="_blank" rel="noreferrer">
+          <WhatsAppIcon /> Hantar kepada penjaga
+        </Button>
+      )}
+      <Button icon={Printer} onClick={() => window.print()}>
+        Cetak
+      </Button>
+      <Button variant="primary" icon={Download} onClick={() => downloadPdf(`/billing/receipts/${r.pk}/pdf/`, `${r.no}.pdf`).catch((err) => notify(err.message, 'error'))}>
+        Resit PDF
+      </Button>
+    </>
+  );
+}
+
+export function ReceiptDocument({ receipt: r }) {
+  const { invoices, students } = useStore();
+  const inv = invoices.find((i) => i.no === r.invoiceNo);
+  const s = students.find((x) => x.id === inv?.studentId);
+  const contact = preferredContact(s);
+  return (
+    <div className="print-area bg-white text-sm">
+      <div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
+        <div>
+          <p className="text-base font-semibold text-gray-900">{CENTRE.name}</p>
+          <p className="max-w-xs text-[13px] text-gray-500">{CENTRE.address}</p>
+          <p className="text-[13px] text-gray-500">Tel: {CENTRE.phone}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs font-semibold tracking-wide text-gray-500">RESIT RASMI</p>
+          <p className="mt-1 whitespace-nowrap font-semibold text-gray-900">{r.no}</p>
+          <p className="text-[13px] text-gray-500">{date(r.date)}</p>
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 py-4">
+        <div>
+          <dt className="text-xs text-gray-500">Diterima daripada</dt>
+          <dd className="text-gray-900">{contact?.name}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-gray-500">Pelajar</dt>
+          <dd className="text-gray-900">
+            {s?.name} <span className="whitespace-nowrap text-gray-500">({s?.id})</span>
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-gray-500">Kaedah</dt>
+          <dd className="text-gray-900">
+            {PAYMENT_METHOD_LABEL[r.method]}
+            {r.ref && <span className="text-gray-500"> · {r.ref}</span>}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-gray-500">Invois</dt>
+          <dd className="text-gray-900">{r.invoiceNo}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-gray-500">Jenis bayaran</dt>
+          <dd className="text-gray-900">
+            {PAYMENT_TYPE_LABEL[r.type]}
+            {r.month && <span className="text-gray-500"> · {monthLabel(r.month)}</span>}
+          </dd>
+        </div>
+      </dl>
+      {r.notes && <p className="pb-3 text-[13px] text-gray-600">Catatan: {r.notes}</p>}
+
+      {inv && (
+        <div className="border-t border-gray-200 pt-3">
+          <InvoiceLines inv={inv} showPaid={false} />
+        </div>
+      )}
+      <div className="mt-3 flex justify-between border-t border-gray-200 pt-3 text-base font-semibold">
+        <span>Amaun diterima</span>
+        <span className="tnum">{rm(r.amount)}</span>
+      </div>
+      {r.overpaid > 0 && (
+        <div className="mt-1 flex justify-between text-sm">
+          <span className="text-gray-600">Lebihan disimpan sebagai kredit</span>
+          <span className="tnum">{rm(r.overpaid)}</span>
+        </div>
+      )}
+      {inv && invoiceBalance(inv) > 0 && (
+        <div className="mt-1 flex justify-between text-sm">
+          <span className="text-gray-600">Baki tertunggak</span>
+          <span className="text-red-700 tnum">{rm(invoiceBalance(inv))}</span>
         </div>
       )}
 
-      {tab === 'calculator' && (
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 max-w-2xl">
-          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2"><Calculator className="w-4 h-4 text-indigo-600" /> Kalkulator Yuran</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <label className="font-semibold text-slate-700">Tingkatan
-              <select value={calc.form} onChange={(e) => setCalc({ ...calc, form: e.target.value })} className={`${input} mt-1`}>{forms.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
-            </label>
-            <label className="font-semibold text-slate-700">Bilangan subjek
-              <input type="number" min="1" max="12" value={calc.count} onChange={(e) => setCalc({ ...calc, count: e.target.value })} className={`${input} mt-1`} />
-            </label>
-            <label className="font-semibold text-slate-700 flex items-center gap-2 mt-5"><input type="checkbox" checked={calc.reg} onChange={(e) => setCalc({ ...calc, reg: e.target.checked })} /> Pelajar baharu (yuran pendaftaran)</label>
-          </div>
-          <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-100 flex flex-wrap justify-between gap-3">
-            <div className="text-indigo-900">Yuran bulanan: <strong>{money(calcFee)}</strong>{calc.reg ? ` + pendaftaran ${money(regSetting)}` : ''}</div>
-            <div className="text-xl font-black text-indigo-950">{money(calcFee + (calc.reg ? regSetting : 0))}</div>
-          </div>
-          <p className="text-slate-500">Dikira daripada pakej yuran di Hab Konfigurasi, sebelum diskaun. Diskaun diurus di tab Diskaun.</p>
-        </div>
-      )}
-
-      {payFor && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <form onSubmit={submitPayment} className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl border border-slate-200 space-y-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">Terima Bayaran</h3>
-                <p className="text-slate-500">{payFor.student_name} • {payFor.invoice_number} • baki {money(payFor.balance_due)}</p>
-              </div>
-              <button type="button" onClick={() => setPayFor(null)} aria-label="Tutup" className="text-slate-400 cursor-pointer"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="font-semibold text-slate-700">Jumlah dibayar (RM)
-                <input type="number" step="0.01" min="0.01" required value={payment.amount_paid} onChange={(e) => setPayment({ ...payment, amount_paid: e.target.value })} className={`${input} mt-1 font-bold`} />
-              </label>
-              <label className="font-semibold text-slate-700">Tarikh
-                <input type="date" required value={payment.payment_date} onChange={(e) => setPayment({ ...payment, payment_date: e.target.value })} className={`${input} mt-1`} />
-              </label>
-              <label className="font-semibold text-slate-700">Kaedah
-                <select value={payment.payment_method} onChange={(e) => setPayment({ ...payment, payment_method: e.target.value })} className={`${input} mt-1`}>{METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
-              </label>
-              <label className="font-semibold text-slate-700">Jenis bayaran
-                <select value={payment.payment_type} onChange={(e) => setPayment({ ...payment, payment_type: e.target.value })} className={`${input} mt-1`}>{PAYMENT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
-              </label>
-              {payment.payment_type === 'MONTHLY' && (
-                <label className="font-semibold text-slate-700">Bulan
-                  <input type="month" value={(payment.payment_month || '').slice(0, 7)} onChange={(e) => setPayment({ ...payment, payment_month: e.target.value ? `${e.target.value}-01` : '' })} className={`${input} mt-1`} />
-                </label>
-              )}
-              <label className="font-semibold text-slate-700">No. rujukan
-                <input value={payment.reference_number} onChange={(e) => setPayment({ ...payment, reference_number: e.target.value })} className={`${input} mt-1`} />
-              </label>
-            </div>
-            <label className="block font-semibold text-slate-700">Catatan untuk pembayar
-              <textarea rows="2" value={payment.notes} onChange={(e) => setPayment({ ...payment, notes: e.target.value })} className={`${input} mt-1`} />
-            </label>
-            {Number(payment.amount_paid) > Number(payFor.balance_due) && (
-              <p className="p-2 rounded-lg bg-emerald-50 text-emerald-800 font-semibold">Lebihan {money(Number(payment.amount_paid) - Number(payFor.balance_due))} akan disimpan sebagai kredit pelajar.</p>
-            )}
-            {Number(payment.amount_paid) < Number(payFor.balance_due) && (
-              <p className="p-2 rounded-lg bg-amber-50 text-amber-800 font-semibold">Bayaran separa: baki {money(Number(payFor.balance_due) - Number(payment.amount_paid))} kekal tertunggak.</p>
-            )}
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setPayFor(null)} className="px-4 py-2 rounded-xl border border-slate-200 font-semibold">Batal</button>
-              <button type="submit" disabled={saving} className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold disabled:opacity-60">{saving ? 'Menyimpan…' : 'Simpan & Jana Resit'}</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {receiptView && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-xl border border-slate-200 space-y-4">
-            <div className="text-center border-b pb-4">
-              <h2 className="text-base font-bold text-slate-900">PUSAT TUISYEN AN NUR</h2>
-              <p className="text-[11px] text-slate-500">Tingkat 1&2, PT 105 Seksyen 23, Jalan Telipot, 15150 Kota Bharu</p>
-              <div className="mt-2 font-bold text-sm text-indigo-700">RESIT RASMI</div>
-            </div>
-            <div className="space-y-1.5 text-slate-700">
-              {[
-                ['No. Resit', receiptView.receipt.receipt_number],
-                ['Tarikh', receiptView.receipt.payment_date],
-                ['Pelajar', receiptView.invoice.student_name],
-                ['Invois', receiptView.invoice.invoice_number],
-                ['Jenis', `${TYPE_LABELS[receiptView.receipt.payment_type] || ''}${receiptView.receipt.payment_month ? ` (${monthLabel(receiptView.receipt.payment_month)})` : ''}`],
-                ['Kaedah', METHOD_LABELS[receiptView.receipt.payment_method]],
-                ['No. Rujukan', receiptView.receipt.reference_number || '-'],
-                ['Diterima Oleh', receiptView.receipt.received_by],
-              ].map(([k, v]) => <div key={k} className="flex justify-between gap-3"><span>{k}</span><strong className="text-slate-900 text-right">{v}</strong></div>)}
-              {receiptView.receipt.notes && <div className="pt-1 text-slate-600">Catatan: {receiptView.receipt.notes}</div>}
-            </div>
-            <div className="border-t border-b py-3 flex justify-between text-sm">
-              <span className="font-bold">JUMLAH DITERIMA</span>
-              <span className="font-extrabold text-indigo-900">{money(receiptView.receipt.amount_paid)}</span>
-            </div>
-            {Number(receiptView.receipt.overpaid_amount) > 0 && <p className="text-emerald-700 font-semibold">Lebihan {money(receiptView.receipt.overpaid_amount)} disimpan sebagai kredit.</p>}
-            <div className="flex flex-wrap justify-end gap-2">
-              <button onClick={() => setReceiptView(null)} className="px-4 py-2 rounded-xl border border-slate-200 font-semibold">Tutup</button>
-              {receiptView.invoice.preferred_phone && (
-                <a href={waLink(receiptView.invoice.preferred_phone, receiptMessage(receiptView.receipt, receiptView.invoice))} target="_blank" rel="noreferrer"
-                  onClick={() => showToast('WhatsApp dibuka dengan butiran resit.')}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold inline-flex items-center gap-1"><MessageSquare className="w-4 h-4" /> WhatsApp Resit</a>
-              )}
-              <button onClick={() => downloadPdf(`/billing/receipts/${receiptView.receipt.id}/pdf/`, `${receiptView.receipt.receipt_number}.pdf`).catch((err) => showToast(err.message, 'error'))}
-                className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold inline-flex items-center gap-1"><Download className="w-4 h-4" /> Resit PDF</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {adjustFor && <InvoiceAdjustModal invoice={adjustFor} onClose={() => setAdjustFor(null)} />}
-      {addingOther && <OtherInvoiceModal onClose={() => setAddingOther(false)} />}
-
-      {isManagement && <p className="text-[11px] text-slate-400">Laporan jualan bulanan dan tahunan ada di Pusat Laporan.</p>}
+      <p className="mt-6 border-t border-gray-200 pt-3 text-xs text-gray-500">
+        Diterima oleh {r.by}. Resit ini dijana oleh komputer dan tidak memerlukan tandatangan.
+      </p>
     </div>
+  );
+}
+
+function CalculatorModal({ open, onClose }) {
+  const { pricingTiers, settings } = useStore();
+  const [category, setCategory] = useState('SECONDARY');
+  const [count, setCount] = useState(4);
+  const [withReg, setWithReg] = useState(true);
+
+  const secondaryCounts = useMemo(
+    () => pricingTiers.filter((t) => t.category === 'SECONDARY').map((t) => t.count).sort((a, b) => a - b),
+    [pricingTiers],
+  );
+  const form = category === 'DARJAH_5' ? 'S5' : category === 'DARJAH_6' ? 'S6' : 'F4';
+  const fee = monthlyFee(form, count, pricingTiers);
+  const tier = pricingTiers.find((t) => t.category === category && (category !== 'SECONDARY' || t.count === count));
+
+  return (
+    <Modal open={open} onClose={onClose} title="Kalkulator yuran" description="Berdasarkan pakej harga semasa dalam Tetapan." size="sm">
+      <div className="space-y-4">
+        <Select label="Peringkat" value={category} onChange={(e) => setCategory(e.target.value)}>
+          {Object.entries(TIER_CATEGORY_LABEL).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
+        </Select>
+        {category === 'SECONDARY' ? (
+          <Select label="Bilangan subjek" value={count} onChange={(e) => setCount(Number(e.target.value))}>
+            {secondaryCounts.map((n) => {
+              const t = pricingTiers.find((x) => x.category === 'SECONDARY' && x.count === n);
+              return (
+                <option key={n} value={n}>
+                  {n} subjek ({rm(t.rate)} / subjek)
+                </option>
+              );
+            })}
+          </Select>
+        ) : (
+          <p className="text-sm text-gray-600">Pakej {tier?.count} subjek.</p>
+        )}
+        <Checkbox label={`Pelajar baharu (yuran pendaftaran ${rm(settings.regFee)})`} checked={withReg} onChange={(e) => setWithReg(e.target.checked)} />
+        <div className="rounded-md bg-gray-50 p-4">
+          <div className="flex justify-between text-sm text-gray-600">
+            <span>Yuran bulanan</span>
+            <span className="tnum">{rm(fee)}</span>
+          </div>
+          {withReg && (
+            <div className="mt-1 flex justify-between text-sm text-gray-600">
+              <span>Pendaftaran</span>
+              <span className="tnum">{rm(settings.regFee)}</span>
+            </div>
+          )}
+          <div className="mt-2 flex justify-between border-t border-gray-200 pt-2 text-base font-semibold">
+            <span>Jumlah</span>
+            <span className="tnum">{rm(fee + (withReg ? settings.regFee : 0))}</span>
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }

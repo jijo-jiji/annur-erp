@@ -1,415 +1,226 @@
-import React, { useState } from 'react';
-import {
-  FileText, Download, Printer, Plus, Filter, Users, Calendar,
-  CheckCircle2, X, Save, UploadCloud, Trash2, BookOpen, Clock, AlertCircle
-} from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { useState } from 'react';
+import { Download, FileText, Plus, Printer, Trash2, UploadCloud } from 'lucide-react';
 import { academicApi, filesApi } from '../api/client';
+import { useApp } from '../context/AppContext';
+import { DAYS } from '../lib/config';
+import { useStore } from '../store';
+import { classLabel } from '../lib/domain';
+import { date, DAY_LABEL, FORMS, timeRange, todayISO } from '../lib/format';
 import { ACCEPT, openAttachment, uploadError } from './Attachments';
+import { Badge, Button, Card, EmptyState, IconButton, Input, Modal, PageHeader, Select, Stat, Table, Td, Textarea, Th, useToast } from './ui';
 
-export default function HandoutRepositoryView({ currentRole = 'ADMIN' }) {
-  const { handouts: backendHandouts, createHandout, recordPrint, timetable, refreshAllData } = useApp();
-  const canDelete = currentRole === 'SUPERVISOR' || currentRole === 'MANAGEMENT';
-  const [selectedForm, setSelectedForm] = useState('ALL');
-  const [selectedSubject, setSelectedSubject] = useState('ALL');
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState(null);
+const selectClass = 'rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-brand-600 focus:outline-none';
 
-  const handouts = backendHandouts.map(h => ({
-    id: h.handout_id,
-    title: h.title,
-    form: h.form_level,
-    subject: h.subject_name,
-    classCode: h.class_code,
-    teacher: h.teacher_name || '-',
-    uploadDate: h.upload_date,
-    fileSize: h.file_size || '-',
-    fileType: h.file_type || '-',
-    copiesNeeded: h.copies_needed,
-    copiesPrinted: h.copies_printed,
-    status: h.status,
-    description: h.description || '',
-    rawId: h.id,
-    file: h.file,
-  }));
+// Handouts and notes for each class: the file itself, how many copies are needed and what has been printed
+export default function HandoutRepositoryView({ role }) {
+  const { handouts, recordPrint, refreshAllData } = useApp();
+  const notify = useToast();
+  const canDelete = role === 'SUPERVISOR' || role === 'MANAGEMENT';
+  const [form, setForm] = useState('ALL');
+  const [subject, setSubject] = useState('ALL');
+  const [adding, setAdding] = useState(false);
 
-  const emptyHandout = { title: '', classId: '', date: new Date().toISOString().split('T')[0], copiesNeeded: 20, description: '', file: null };
-  const [newHandout, setNewHandout] = useState(emptyHandout);
-  const classOptions = [...timetable].sort((a, b) => a.class_code.localeCompare(b.class_code));
+  const subjectNames = [...new Set(handouts.map((h) => h.subject_name).filter(Boolean))].sort();
+  const rows = handouts.filter((h) => (form === 'ALL' || h.form_level === form) && (subject === 'ALL' || h.subject_name === subject));
+  const count = (status) => handouts.filter((h) => h.status === status).length;
 
-  const showToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+  // Attach the file to a handout recorded without one
+  const attachFile = async (h, file) => {
+    if (!file) return;
+    try {
+      await filesApi.upload('HANDOUT', h.id, file);
+      await refreshAllData();
+      notify(`Fail untuk "${h.title}" dimuat naik.`);
+    } catch (err) {
+      notify(uploadError(err), 'error');
+    }
   };
 
-  const handleUploadSubmit = async (e) => {
+  const remove = async (h) => {
+    if (!window.confirm(`Padam rekod "${h.title}"?`)) return;
+    try {
+      await academicApi.deleteHandout(h.id);
+      await refreshAllData();
+      notify(`Rekod "${h.title}" dipadam.`, 'info');
+    } catch (err) {
+      notify(err.message || 'Gagal memadam.', 'error');
+    }
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Nota & modul"
+        description="Bahan kelas mengikut tarikh dan kelas, serta cetakan di kaunter."
+        actions={<Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Rekod handout</Button>}
+      />
+
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat label="Jumlah modul" value={handouts.length} />
+        <Stat label="Siap dicetak" value={count('PRINT_READY')} />
+        <Stat label="Perlu dicetak" value={count('NEEDS_PRINTING')} tone={count('NEEDS_PRINTING') ? 'red' : undefined} />
+        <Stat label="Salinan dicetak" value={handouts.reduce((a, h) => a + (h.copies_printed || 0), 0)} />
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <select value={form} onChange={(e) => setForm(e.target.value)} aria-label="Tapis tingkatan" className={selectClass}>
+          <option value="ALL">Semua tingkatan</option>
+          {FORMS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+        </select>
+        <select value={subject} onChange={(e) => setSubject(e.target.value)} aria-label="Tapis subjek" className={selectClass}>
+          <option value="ALL">Semua subjek</option>
+          {subjectNames.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        <span className="ml-auto text-sm text-gray-500">{rows.length} modul</span>
+      </div>
+
+      <Card>
+        {rows.length === 0 ? (
+          <EmptyState icon={FileText} title="Tiada modul ditemui" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Modul</Th>
+                <Th className="hidden lg:table-cell">Guru</Th>
+                <Th className="hidden md:table-cell">Fail</Th>
+                <Th>Cetakan</Th>
+                <Th className="w-0"><span className="sr-only">Tindakan</span></Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((h) => (
+                <tr key={h.id} className="align-top hover:bg-gray-50">
+                  <Td className="min-w-64">
+                    <p className="font-medium text-gray-900">{h.title}</p>
+                    <p className="text-[13px] text-gray-500">{h.class_code} · {date(h.upload_date)}</p>
+                    {h.description && <p className="mt-0.5 text-[13px] text-gray-600">{h.description}</p>}
+                  </Td>
+                  <Td className="hidden whitespace-nowrap text-gray-700 lg:table-cell">{h.teacher_name || '—'}</Td>
+                  <Td className="hidden text-gray-700 md:table-cell">
+                    {h.file ? <>{h.file.original_name}<span className="block text-[13px] text-gray-500">{h.file_size}</span></> : <span className="text-gray-400">Tiada fail</span>}
+                  </Td>
+                  <Td className="whitespace-nowrap">
+                    {h.status === 'PRINT_READY' ? <Badge tone="green">Siap dicetak</Badge> : <Badge tone="amber">Perlu dicetak</Badge>}
+                    <p className="mt-1 text-[13px] text-gray-500 tnum">{h.copies_printed || 0}/{h.copies_needed} salinan</p>
+                  </Td>
+                  <Td className="whitespace-nowrap">
+                    <div className="flex items-center justify-end gap-1.5">
+                      {h.file ? (
+                        <Button size="sm" icon={Download} onClick={() => openAttachment(h.file).catch((err) => notify(err.message, 'error'))}>Fail</Button>
+                      ) : (
+                        <Button as="label" size="sm" icon={UploadCloud} className="cursor-pointer">
+                          Muat naik
+                          <input type="file" accept={ACCEPT.HANDOUT} className="hidden" onChange={(e) => attachFile(h, e.target.files?.[0])} />
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        icon={Printer}
+                        title="Rekod cetakan mengikut bilangan salinan diperlukan"
+                        onClick={() => recordPrint(h.id, Number(h.copies_needed)).catch(() => {})}
+                      >
+                        Rekod cetak
+                      </Button>
+                      {canDelete && <IconButton label="Padam" icon={Trash2} onClick={() => remove(h)} />}
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      {adding && <AddModal onClose={() => setAdding(false)} />}
+    </>
+  );
+}
+
+function AddModal({ onClose }) {
+  const { createHandout, refreshAllData, timetable } = useApp();
+  const { classes, subjects } = useStore();
+  const notify = useToast();
+  const [f, setF] = useState({ title: '', classId: '', date: todayISO(), copies: 20, description: '', file: null });
+  const [busy, setBusy] = useState(false);
+  const set = (patch) => setF((p) => ({ ...p, ...patch }));
+
+  const submit = async (e) => {
     e.preventDefault();
-    const cls = timetable.find((c) => c.id === Number(newHandout.classId));
+    const cls = timetable.find((c) => c.id === Number(f.classId));
+    setBusy(true);
     try {
       const created = await createHandout({
-        title: newHandout.title,
+        title: f.title,
         form_level: cls.form_level,
         subject_name: cls.subject_details?.name || '',
         class_code: cls.class_code,
         teacher_name: cls.teacher_details?.full_name || '',
-        copies_needed: Number(newHandout.copiesNeeded),
-        // j-status.doc: handout description is the date and class it is for
-        description: [`Untuk kelas ${newHandout.date}`, newHandout.description].filter(Boolean).join('. '),
-        status: 'NEEDS_PRINTING'
+        copies_needed: Number(f.copies),
+        // The description carries the class date the handout is for
+        description: [`Untuk kelas ${date(f.date)}`, f.description].filter(Boolean).join('. '),
+        status: 'NEEDS_PRINTING',
       });
-      if (newHandout.file) {
+      if (f.file) {
         try {
-          await filesApi.upload('HANDOUT', created.id, newHandout.file);
+          await filesApi.upload('HANDOUT', created.id, f.file);
         } catch (err) {
-          showToast(`Rekod disimpan tetapi fail gagal dimuat naik: ${uploadError(err)}`);
+          notify(`Rekod disimpan tetapi fail gagal dimuat naik: ${uploadError(err)}`, 'error');
         }
         await refreshAllData();
       }
-      setIsUploadModalOpen(false);
-      setNewHandout(emptyHandout);
-      showToast(`Handout "${newHandout.title}" disimpan${newHandout.file ? ' bersama fail' : ''}.`);
-    } catch (err) {
-      console.error(err);
+      onClose();
+    } catch {
+      setBusy(false); // the reason has already been shown
     }
   };
-
-  const handlePrintBatch = async (id, title, copies) => {
-    try {
-      const target = handouts.find(h => h.id === id);
-      const rawId = target?.rawId || id;
-      await recordPrint(rawId, Number(copies));
-      showToast(`Cetakan ${copies} salinan untuk "${title}" direkodkan.`);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Attach or replace the file on an existing handout
-  const attachFile = async (hnd, file) => {
-    if (!file) return;
-    try {
-      await filesApi.upload('HANDOUT', hnd.rawId, file);
-      await refreshAllData();
-      showToast(`Fail untuk "${hnd.title}" dimuat naik.`);
-    } catch (err) {
-      showToast(uploadError(err));
-    }
-  };
-
-  const handleDeleteHandout = async (id, title) => {
-    if (!window.confirm(`Padam rekod "${title}"?`)) return;
-    const target = handouts.find(h => h.id === id);
-    try {
-      await academicApi.deleteHandout(target.rawId);
-      await refreshAllData();
-      showToast(`Rekod "${title}" dipadam.`);
-    } catch (err) {
-      showToast(err.message || 'Gagal memadam.');
-    }
-  };
-
-  const filteredHandouts = handouts.filter(h => {
-    const matchForm = selectedForm === 'ALL' || h.form === selectedForm;
-    const matchSubject = selectedSubject === 'ALL' || h.subject === selectedSubject;
-    return matchForm && matchSubject;
-  });
 
   return (
-    <div className="space-y-6">
-      {toastMessage && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-3 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl border border-indigo-500/30 animate-in fade-in">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          <p className="text-xs font-semibold">{toastMessage}</p>
-          <button onClick={() => setToastMessage(null)} className="ml-2 text-slate-400 hover:text-white cursor-pointer">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-lg font-bold text-slate-900">Repositori Modul & Nota Kelas (Handouts)</h2>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-700">
-              {handouts.length} Modul Tersedia
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Pusat Tuisyen An Nur (Telipot) • Pengurusan cetakan bahan kelas mengikut kapasiti bilik dan subjek.
-          </p>
-        </div>
-
-        <button
-          onClick={() => setIsUploadModalOpen(true)}
-          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition active:scale-95 cursor-pointer"
+    <Modal
+      open
+      onClose={onClose}
+      title="Rekod handout kelas"
+      description="Tarikh dan kelas handout, untuk cetakan kaunter."
+      footer={
+        <>
+          <Button onClick={onClose}>Batal</Button>
+          <Button type="submit" form="handout-form" variant="primary" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
+        </>
+      }
+    >
+      <form id="handout-form" onSubmit={submit} className="space-y-4">
+        <Input label="Tajuk modul / nota" required value={f.title} onChange={(e) => set({ title: e.target.value })} placeholder="cth. Latihan format SPM: Bab 3" />
+        <Select
+          label="Kelas"
+          required
+          value={f.classId}
+          onChange={(e) => {
+            const c = classes.find((x) => x.id === Number(e.target.value));
+            set({ classId: e.target.value, copies: c?.enrolled || f.copies });
+          }}
         >
-          <Plus className="w-4 h-4" /> Muat Naik Modul / Nota
-        </button>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-semibold text-slate-500">Jumlah Modul Pembelajaran</span>
-          <div className="text-2xl font-black text-slate-900 mt-1">{handouts.length} Dokumen</div>
-          <span className="text-[11px] text-slate-400">Tingkatan 1–5 & Darjah 5/6</span>
+          <option value="">Pilih kelas…</option>
+          {DAYS.map((day) => (
+            <optgroup key={day} label={DAY_LABEL[day]}>
+              {classes.filter((c) => c.day === day).sort((a, b) => a.start.localeCompare(b.start)).map((c) => (
+                <option key={c.id} value={c.id}>{classLabel(c, subjects)} · {timeRange(c.start, c.end)} ({c.enrolled} pelajar)</option>
+              ))}
+            </optgroup>
+          ))}
+        </Select>
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="Tarikh kelas" type="date" required value={f.date} onChange={(e) => set({ date: e.target.value })} />
+          <Input label="Bilangan salinan" type="number" required min="1" max="200" value={f.copies} onChange={(e) => set({ copies: e.target.value })} />
         </div>
-
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-semibold text-slate-500">Sedia untuk Sesi Mingguan</span>
-          <div className="text-2xl font-black text-emerald-600 mt-1">
-            {handouts.filter(h => h.status === 'PRINT_READY').length} Modul
-          </div>
-          <span className="text-[11px] text-emerald-600 font-semibold">Telah siap dicetak</span>
-        </div>
-
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-semibold text-slate-500">Menunggu Cetakan Kaunter</span>
-          <div className="text-2xl font-black text-amber-600 mt-1">
-            {handouts.filter(h => h.status === 'NEEDS_PRINTING').length} Modul
-          </div>
-          <span className="text-[11px] text-amber-700 font-semibold">Perlu dicetak segera</span>
-        </div>
-
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-semibold text-slate-500">Jumlah Salinan Diedarkan</span>
-          <div className="text-2xl font-black text-indigo-600 mt-1">{handouts.reduce((s, h) => s + (h.copiesPrinted || 0), 0)} Salinan</div>
-          <span className="text-[11px] text-slate-400">Jumlah salinan dicetak</span>
-        </div>
-      </div>
-
-      {/* Filters Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 text-xs">
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-slate-400" />
-          <span className="font-bold text-slate-700">Tapis Tingkatan:</span>
-          <select
-            value={selectedForm}
-            onChange={(e) => setSelectedForm(e.target.value)}
-            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-700 outline-none cursor-pointer"
-          >
-            <option value="ALL">Semua Tingkatan</option>
-            <option value="F5">Tingkatan 5</option>
-            <option value="F4">Tingkatan 4</option>
-            <option value="F3">Tingkatan 3</option>
-            <option value="F2">Tingkatan 2</option>
-            <option value="F1">Tingkatan 1</option>
-            <option value="S6">Darjah 6 & 5</option>
-          </select>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-slate-700">Subjek:</span>
-          <select
-            value={selectedSubject}
-            onChange={(e) => setSelectedSubject(e.target.value)}
-            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-700 outline-none cursor-pointer"
-          >
-            <option value="ALL">Semua Subjek</option>
-            {[...new Set(handouts.map((h) => h.subject).filter(Boolean))].sort().map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Handouts List */}
-      <div className="space-y-3">
-        {filteredHandouts.map((hnd) => {
-          const isReady = hnd.status === 'PRINT_READY';
-          return (
-            <div
-              key={hnd.id}
-              className="p-5 bg-white rounded-2xl border border-slate-200 hover:border-indigo-200 hover:shadow-sm transition flex flex-wrap items-center justify-between gap-4 text-xs"
-            >
-              <div className="flex items-start gap-3.5">
-                <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 shrink-0">
-                  <FileText className="w-6 h-6" />
-                </div>
-
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-[11px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-                      {hnd.classCode}
-                    </span>
-                    <span className="font-bold text-slate-900 text-sm">{hnd.title}</span>
-                  </div>
-
-                  <p className="text-slate-500 mt-1">{hnd.description}</p>
-
-                  <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-slate-400">
-                    <span>Guru: <strong className="text-slate-700">{hnd.teacher}</strong></span>
-                    <span>•</span>
-                    <span>Tarikh: <strong className="text-slate-700">{hnd.uploadDate}</strong></span>
-                    <span>•</span>
-                    <span>Fail: <strong className="text-slate-700">{hnd.file ? `${hnd.file.original_name} (${hnd.fileSize})` : 'Tiada fail'}</strong></span>
-                    <span>•</span>
-                    <span>Keperluan Cetakan: <strong className="text-indigo-600">{hnd.copiesNeeded} Salinan</strong></span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span
-                  className={`font-bold px-3 py-1 rounded-xl text-xs ${
-                    isReady
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                      : 'bg-amber-100 text-amber-800 border border-amber-200'
-                  }`}
-                >
-                  {isReady ? `Siap Cetak (${hnd.copiesPrinted}/${hnd.copiesNeeded})` : 'Perlu Dicetak'}
-                </span>
-
-                {hnd.file ? (
-                  <button onClick={() => openAttachment(hnd.file).catch((err) => showToast(err.message))}
-                    className="flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold cursor-pointer" title="Buka / muat turun fail">
-                    <Download className="w-3.5 h-3.5" /> Fail
-                  </button>
-                ) : (
-                  <label className="flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold cursor-pointer" title="Muat naik fail untuk handout ini">
-                    <UploadCloud className="w-3.5 h-3.5" /> Muat naik
-                    <input type="file" accept={ACCEPT.HANDOUT} className="hidden" onChange={(e) => attachFile(hnd, e.target.files?.[0])} />
-                  </label>
-                )}
-
-                <button
-                  onClick={() => handlePrintBatch(hnd.id, hnd.title, hnd.copiesNeeded)}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer"
-                  title="Hantar pesanan cetakan kelompok"
-                >
-                  <Printer className="w-3.5 h-3.5" /> Cetak ({hnd.copiesNeeded})
-                </button>
-
-                {canDelete && <button
-                  onClick={() => handleDeleteHandout(hnd.id, hnd.title)}
-                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl cursor-pointer"
-                  title="Padam modul ini"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>}
-              </div>
-            </div>
-          );
-        })}
-
-        {filteredHandouts.length === 0 && (
-          <div className="py-12 bg-white rounded-3xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">
-            Tiada modul ditemui untuk tapisan yang dipilih.
-          </div>
-        )}
-      </div>
-
-      {/* Upload Modal */}
-      {isUploadModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">Rekod Handout Kelas</h3>
-                <p className="text-xs text-slate-500">Tarikh dan kelas handout, untuk cetakan kaunter</p>
-              </div>
-              <button
-                onClick={() => setIsUploadModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleUploadSubmit} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Tajuk Modul / Nota</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="cth: Modul Peperiksaan Percubaan: Latihan Format SPM 2026"
-                  value={newHandout.title}
-                  onChange={(e) => setNewHandout({ ...newHandout, title: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium text-slate-800"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="h-class" className="block font-semibold text-slate-700 mb-1">Kelas *</label>
-                <select
-                  id="h-class"
-                  required
-                  value={newHandout.classId}
-                  onChange={(e) => setNewHandout({ ...newHandout, classId: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium text-slate-800"
-                >
-                  <option value="">Pilih kelas…</option>
-                  {classOptions.map((c) => (
-                    <option key={c.id} value={c.id}>{c.class_code} • {c.day} {c.period_label} ({c.current_enrolled} pelajar)</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="h-date" className="block font-semibold text-slate-700 mb-1">Tarikh Kelas *</label>
-                  <input
-                    id="h-date"
-                    type="date"
-                    required
-                    value={newHandout.date}
-                    onChange={(e) => setNewHandout({ ...newHandout, date: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium text-slate-800"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="h-copies" className="block font-semibold text-slate-700 mb-1">Bilangan Salinan</label>
-                  <input
-                    id="h-copies"
-                    type="number"
-                    min="1"
-                    max="200"
-                    required
-                    value={newHandout.copiesNeeded}
-                    onChange={(e) => setNewHandout({ ...newHandout, copiesNeeded: Number(e.target.value) })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Penerangan & Catatan Topik</label>
-                <textarea
-                  rows="2"
-                  placeholder="cth: Soalan Bahagian B format baharu KSSM untuk kelas Jumaat 9.00 AM."
-                  value={newHandout.description}
-                  onChange={(e) => setNewHandout({ ...newHandout, description: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium text-slate-800"
-                ></textarea>
-              </div>
-
-              <div>
-                <label htmlFor="h-file" className="block font-semibold text-slate-700 mb-1">Fail handout (PDF, Word, PowerPoint atau gambar; maksimum 25 MB)</label>
-                <input id="h-file" type="file" accept={ACCEPT.HANDOUT}
-                  onChange={(e) => setNewHandout({ ...newHandout, file: e.target.files?.[0] || null })}
-                  className="w-full text-xs" />
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsUploadModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold flex items-center gap-1.5 shadow-sm cursor-pointer"
-                >
-                  <Save className="w-4 h-4" /> Simpan Rekod
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+        <Textarea label="Penerangan / topik" rows={2} value={f.description} onChange={(e) => set({ description: e.target.value })} />
+        <Input
+          label="Fail handout"
+          hint="PDF, Word, PowerPoint atau gambar; maksimum 25 MB. Boleh dimuat naik kemudian."
+          type="file"
+          accept={ACCEPT.HANDOUT}
+          onChange={(e) => set({ file: e.target.files?.[0] || null })}
+        />
+      </form>
+    </Modal>
   );
 }
