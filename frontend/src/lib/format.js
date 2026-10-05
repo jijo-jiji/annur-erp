@@ -45,11 +45,15 @@ export const LEVEL_LABEL = {
   PRIMARY: 'Rendah (D5–D6)',
 };
 
-export const TIER_CATEGORY_LABEL = {
+const TIER_GROUP_DEFAULT = {
   SECONDARY: 'Sekolah menengah',
   DARJAH_5: 'Darjah 5',
   DARJAH_6: 'Darjah 6',
+  WALK_IN: 'Walk-in',
 };
+// Management names the groups they add; the seeded ones have a built-in name
+export const tierGroupLabel = (group, tiers = []) =>
+  tiers.find((t) => t.category === group && t.label)?.label || TIER_GROUP_DEFAULT[group] || group;
 
 export const PAYMENT_METHOD_LABEL = {
   CASH: 'Tunai',

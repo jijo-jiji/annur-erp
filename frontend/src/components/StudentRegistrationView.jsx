@@ -594,7 +594,7 @@ function schoolCategory(option) {
 }
 
 function RegistrationForm({ onCancel, onDone }) {
-  const { registerStudent, pricingTiers, settings, students, subjects } = useStore();
+  const { registerStudent, pricingTiers, settings, students, subjects, grades } = useStore();
   const { getMasterOptions } = useApp();
   const notify = useToast();
   const schools = getMasterOptions('6_school');
@@ -620,8 +620,8 @@ function RegistrationForm({ onCancel, onDone }) {
 
   const walkIn = f.type === 'WALK_IN';
   const upper = FORMS.find((x) => x.id === f.form)?.level ? FORMS.find((x) => x.id === f.form).level === 'UPPER' : /^F[45]$/.test(f.form);
-  const min = minSubjects(f.form);
-  const fee = walkIn ? 0 : monthlyFee(f.form, f.classes.length, pricingTiers);
+  const min = minSubjects(f.form, pricingTiers, grades);
+  const fee = walkIn ? 0 : monthlyFee(f.form, f.classes.length, pricingTiers, grades);
   const sibling = f.parent1.phone && students.find((s) => s.parent1.phone === f.parent1.phone && s.status !== 'TERMINATED');
   const belowMin = !walkIn && f.classes.length > 0 && f.classes.length < min;
 

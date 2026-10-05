@@ -7,11 +7,10 @@ from academic.models import ClassTimetable
 from billing import services as billing_services
 from billing.models import Invoice
 from business_config.models import BusinessSetting, PricingTier
-from core import numbering
+from core import grades, numbering
 from . import leads
 from .models import Student, StudentEvent, ClassWaitlist
 
-LEVEL_FOR_FORM = {'S5': 'DARJAH_5', 'S6': 'DARJAH_6'}
 
 
 def log(student, event_type, by, on=None, **fields):
@@ -107,7 +106,9 @@ def monthly_fee(student):
     count = student.enrolled_classes.count()
     if count == 0:
         return Decimal('0')
-    level = LEVEL_FOR_FORM.get(student.form_level, 'SECONDARY')
+    level = grades.by_code().get(student.form_level, {}).get('fee_group', '')
+    if not level:
+        return Decimal('0')  # the grade has no fee package yet
     tiers = list(PricingTier.objects.filter(level_category=level).order_by('subject_count'))
     exact = next((t for t in tiers if t.subject_count == count), None)
     if exact:

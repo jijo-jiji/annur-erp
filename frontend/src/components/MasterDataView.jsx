@@ -3,7 +3,7 @@ import { Database, Lock, Plus } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
-import { date } from '../lib/format';
+import { date, tierGroupLabel } from '../lib/format';
 import { LEVEL_LABELS, refreshGrades } from '../lib/grades';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, cx, EmptyState, PageHeader, Segmented, Table, Td, Th } from './ui';
@@ -41,13 +41,13 @@ const STATUS = {
 };
 
 // Grade entries keep structured details; other lists keep one free-text detail
-const gradeMeta = (v) => ({ level: v.level || 'UPPER', order: Number(v.order) || 0, next: v.next || '', description: v.description || '' });
+const gradeMeta = (v) => ({ level: v.level || 'UPPER', order: Number(v.order) || 0, next: v.next || '', fee_group: v.fee_group || '', description: v.description || '' });
 
-function metaText(item) {
+function metaText(item, pricingTiers) {
   const m = item.meta_info;
   if (!m || typeof m !== 'object') return '';
   if (item.category === GRADE_CATEGORY) {
-    return [LEVEL_LABELS[m.level] || m.level, `susunan ${m.order ?? '—'}`, `seterusnya: ${m.next || 'tamat'}`, m.description].filter(Boolean).join(' · ');
+    return [LEVEL_LABELS[m.level] || m.level, `susunan ${m.order ?? '—'}`, `seterusnya: ${m.next || 'tamat'}`, m.fee_group ? `pakej: ${tierGroupLabel(m.fee_group, pricingTiers)}` : '', m.description].filter(Boolean).join(' · ');
   }
   return Object.entries(m).map(([k, v]) => (k === 'detail' ? v : `${k}: ${v}`)).join(' · ');
 }
@@ -55,7 +55,7 @@ function metaText(item) {
 // Admin proposes a new value; Supervisor or Management approves it before it appears in any list.
 export default function MasterDataView({ role }) {
   const { masterData, proposeMasterData, approveMasterData, rejectMasterData, updateMasterData } = useApp();
-  const { reload } = useStore();
+  const { reload, pricingTiers, grades: gradeRows } = useStore();
   const canApprove = can(role, 'masterdata.approve');
   const [category, setCategory] = useState(GRADE_CATEGORY);
   const [status, setStatus] = useState('ALL');
@@ -78,6 +78,10 @@ export default function MasterDataView({ role }) {
     {
       name: 'next', label: 'Gred seterusnya', type: 'select', placeholder: 'Tiada (gred akhir)', hint: 'Digunakan untuk naik tingkatan pada akhir tahun.',
       options: grades.filter((g) => g.code !== exclude).map((g) => ({ value: g.code, label: `${g.code} · ${g.label}` })),
+    },
+    {
+      name: 'fee_group', label: 'Pakej yuran', type: 'select', placeholder: 'Belum ditetapkan', hint: 'Kumpulan pakej dari Tetapan > Pakej yuran. Tanpa pakej, yuran bulanan ialah RM0.',
+      options: [...new Set(pricingTiers.filter((t) => t.category !== 'WALK_IN').map((t) => t.category))].map((g) => ({ value: g, label: tierGroupLabel(g, pricingTiers) })),
     },
     { name: 'description', label: 'Penerangan' },
   ];
@@ -149,7 +153,7 @@ export default function MasterDataView({ role }) {
                       {item.rejection_reason && <p className="text-[13px] text-red-700">Ulasan: {item.rejection_reason}</p>}
                     </Td>
                     <Td className="hidden max-w-xs text-gray-600 md:table-cell">
-                      {metaText(item) || '—'}
+                      {metaText(item, pricingTiers) || '—'}
                       {item.proposal_note && <p className="text-[13px] text-gray-500">Justifikasi: {item.proposal_note}</p>}
                     </Td>
                     <Td className="hidden whitespace-nowrap text-gray-600 lg:table-cell">
@@ -195,7 +199,7 @@ export default function MasterDataView({ role }) {
           title={canApprove ? 'Tambah nilai' : 'Cadang nilai baharu'}
           description={`${current.name}. ${canApprove ? 'Nilai ini aktif serta-merta.' : 'Nilai ini dihantar untuk kelulusan Supervisor atau Pengurusan sebelum aktif.'}`}
           submitLabel={canApprove ? 'Simpan' : 'Hantar cadangan'}
-          initial={{ code: '', label: '', meta: '', comment: '', level: 'UPPER', order: '', next: '', description: '' }}
+          initial={{ code: '', label: '', meta: '', comment: '', level: 'UPPER', order: '', next: '', fee_group: '', description: '' }}
           fields={[
             { name: 'code', label: 'Kod', required: true, hint: 'Singkatan tanpa ruang, cth. SRC-IG' },
             { name: 'label', label: 'Nama paparan', required: true },
@@ -219,7 +223,7 @@ export default function MasterDataView({ role }) {
           description="Kod tidak boleh diubah kerana ia digunakan dalam rekod sedia ada."
           initial={{
             label: edit.label, meta: edit.meta_info?.detail || '', level: edit.meta_info?.level || 'UPPER', order: edit.meta_info?.order ?? '',
-            next: edit.meta_info?.next || '', description: edit.meta_info?.description || '',
+            next: edit.meta_info?.next || '', fee_group: gradeRows.find((g) => g.code === edit.code)?.fee_group || edit.meta_info?.fee_group || '', description: edit.meta_info?.description || '',
           }}
           fields={[
             { name: 'label', label: 'Nama paparan', required: true },

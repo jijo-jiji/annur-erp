@@ -50,9 +50,9 @@ venv\Scripts\activate
 pip install django djangorestframework django-cors-headers
 python manage.py migrate
 python manage.py seed_data
-python manage.py runserver
+python manage.py runserver 127.0.0.1:8180
 ```
-Pelayan API Backend akan beroperasi di: `http://127.0.0.1:8000/api/v1/`
+Pelayan API Backend akan beroperasi di: `http://127.0.0.1:8180/api/v1/`
 
 ### 2. Menjalankan Frontend (React + Vite)
 ```bash
@@ -60,7 +60,7 @@ cd frontend
 npm install
 npm run dev
 ```
-Aplikasi Frontend akan beroperasi di: `http://localhost:5173/`
+Aplikasi Frontend akan beroperasi di: `http://localhost:5273/`
 
 ### 3. Ujian Automatik
 ```bash

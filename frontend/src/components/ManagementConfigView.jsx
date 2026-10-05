@@ -3,7 +3,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { configApi, dashboardApi } from '../api/client';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
-import { date, LEVEL_LABEL, rm, STREAM_LABEL, TIER_CATEGORY_LABEL } from '../lib/format';
+import { date, LEVEL_LABEL, rm, STREAM_LABEL, tierGroupLabel } from '../lib/format';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, EmptyState, IconButton, inputClass, Input, PageHeader, Select, Table, Tabs, Td, Th, useToast } from './ui';
 
@@ -137,79 +137,159 @@ function Toggle({ checked, onChange, label }) {
 }
 
 function Pricing({ editable }) {
-  const { pricingTiers, saveTiers } = useStore();
+  const { pricingTiers, grades, saveTiers, addTier, deleteTier, renameTierGroup } = useStore();
   const notify = useToast();
   // Edits by package id; anything not edited shows the saved rate
   const [edits, setEdits] = useState({});
+  const [dialog, setDialog] = useState(null); // { type: 'group' } | { type: 'package', group } | { type: 'rename', group }
   const draft = pricingTiers.map((t) => (t.id in edits ? { ...t, rate: edits[t.id] } : t));
   const setDraft = (rows) => setEdits(Object.fromEntries(rows.filter((t) => t.rate !== pricingTiers.find((x) => x.id === t.id)?.rate).map((t) => [t.id, t.rate])));
   const dirty = Object.keys(edits).length > 0;
 
+  const groups = [...new Set(draft.map((t) => t.category))];
+  const gradesOf = (group) => grades.filter((g) => g.fee_group === group).map((g) => g.label);
+  const withoutPackage = grades.filter((g) => !g.fee_group || !groups.includes(g.fee_group)).map((g) => g.label);
+
+  const remove = (t) => {
+    if (!window.confirm(`Padam pakej ${t.count} subjek? Yuran dikira mengikut pakej terdekat dalam kumpulan yang sama.`)) return;
+    deleteTier(t.id).then(() => notify('Pakej dipadam.')).catch(() => {});
+  };
+
   return (
-    <Card>
-      <CardHeader
-        title="Pakej yuran bulanan"
-        description="Kadar seunit subjek. Jumlah pakej dikira secara automatik."
-        actions={
-          editable ? (
-          <>
-            {dirty && (
-              <Button size="sm" variant="ghost" onClick={() => setDraft(pricingTiers)}>
-                Buang perubahan
-              </Button>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader
+          title="Pakej yuran bulanan"
+          description="Kadar seunit subjek; jumlah pakej dikira secara automatik. Tambah kumpulan atau pakej baharu bila-bila masa, kemudian pilih kumpulan itu pada gred di Data induk."
+          actions={
+            editable ? (
+              <>
+                {dirty && <Button size="sm" variant="ghost" onClick={() => setDraft(pricingTiers)}>Buang perubahan</Button>}
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={!dirty}
+                  onClick={() => saveTiers(draft).then(() => { setEdits({}); notify('Pakej yuran dikemas kini.'); }).catch(() => {})}
+                >
+                  Simpan
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setDialog({ type: 'group' })}><Plus size={14} /> Kumpulan baharu</Button>
+              </>
+            ) : (
+              <Badge>Hanya supervisor dan pengurusan boleh mengubah</Badge>
+            )
+          }
+        />
+        {withoutPackage.length > 0 && (
+          <p className="border-b border-amber-100 bg-amber-50 px-5 py-3 text-[13px] text-amber-800">
+            Gred belum mempunyai pakej, yuran bulanan RM0: {withoutPackage.join(', ')}. Pilih kumpulan pakej pada gred di Data induk.
+          </p>
+        )}
+        {groups.length === 0 && <EmptyState title="Belum ada pakej" description="Tambah kumpulan pakej yuran yang pertama." />}
+      </Card>
+
+      {groups.map((group) => (
+        <Card key={group}>
+          <CardHeader
+            title={tierGroupLabel(group, pricingTiers)}
+            description={group === 'WALK_IN' ? 'Kadar walk-in sesi' : gradesOf(group).length ? `Digunakan oleh: ${gradesOf(group).join(', ')}` : 'Belum digunakan oleh mana-mana gred'}
+            actions={editable && (
+              <>
+                <Button size="sm" variant="ghost" onClick={() => setDialog({ type: 'rename', group })}><Pencil size={14} /> Nama</Button>
+                <Button size="sm" variant="secondary" onClick={() => setDialog({ type: 'package', group })}><Plus size={14} /> Pakej</Button>
+              </>
             )}
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={!dirty}
-              onClick={() => saveTiers(draft).then(() => { setEdits({}); notify('Pakej yuran dikemas kini.'); }).catch(() => {})}
-            >
-              Simpan
-            </Button>
-          </>
-          ) : (
-            <Badge>Hanya supervisor dan pengurusan boleh mengubah</Badge>
-          )
-        }
-      />
-      <Table>
-        <thead>
-          <tr>
-            <Th>Peringkat</Th>
-            <Th>Subjek</Th>
-            <Th>Kadar / subjek (RM)</Th>
-            <Th className="text-right">Jumlah sebulan</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {draft.map((t) => {
-            const original = pricingTiers.find((x) => x.id === t.id);
-            return (
-              <tr key={t.id}>
-                <Td className="text-gray-900">{TIER_CATEGORY_LABEL[t.category] ?? t.category}</Td>
-                <Td className="tnum">{t.count} subjek</Td>
-                <Td>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    aria-label={`Kadar ${TIER_CATEGORY_LABEL[t.category] ?? t.category} ${t.count} subjek`}
-                    value={t.rate}
-                    disabled={!editable}
-                    onChange={(e) => setDraft(draft.map((x) => (x.id === t.id ? { ...x, rate: Number(e.target.value) } : x)))}
-                    className={`${inputClass} max-w-24 tnum`}
-                  />
-                </Td>
-                <Td className="text-right font-medium tnum">
-                  {rm(t.rate * t.count)}
-                  {original && original.rate !== t.rate && <Badge tone="amber" className="ml-2">Diubah</Badge>}
-                </Td>
+          />
+          <Table>
+            <thead>
+              <tr>
+                <Th>Subjek</Th>
+                <Th>Kadar / subjek (RM)</Th>
+                <Th className="text-right">Jumlah sebulan</Th>
+                {editable && <Th className="w-12"><span className="sr-only">Padam</span></Th>}
               </tr>
-            );
-          })}
-        </tbody>
-      </Table>
-    </Card>
+            </thead>
+            <tbody>
+              {draft.filter((t) => t.category === group).sort((a, b) => a.count - b.count).map((t) => {
+                const original = pricingTiers.find((x) => x.id === t.id);
+                return (
+                  <tr key={t.id}>
+                    <Td className="tnum">{t.count} subjek</Td>
+                    <Td>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        aria-label={`Kadar ${tierGroupLabel(group, pricingTiers)} ${t.count} subjek`}
+                        value={t.rate}
+                        disabled={!editable}
+                        onChange={(e) => setDraft(draft.map((x) => (x.id === t.id ? { ...x, rate: Number(e.target.value) } : x)))}
+                        className={`${inputClass} max-w-24 tnum`}
+                      />
+                    </Td>
+                    <Td className="text-right font-medium tnum">
+                      {rm(t.rate * t.count)}
+                      {original && original.rate !== t.rate && <Badge tone="amber" className="ml-2">Diubah</Badge>}
+                    </Td>
+                    {editable && (
+                      <Td>
+                        <IconButton label={`Padam pakej ${t.count} subjek`} icon={Trash2} onClick={() => remove(t)} />
+                      </Td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        </Card>
+      ))}
+
+      {dialog?.type === 'group' && (
+        <FormModal
+          title="Kumpulan pakej baharu"
+          description="Contoh: Darjah 1-4. Masukkan pakej pertama sekarang; pakej lain boleh ditambah kemudian."
+          initial={{ label: '', count: 1, rate: '' }}
+          fields={[
+            { name: 'label', label: 'Nama kumpulan', required: true, placeholder: 'cth. Darjah 1-4' },
+            { name: 'count', label: 'Bilangan subjek pakej', type: 'number', min: '1', required: true },
+            { name: 'rate', label: 'Kadar / subjek (RM)', type: 'number', min: '0', step: '1', required: true },
+          ]}
+          onSubmit={async (v) => {
+            const base = v.label.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'KUMPULAN';
+            const taken = new Set(pricingTiers.map((t) => t.category));
+            let key = base;
+            for (let i = 2; taken.has(key); i += 1) key = `${base}_${i}`;
+            await addTier({ group: key, label: v.label.trim(), count: Number(v.count), rate: Number(v.rate) });
+            notify('Kumpulan pakej ditambah. Pilih kumpulan ini pada gred di Data induk.');
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'package' && (
+        <FormModal
+          title={`Pakej baharu: ${tierGroupLabel(dialog.group, pricingTiers)}`}
+          initial={{ count: '', rate: '' }}
+          fields={[
+            { name: 'count', label: 'Bilangan subjek', type: 'number', min: '1', required: true },
+            { name: 'rate', label: 'Kadar / subjek (RM)', type: 'number', min: '0', step: '1', required: true },
+          ]}
+          onSubmit={async (v) => {
+            await addTier({ group: dialog.group, label: tierGroupLabel(dialog.group, pricingTiers), count: Number(v.count), rate: Number(v.rate) });
+            notify('Pakej ditambah.');
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'rename' && (
+        <FormModal
+          title="Tukar nama kumpulan"
+          initial={{ label: tierGroupLabel(dialog.group, pricingTiers) }}
+          fields={[{ name: 'label', label: 'Nama kumpulan', required: true }]}
+          onSubmit={async (v) => { await renameTierGroup(dialog.group, v.label.trim()); notify('Nama kumpulan dikemas kini.'); }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+    </div>
   );
 }
 

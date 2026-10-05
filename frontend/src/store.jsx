@@ -197,7 +197,7 @@ const toReschedule = (r) => ({
   notified: r.whatsapp_notification_sent,
 });
 
-const toTier = (t) => ({ id: t.id, category: t.level_category, count: t.subject_count, rate: num(t.price_per_subject) });
+const toTier = (t) => ({ id: t.id, category: t.level_category, label: t.group_label || '', count: t.subject_count, rate: num(t.price_per_subject) });
 
 const toDiscount = (d) => ({
   pk: d.id,
@@ -468,6 +468,20 @@ export function StoreProvider({ children }) {
         });
         return act(() => Promise.all(changed.map((t) => configApi.updatePricingTier(t.id, { price_per_subject: t.rate, total_price: t.rate * t.count }))),
           { refresh: app.refreshAllData });
+      },
+
+      // Management can add any package group (e.g. Darjah 1-4), package and per-subject rate
+      addTier({ group, label, count, rate }) {
+        return act(() => configApi.createPricingTier({
+          level_category: group, group_label: label || '', subject_count: count, price_per_subject: rate,
+        }), { refresh: app.refreshAllData });
+      },
+      deleteTier(id) {
+        return act(() => configApi.deletePricingTier(id), { refresh: app.refreshAllData });
+      },
+      renameTierGroup(group, label) {
+        return act(() => Promise.all(app.pricingTiers.filter((t) => t.level_category === group)
+          .map((t) => configApi.updatePricingTier(t.id, { group_label: label }))), { refresh: app.refreshAllData });
       },
 
       saveSettings(settings) {

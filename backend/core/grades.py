@@ -14,6 +14,11 @@ FALLBACK = [
 ]
 
 
+# Fee group of the seeded grades; a grade added later picks its group in master data (meta.fee_group)
+LEGACY_FEE_GROUP = {'S5': 'DARJAH_5', 'S6': 'DARJAH_6', 'F1': 'SECONDARY', 'F2': 'SECONDARY',
+                    'F3': 'SECONDARY', 'F4': 'SECONDARY', 'F5': 'SECONDARY'}
+
+
 def _level(value):
     value = str(value or '').strip()
     return value if value in LEVELS else LEVEL_ALIASES.get(value.lower(), 'UPPER')
@@ -31,10 +36,11 @@ def grade_list():
             order = 999
         rows.append({
             'code': item.code, 'label': item.label, 'level': _level(meta.get('level')),
-            'next': meta.get('next', '') or '', 'description': meta.get('description', '') or '', 'order': order,
+            'next': meta.get('next', '') or '',
+            'fee_group': meta.get('fee_group') or LEGACY_FEE_GROUP.get(item.code, ''), 'description': meta.get('description', '') or '', 'order': order,
         })
     if not rows:
-        rows = [{'code': c, 'label': l, 'level': lv, 'next': n, 'description': '', 'order': i}
+        rows = [{'code': c, 'label': l, 'level': lv, 'next': n, 'fee_group': LEGACY_FEE_GROUP.get(c, ''), 'description': '', 'order': i}
                 for i, (c, l, lv, n) in enumerate(FALLBACK)]
     return sorted(rows, key=lambda r: (r['order'], r['code']))
 

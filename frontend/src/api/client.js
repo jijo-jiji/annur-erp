@@ -1,4 +1,4 @@
-// Centralized API client connecting to Django REST Framework backend on port 8080 (via Vite proxy /api)
+// Centralized API client connecting to Django REST Framework backend on port 8180 (via Vite proxy /api)
 
 const BASE_URL = '/api/v1';
 const TOKEN_KEY = 'annur_auth_token';
@@ -403,6 +403,11 @@ export const configApi = {
     method: 'PATCH',
     body: JSON.stringify(data),
   }),
+  createPricingTier: (data) => request('/business-config/pricing-tiers/', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  deletePricingTier: (id) => request(`/business-config/pricing-tiers/${id}/`, { method: 'DELETE' }),
   updatePricingTier: (id, data) => request(`/business-config/pricing-tiers/${id}/`, {
     method: 'PATCH',
     body: JSON.stringify(data),

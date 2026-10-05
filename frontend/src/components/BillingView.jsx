@@ -8,7 +8,7 @@ import {
   addMonths, arrearsCases, invoiceBalance, invoiceStatus, monthlyFee, preferredContact,
 } from '../lib/domain';
 import {
-  CURRENT_MONTH, date, formLabel, monthLabel, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, rm, TIER_CATEGORY_LABEL, todayISO, waLink,
+  CURRENT_MONTH, date, formLabel, monthLabel, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, rm, tierGroupLabel, todayISO, waLink,
 } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import {
@@ -958,41 +958,36 @@ export function ReceiptDocument({ receipt: r }) {
 
 function CalculatorModal({ open, onClose }) {
   const { pricingTiers, settings } = useStore();
-  const [category, setCategory] = useState('SECONDARY');
-  const [count, setCount] = useState(4);
+  const groups = useMemo(() => [...new Set(pricingTiers.filter((t) => t.category !== 'WALK_IN').map((t) => t.category))], [pricingTiers]);
+  const [category, setCategory] = useState('');
+  const [count, setCount] = useState(0);
   const [withReg, setWithReg] = useState(true);
 
-  const secondaryCounts = useMemo(
-    () => pricingTiers.filter((t) => t.category === 'SECONDARY').map((t) => t.count).sort((a, b) => a - b),
-    [pricingTiers],
-  );
-  const form = category === 'DARJAH_5' ? 'S5' : category === 'DARJAH_6' ? 'S6' : 'F4';
-  const fee = monthlyFee(form, count, pricingTiers);
-  const tier = pricingTiers.find((t) => t.category === category && (category !== 'SECONDARY' || t.count === count));
+  const group = category || groups[0] || '';
+  const packages = useMemo(() => pricingTiers.filter((t) => t.category === group).sort((a, b) => a.count - b.count), [pricingTiers, group]);
+  const chosen = packages.find((t) => t.count === count) || packages[0];
+  const fee = chosen ? chosen.rate * chosen.count : 0;
 
   return (
     <Modal open={open} onClose={onClose} title="Kalkulator yuran" description="Berdasarkan pakej harga semasa dalam Tetapan." size="sm">
       <div className="space-y-4">
-        <Select label="Peringkat" value={category} onChange={(e) => setCategory(e.target.value)}>
-          {Object.entries(TIER_CATEGORY_LABEL).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
+        <Select label="Peringkat" value={group} onChange={(e) => { setCategory(e.target.value); setCount(0); }}>
+          {groups.map((g) => (
+            <option key={g} value={g}>
+              {tierGroupLabel(g, pricingTiers)}
             </option>
           ))}
         </Select>
-        {category === 'SECONDARY' ? (
-          <Select label="Bilangan subjek" value={count} onChange={(e) => setCount(Number(e.target.value))}>
-            {secondaryCounts.map((n) => {
-              const t = pricingTiers.find((x) => x.category === 'SECONDARY' && x.count === n);
-              return (
-                <option key={n} value={n}>
-                  {n} subjek ({rm(t.rate)} / subjek)
-                </option>
-              );
-            })}
+        {packages.length > 0 ? (
+          <Select label="Pakej" value={chosen?.count ?? ''} onChange={(e) => setCount(Number(e.target.value))}>
+            {packages.map((t) => (
+              <option key={t.id} value={t.count}>
+                {t.count} subjek ({rm(t.rate)} / subjek)
+              </option>
+            ))}
           </Select>
         ) : (
-          <p className="text-sm text-gray-600">Pakej {tier?.count} subjek.</p>
+          <p className="text-sm text-gray-600">Tiada pakej lagi. Tambah di Tetapan &gt; Pakej yuran.</p>
         )}
         <Checkbox label={`Pelajar baharu (yuran pendaftaran ${rm(settings.regFee)})`} checked={withReg} onChange={(e) => setWithReg(e.target.checked)} />
         <div className="rounded-md bg-gray-50 p-4">

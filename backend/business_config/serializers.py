@@ -10,6 +10,26 @@ class PricingTierSerializer(serializers.ModelSerializer):
     class Meta:
         model = PricingTier
         fields = '__all__'
+        extra_kwargs = {'total_price': {'required': False}}
+
+    def validate(self, attrs):
+        get = lambda k, d=None: attrs.get(k, getattr(self.instance, k, d))
+        group = str(get('level_category', '') or '').strip().upper().replace(' ', '_')
+        if not group:
+            raise serializers.ValidationError({'level_category': 'Kumpulan pakej diperlukan.'})
+        attrs['level_category'] = group
+        count, rate = get('subject_count', 0), get('price_per_subject', 0)
+        if count < 1:
+            raise serializers.ValidationError({'subject_count': 'Bilangan subjek mesti sekurang-kurangnya 1.'})
+        if rate < 0:
+            raise serializers.ValidationError({'price_per_subject': 'Kadar tidak boleh negatif.'})
+        clash = PricingTier.objects.filter(level_category=group, subject_count=count)
+        if self.instance:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError({'subject_count': 'Pakej untuk bilangan subjek ini sudah wujud dalam kumpulan ini.'})
+        attrs['total_price'] = rate * count  # the package total always follows the per-subject rate
+        return attrs
 
 class BusinessSettingSerializer(serializers.ModelSerializer):
     class Meta:

@@ -22,13 +22,9 @@ class SubjectMaster(models.Model):
         return f"{self.code} - {self.name} ({self.level_category})"
 
 class PricingTier(models.Model):
-    CATEGORY_CHOICES = [
-        ('SECONDARY', 'Sekolah Menengah (Form 1 - 5)'),
-        ('DARJAH_5', 'Darjah 5'),
-        ('DARJAH_6', 'Darjah 6'),
-        ('WALK_IN', 'Walk-in Rate'),
-    ]
-    level_category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    # Package group key chosen by Management (e.g. SECONDARY, DARJAH_5, or a new group); grades point to it
+    level_category = models.CharField(max_length=40)
+    group_label = models.CharField(max_length=100, blank=True)
     subject_count = models.IntegerField(default=4)
     price_per_subject = models.DecimalField(max_digits=8, decimal_places=2, default=60.00)
     total_price = models.DecimalField(max_digits=8, decimal_places=2, default=240.00)

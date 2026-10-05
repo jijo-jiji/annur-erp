@@ -24,29 +24,25 @@ export function subjectsForForm(subjects, form, classes = []) {
   return subjects.filter((s) => s.active && offered.has(s.code));
 }
 
-export function tierCategory(form) {
-  if (form === 'S5') return 'DARJAH_5';
-  if (form === 'S6') return 'DARJAH_6';
-  return 'SECONDARY';
+// Fee package group of a grade, chosen in master data (grade list); empty when none has been set yet
+export function feeGroup(form, grades = []) {
+  return grades.find((g) => g.code === form)?.fee_group || '';
 }
 
-// Smallest secondary package; fewer subjects is a special case charged per subject
-export function minSubjects(form) {
-  return tierCategory(form) === 'SECONDARY' ? 4 : 1;
+// Smallest package of the grade's group; fewer subjects is a special case charged per subject.
+// A group with a single package has no minimum.
+export function minSubjects(form, tiers = [], grades = []) {
+  const counts = tiers.filter((t) => t.category === feeGroup(form, grades)).map((t) => t.count).sort((a, b) => a - b);
+  return counts.length > 1 ? counts[0] : 1;
 }
 
-export function monthlyFee(form, count, tiers) {
-  const category = tierCategory(form);
-  if (category !== 'SECONDARY') {
-    const tier = tiers.find((t) => t.category === category);
-    return tier ? tier.rate * tier.count : 0;
-  }
+// Same rule as the server: the exact package, otherwise the nearest package's per-subject rate
+export function monthlyFee(form, count, tiers = [], grades = []) {
   if (count <= 0) return 0;
-  const packages = tiers.filter((t) => t.category === 'SECONDARY').sort((a, b) => a.count - b.count);
+  const packages = tiers.filter((t) => t.category === feeGroup(form, grades)).sort((a, b) => a.count - b.count);
   if (!packages.length) return 0;
   const exact = packages.find((t) => t.count === count);
   if (exact) return exact.rate * exact.count;
-  // Below the smallest or above the largest package: that package's per-subject rate (as the server does)
   const nearest = count < packages[0].count ? packages[0] : packages[packages.length - 1];
   return count * nearest.rate;
 }

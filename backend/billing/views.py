@@ -88,6 +88,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 class PaymentReceiptViewSet(viewsets.ModelViewSet):
     queryset = PaymentReceipt.objects.all().select_related('invoice', 'student').order_by('-created_at')
     serializer_class = PaymentReceiptSerializer
+    # A receipt is a financial record: it is issued once and never edited in place
+    http_method_names = ['get', 'post', 'delete', 'head', 'options']
 
     @action(detail=True, methods=['get'])
     def pdf(self, request, pk=None):

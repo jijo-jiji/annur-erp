@@ -181,6 +181,20 @@ class BillingNumberTests(Phase2Base):
         self.assertEqual(Student.objects.get(pk=data['id']).credit_balance, Decimal('110.00'))
         self.assertEqual(Invoice.objects.get(pk=invoice['id']).status, 'PAID')
 
+    def test_issued_receipt_cannot_be_edited(self):
+        data = self.register(class_ids=[self.kim.id])
+        self.as_role(SUPERVISOR)
+        invoice = self.client.post(f"/api/v1/students/students/{data['id']}/approve/").data['invoice']
+        self.as_role(ADMIN)
+        receipt = self.client.post('/api/v1/billing/receipts/', {
+            'invoice': invoice['id'], 'amount_paid': '90.00', 'payment_method': 'CASH', 'payment_type': 'MONTHLY',
+        }, format='json').data
+        for role in (ADMIN, SUPERVISOR, MANAGEMENT):
+            self.as_role(role)
+            for method in (self.client.patch, self.client.put):
+                self.assertEqual(method(f"/api/v1/billing/receipts/{receipt['id']}/", {'amount_paid': '1.00'}, format='json').status_code, 405)
+        self.assertEqual(PaymentReceipt.objects.get(pk=receipt['id']).amount_paid, Decimal('90.00'))
+
     def test_voucher_number_format(self):
         vendor = Vendor.objects.create(vendor_id='V1', vendor_name='Kedai')
         self.as_role(ADMIN)
@@ -403,3 +417,32 @@ class GradeListTests(Phase2Base):
         ev = StudentEvent.objects.get(student=abu, event_type='PROMOTE')
         self.assertEqual(ev.description, 'Tingkatan 4 → Tingkatan 5')
         self.assertEqual(Student.objects.get(pk=f5['id']).form_level, 'F5')  # no next grade: unchanged
+
+
+class CustomFeeGroupTests(Phase2Base):
+    """Management adds a fee group and points a new grade (e.g. Darjah 1) at it, with no code change."""
+
+    def test_new_group_and_grade_get_their_own_fee(self):
+        from business_config.models import DynamicMasterData
+        from students import services
+        DynamicMasterData.objects.create(category='1_form', code='S1', label='Darjah 1', status='APPROVED',
+                                         meta_info={'order': 1, 'level': 'PRIMARY', 'next': '', 'fee_group': 'DARJAH_1_4'})
+        self.as_role(MANAGEMENT)
+        res = self.client.post('/api/v1/business-config/pricing-tiers/', {
+            'level_category': 'darjah 1 4', 'group_label': 'Darjah 1-4', 'subject_count': 2, 'price_per_subject': '45'}, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['level_category'], 'DARJAH_1_4')
+        self.assertEqual(float(res.data['total_price']), 90.0)  # the total follows the per-subject rate
+        dup = self.client.post('/api/v1/business-config/pricing-tiers/', {
+            'level_category': 'DARJAH_1_4', 'subject_count': 2, 'price_per_subject': '40'}, format='json')
+        self.assertEqual(dup.status_code, 400)
+
+        student = Student.objects.create(full_name='Adik', ic_number='1', form_level='S1', phone_number='1', join_date='2026-01-01',
+                                         parent1_name='P', parent1_phone='2')
+        student.enrolled_classes.add(self.fz, self.kim)
+        self.assertEqual(services.monthly_fee(student), 90)
+        # A grade with no fee group yet is charged nothing rather than the secondary rate
+        DynamicMasterData.objects.create(category='1_form', code='S2', label='Darjah 2', status='APPROVED',
+                                         meta_info={'order': 2, 'level': 'PRIMARY', 'next': ''})
+        student.form_level = 'S2'
+        self.assertEqual(services.monthly_fee(student), 0)
