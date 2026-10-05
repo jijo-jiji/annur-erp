@@ -13,10 +13,10 @@ from .serializers import (
     TeacherRateSettingSerializer, DynamicMasterDataSerializer
 )
 
-class SubjectMasterViewSet(viewsets.ModelViewSet):
+class SubjectMasterViewSet(viewsets.ReadOnlyModelViewSet):
+    """Subjects are changed through change requests (core.change_requests), never written here."""
     queryset = SubjectMaster.objects.all().order_by('level_category', 'code')
     serializer_class = SubjectMasterSerializer
-    write_roles = APPROVER_ROLES
 
 class PricingTierViewSet(viewsets.ModelViewSet):
     queryset = PricingTier.objects.all()

@@ -29,6 +29,7 @@ const STAFF_COMMON = [
 export const PERMISSIONS = {
   ADMIN: [
     ...STAFF_COMMON,
+    'settings.view', // Admin proposes subject changes; the rest of Settings is hidden
     'billing.record', // record payments, send receipts
     'billing.run', // monthly invoice run
     'billing.arrears', // payment follow-up
@@ -53,7 +54,7 @@ export const PERMISSIONS = {
     'staff.manage',
     'reports.view',
     'settings.view',
-    'settings.subjects',
+    'settings.advanced', // fee packages, discounts, policies
     'settings.pricing',
     'settings.discounts',
   ],
@@ -82,7 +83,7 @@ export const PERMISSIONS = {
     'reports.view',
     'finance.summary', // collection & arrears totals
     'settings.view',
-    'settings.subjects',
+    'settings.advanced', // fee packages, discounts, policies
     'settings.pricing',
     'settings.policies',
     'settings.discounts',

@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { configApi, dashboardApi } from '../api/client';
+import { changeRequestApi, configApi, dashboardApi } from '../api/client';
+import { useApp } from '../context/AppContext';
 import { useStore } from '../store';
-import { can } from '../lib/permissions';
+import { can, isApprover } from '../lib/permissions';
 import { date, LEVEL_LABEL, rm, STREAM_LABEL, tierGroupLabel } from '../lib/format';
+import ChangeRequestsPanel from './ChangeRequestsPanel';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, EmptyState, IconButton, inputClass, Input, PageHeader, Select, Table, Tabs, Td, Th, useToast } from './ui';
 
@@ -11,19 +13,24 @@ export default function ManagementConfigView({ role }) {
   const [tab, setTab] = useState('subjects');
   return (
     <>
-      <PageHeader title="Tetapan" description="Subjek, pakej yuran, diskaun dan polisi operasi. Perubahan berkuat kuasa serta-merta." />
+      <PageHeader
+        title="Tetapan"
+        description={can(role, 'settings.advanced') ? 'Subjek, pakej yuran, diskaun dan polisi operasi. Perubahan oleh Supervisor dan Pengurusan berkuat kuasa serta-merta.' : 'Cadangkan subjek baharu atau perubahan subjek. Ia berkuat kuasa selepas diluluskan.'}
+      />
       <Tabs
         className="mb-6"
         value={tab}
         onChange={setTab}
         items={[
           { value: 'subjects', label: 'Subjek' },
-          { value: 'pricing', label: 'Pakej yuran' },
-          { value: 'discounts', label: 'Diskaun' },
-          { value: 'policies', label: 'Polisi & elaun' },
+          ...(can(role, 'settings.advanced') ? [
+            { value: 'pricing', label: 'Pakej yuran' },
+            { value: 'discounts', label: 'Diskaun' },
+            { value: 'policies', label: 'Polisi & elaun' },
+          ] : []),
         ]}
       />
-      {tab === 'subjects' && <Subjects editable={can(role, 'settings.subjects')} />}
+      {tab === 'subjects' && <Subjects role={role} />}
       {tab === 'pricing' && <Pricing editable={can(role, 'settings.pricing')} />}
       {tab === 'discounts' && <Discounts editable={can(role, 'settings.discounts')} />}
       {tab === 'policies' && <Policies editable={can(role, 'settings.policies')} />}
@@ -31,36 +38,45 @@ export default function ManagementConfigView({ role }) {
   );
 }
 
-function Subjects({ editable }) {
-  const { subjects, addSubject, updateSubject } = useStore();
-  const notify = useToast();
-  const [f, setF] = useState({ code: '', name: '', level: 'UPPER_SEC', stream: 'TERAS' });
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+const SUBJECT_LEVELS = Object.entries(LEVEL_LABEL).filter(([k]) => ['PRIMARY', 'LOWER_SEC', 'UPPER_SEC'].includes(k)).map(([value, label]) => ({ value, label }));
+const SUBJECT_STREAMS = [{ value: 'TERAS', label: 'Teras' }, { value: 'SAINS', label: 'Sains' }, { value: 'SASTERA', label: 'Sastera / Akaun' }];
 
-  const submit = async (e) => {
-    e.preventDefault();
-    if (subjects.some((s) => s.code === f.code)) {
-      setError(`Kod ${f.code} sudah digunakan.`);
-      return;
-    }
-    setBusy(true);
-    try {
-      await addSubject(f);
-      notify(`Subjek ${f.name} ditambah.`);
-      setF({ code: '', name: '', level: 'UPPER_SEC', stream: 'TERAS' });
-      setError('');
-    } catch {
-      // the reason has already been shown
-    } finally {
-      setBusy(false);
-    }
+// Subjects change by request: Admin proposes and a Supervisor (or Management) approves;
+// Supervisor and Management changes apply at once and are recorded in the same list.
+function Subjects({ role }) {
+  const { subjects, submitSubject } = useStore();
+  const { refreshAllData } = useApp();
+  const notify = useToast();
+  const direct = isApprover(role);
+  const [requests, setRequests] = useState([]);
+  const [dialog, setDialog] = useState(null); // { type: 'add' } | { type: 'edit', subject } | { type: 'active', subject }
+
+  const load = useCallback(() => changeRequestApi.list('SUBJECT').then(setRequests).catch(() => setRequests([])), []);
+  useEffect(() => { load(); }, [load]);
+
+  const waiting = new Set(requests.filter((r) => r.status === 'PENDING' && r.action === 'UPDATE').map((r) => r.target_id));
+  const sentMessage = (done) => (done.status === 'PENDING'
+    ? 'Permohonan dihantar. Ia berkuat kuasa selepas diluluskan oleh Supervisor atau Pengurusan.'
+    : 'Perubahan subjek disimpan.');
+
+  const submit = async (action, pk, values, note) => {
+    const done = await submitSubject({ action, pk, values, note });
+    notify(sentMessage(done));
+    await load();
   };
 
+  const reasonField = { name: 'note', label: 'Sebab permohonan', type: 'textarea', required: true, hint: 'Supervisor akan melihat sebab ini semasa membuat keputusan.' };
+  const levelField = { name: 'level_category', label: 'Peringkat', type: 'select', required: true, options: SUBJECT_LEVELS };
+  const streamField = { name: 'stream', label: 'Aliran', type: 'select', required: true, options: SUBJECT_STREAMS };
+
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <Card className="lg:col-span-2">
-        <CardHeader title="Senarai subjek" description={`${subjects.filter((s) => s.active).length} aktif daripada ${subjects.length}`} />
+    <div className="space-y-6">
+      <Card>
+        <CardHeader
+          title="Senarai subjek"
+          description={`${subjects.filter((s) => s.active).length} aktif daripada ${subjects.length}${direct ? '' : '. Perubahan dihantar kepada Supervisor untuk kelulusan.'}`}
+          actions={<Button size="sm" variant="primary" icon={Plus} onClick={() => setDialog({ type: 'add' })}>{direct ? 'Tambah subjek' : 'Mohon subjek baharu'}</Button>}
+        />
         <Table>
           <thead>
             <tr>
@@ -68,7 +84,8 @@ function Subjects({ editable }) {
               <Th>Nama</Th>
               <Th className="hidden sm:table-cell">Peringkat</Th>
               <Th className="hidden md:table-cell">Aliran</Th>
-              <Th className="text-right">Aktif</Th>
+              <Th>Status</Th>
+              <Th className="text-right"><span className="sr-only">Tindakan</span></Th>
             </tr>
           </thead>
           <tbody>
@@ -78,14 +95,16 @@ function Subjects({ editable }) {
                 <Td className={s.active ? 'text-gray-900' : ''}>{s.name}</Td>
                 <Td className="hidden sm:table-cell">{LEVEL_LABEL[s.level] ?? s.level}</Td>
                 <Td className="hidden md:table-cell">{STREAM_LABEL[s.stream] ?? s.stream}</Td>
+                <Td>
+                  {waiting.has(s.pk) ? <Badge tone="amber">Menunggu kelulusan</Badge> : s.active ? <Badge tone="green">Aktif</Badge> : <Badge>Tidak aktif</Badge>}
+                </Td>
                 <Td className="text-right">
-                  {editable ? (
-                    <Toggle checked={s.active} label={`Aktifkan ${s.name}`} onChange={(active) => updateSubject(s.code, { active }).catch(() => {})} />
-                  ) : s.active ? (
-                    <Badge tone="green">Aktif</Badge>
-                  ) : (
-                    <Badge>Tidak aktif</Badge>
-                  )}
+                  <div className="flex justify-end gap-1.5">
+                    <Button size="sm" variant="ghost" disabled={waiting.has(s.pk)} onClick={() => setDialog({ type: 'edit', subject: s })}>Ubah</Button>
+                    <Button size="sm" variant="ghost" disabled={waiting.has(s.pk)} onClick={() => setDialog({ type: 'active', subject: s })}>
+                      {s.active ? 'Nyahaktif' : 'Aktifkan'}
+                    </Button>
+                  </div>
                 </Td>
               </tr>
             ))}
@@ -93,46 +112,65 @@ function Subjects({ editable }) {
         </Table>
       </Card>
 
-      {editable && (
-      <Card className="self-start">
-        <CardHeader title="Tambah subjek" />
-        <form onSubmit={submit} className="space-y-4 p-5">
-          <Input label="Kod" required maxLength={8} value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase().replace(/\s/g, '') })} placeholder="cth. EKON" error={error} />
-          <Input label="Nama subjek" required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="cth. Ekonomi" />
-          <Select label="Peringkat" value={f.level} onChange={(e) => setF({ ...f, level: e.target.value })}>
-            {Object.entries(LEVEL_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
-          <Select label="Aliran" value={f.stream} onChange={(e) => setF({ ...f, stream: e.target.value })}>
-            <option value="TERAS">Teras</option>
-            <option value="SAINS">Sains</option>
-            <option value="SASTERA">Sastera / Akaun</option>
-          </Select>
-          <Button type="submit" variant="primary" icon={Plus} className="w-full" disabled={busy}>
-            Tambah subjek
-          </Button>
-        </form>
-      </Card>
+      <ChangeRequestsPanel
+        role={role}
+        requests={requests}
+        reload={load}
+        onApplied={refreshAllData}
+        editFields={(r) => [
+          ...(r.action === 'CREATE' ? [{ name: 'code', label: 'Kod', required: true, hint: 'Singkatan tanpa ruang, cth. EKON' }] : []),
+          { name: 'name', label: 'Nama subjek', required: true }, levelField, streamField,
+          ...(r.action === 'UPDATE' ? [{ name: 'is_active', label: 'Aktif', type: 'checkbox' }] : []),
+        ]}
+        editInitial={(r) => {
+          const current = subjects.find((s) => s.pk === r.target_id);
+          return {
+            code: '', name: '', level_category: 'UPPER_SEC', stream: 'TERAS', is_active: true,
+            ...(current ? { name: current.name, level_category: current.level, stream: current.stream, is_active: current.active } : {}),
+            ...r.payload,
+          };
+        }}
+      />
+
+      {dialog?.type === 'add' && (
+        <FormModal
+          title={direct ? 'Tambah subjek' : 'Mohon subjek baharu'}
+          description={direct ? 'Subjek ini boleh digunakan serta-merta.' : 'Subjek ini boleh digunakan selepas diluluskan oleh Supervisor atau Pengurusan.'}
+          submitLabel={direct ? 'Tambah subjek' : 'Hantar permohonan'}
+          initial={{ code: '', name: '', level_category: 'UPPER_SEC', stream: 'TERAS', note: '' }}
+          fields={[
+            { name: 'code', label: 'Kod', required: true, hint: 'Singkatan tanpa ruang, cth. EKON' },
+            { name: 'name', label: 'Nama subjek', required: true, placeholder: 'cth. Ekonomi' },
+            levelField, streamField,
+            ...(direct ? [] : [reasonField]),
+          ]}
+          onSubmit={({ note, ...values }) => submit('CREATE', null, { ...values, code: values.code.toUpperCase().replace(/\s/g, ''), is_active: true }, note)}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'edit' && (
+        <FormModal
+          title={`Ubah ${dialog.subject.code}`}
+          description="Kod tidak boleh diubah kerana ia digunakan dalam rekod sedia ada."
+          submitLabel={direct ? 'Simpan' : 'Hantar permohonan'}
+          initial={{ name: dialog.subject.name, level_category: dialog.subject.level, stream: dialog.subject.stream, note: '' }}
+          fields={[{ name: 'name', label: 'Nama subjek', required: true }, levelField, streamField, ...(direct ? [] : [reasonField])]}
+          onSubmit={({ note, ...values }) => submit('UPDATE', dialog.subject.pk, values, note)}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'active' && (
+        <FormModal
+          title={`${dialog.subject.active ? 'Nyahaktifkan' : 'Aktifkan'} ${dialog.subject.name}`}
+          description={dialog.subject.active ? 'Subjek yang tidak aktif tidak lagi ditawarkan untuk kelas baharu.' : 'Subjek akan ditawarkan semula untuk kelas baharu.'}
+          submitLabel={direct ? 'Teruskan' : 'Hantar permohonan'}
+          initial={{ note: '' }}
+          fields={direct ? [] : [reasonField]}
+          onSubmit={({ note }) => submit('UPDATE', dialog.subject.pk, { is_active: !dialog.subject.active }, note)}
+          onClose={() => setDialog(null)}
+        />
       )}
     </div>
-  );
-}
-
-function Toggle({ checked, onChange, label }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${checked ? 'bg-brand-600' : 'bg-gray-300'}`}
-    >
-      <span className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
-    </button>
   );
 }
 

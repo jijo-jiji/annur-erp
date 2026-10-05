@@ -5,6 +5,42 @@ from django.db import models
 from django.utils import timezone
 
 
+class ChangeRequest(models.Model):
+    """A proposed change to setup data (a subject, later vendors, categories, ...).
+    Admin's proposals wait as PENDING until Supervisor / Management decides; changes made by
+    Supervisor / Management apply at once and are recorded here too, so the history is complete."""
+    KINDS = [('SUBJECT', 'Subjek')]
+    ACTIONS = [('CREATE', 'Tambah'), ('UPDATE', 'Ubah')]
+    STATUS_CHOICES = [
+        ('PENDING', 'Menunggu kelulusan'),
+        ('APPROVED', 'Diluluskan'),
+        ('REJECTED', 'Ditolak'),
+        ('WITHDRAWN', 'Ditarik balik'),
+    ]
+    kind = models.CharField(max_length=20, choices=KINDS)
+    action = models.CharField(max_length=10, choices=ACTIONS)
+    target_id = models.IntegerField(null=True, blank=True)  # the record changed (set once created)
+    target_label = models.CharField(max_length=200, blank=True)
+    payload = models.JSONField(default=dict)  # the values to apply
+    before = models.JSONField(default=dict, blank=True)  # the values they replace (updates)
+    note = models.TextField(blank=True)  # requester's reason
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    direct = models.BooleanField(default=False)  # applied at once by an approver
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    requested_by_name = models.CharField(max_length=150)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    decided_by = models.CharField(max_length=150, blank=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_comment = models.TextField(blank=True)
+    seen = models.BooleanField(default=False)  # the requester has seen the decision
+
+    class Meta:
+        ordering = ['-requested_at', '-id']
+
+    def __str__(self):
+        return f"{self.kind} {self.action} {self.target_label} ({self.status})"
+
+
 def attachment_path(instance, filename):
     """Stored under a random name so file names never reveal who or what they belong to."""
     ext = os.path.splitext(filename)[1].lower()

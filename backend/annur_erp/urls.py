@@ -23,6 +23,7 @@ from students.views import (
 from billing.views import DiscountViewSet, InvoiceViewSet, PaymentReceiptViewSet, calculate_fees
 from expenses.views import VendorViewSet, PaymentVoucherViewSet
 from core.attachments import AttachmentViewSet
+from core.change_request_views import ChangeRequestViewSet
 from core.views import dashboard_summary, reports_summary, auth_login, auth_me, auth_logout, auth_users
 
 router = DefaultRouter()
@@ -32,6 +33,7 @@ router.register(r'business-config/pricing-tiers', PricingTierViewSet)
 router.register(r'business-config/settings', BusinessSettingViewSet)
 router.register(r'business-config/teacher-rates', TeacherRateSettingViewSet)
 router.register(r'business-config/master-data', DynamicMasterDataViewSet)
+router.register(r'change-requests', ChangeRequestViewSet)
 
 # Academic & Timetable
 router.register(r'academic/classrooms', ClassroomViewSet)

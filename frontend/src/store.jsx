@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useApp } from './context/AppContext';
 import {
-  academicApi, attendanceApi, billingApi, configApi, dashboardApi, request, studentsApi,
+  academicApi, attendanceApi, billingApi, changeRequestApi, configApi, dashboardApi, request, studentsApi,
 } from './api/client';
 import { setForms, todayISO } from './lib/format';
 
@@ -446,18 +446,10 @@ export function StoreProvider({ children }) {
         }), { reloads: ['results'] });
       },
 
-      addSubject(subject) {
-        return act(() => configApi.createSubject({ code: subject.code, name: subject.name, level_category: subject.level, stream: subject.stream || 'TERAS', is_active: true }),
+      // Subjects change by request: Admin's wait for approval, Supervisor / Management's apply at once
+      submitSubject({ action, pk, values, note }) {
+        return act(() => changeRequestApi.create({ kind: 'SUBJECT', action, target_id: pk, payload: values, note }),
           { refresh: app.refreshAllData });
-      },
-      updateSubject(code, patch) {
-        const pk = app.subjects.find((s) => s.code === code)?.id;
-        const body = {};
-        if ('name' in patch) body.name = patch.name;
-        if ('level' in patch) body.level_category = patch.level;
-        if ('stream' in patch) body.stream = patch.stream;
-        if ('active' in patch) body.is_active = patch.active;
-        return act(() => configApi.updateSubject(pk, body), { refresh: app.refreshAllData });
       },
 
       // Existing fee packages: rate per subject (the package total follows from it)

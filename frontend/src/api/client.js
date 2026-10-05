@@ -393,16 +393,19 @@ export const dashboardApi = {
   getSettings: () => request('/business-config/settings/'),
 };
 
+// Changes to setup data (subjects, ...): Admin proposes, Supervisor / Management decides
+export const changeRequestApi = {
+  list: (kind) => request(`/change-requests/?kind=${encodeURIComponent(kind)}`),
+  create: (body) => request('/change-requests/', { method: 'POST', body: JSON.stringify(body) }),
+  revise: (id, payload, note) => request(`/change-requests/${id}/`, { method: 'PATCH', body: JSON.stringify({ payload, note }) }),
+  approve: (id, comment = '') => request(`/change-requests/${id}/approve/`, { method: 'POST', body: JSON.stringify({ comment }) }),
+  reject: (id, comment) => request(`/change-requests/${id}/reject/`, { method: 'POST', body: JSON.stringify({ comment }) }),
+  withdraw: (id) => request(`/change-requests/${id}/withdraw/`, { method: 'POST', body: JSON.stringify({}) }),
+  acknowledge: () => request('/change-requests/acknowledge/', { method: 'POST', body: JSON.stringify({}) }),
+};
+
 export const configApi = {
   getSubjects: () => request('/business-config/subjects/'),
-  createSubject: (data) => request('/business-config/subjects/', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  updateSubject: (id, data) => request(`/business-config/subjects/${id}/`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  }),
   createPricingTier: (data) => request('/business-config/pricing-tiers/', {
     method: 'POST',
     body: JSON.stringify(data),

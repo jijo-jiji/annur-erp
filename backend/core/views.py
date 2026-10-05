@@ -51,7 +51,7 @@ def auth_logout(request):
 
 @api_view(['GET'])
 def dashboard_summary(request):
-    return Response(build_dashboard(get_role(request.user)))
+    return Response(build_dashboard(get_role(request.user), user=request.user))
 
 
 @api_view(['GET'])

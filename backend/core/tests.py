@@ -365,3 +365,155 @@ class TimetableApprovalTests(RoleTestBase):
         self.as_role(MANAGEMENT)
         self.assertEqual(self.client.post(f"/api/v1/academic/reschedule-logs/{other['id']}/verify/").status_code, 400)
         self.assertEqual(self.client.post(f"/api/v1/academic/reschedule-logs/{log['id']}/verify/").data['verified_by'], 'management')
+
+
+class ChangeRequestTests(RoleTestBase):
+    """Subjects change by request: Admin proposes, Supervisor / Management decides."""
+    URL = '/api/v1/change-requests/'
+
+    def setUp(self):
+        super().setUp()
+        from business_config.models import SubjectMaster
+        self.Subject = SubjectMaster
+        self.bm = SubjectMaster.objects.create(code='BM', name='Bahasa Melayu', level_category='UPPER_SEC')
+        self.admin2 = User.objects.create_user(username='admin2', password='test-pass-123')
+        self.admin2.groups.add(Group.objects.get(name=ADMIN))
+
+    def propose_new(self, code='EKON', note='Pelajar minta'):
+        return self.client.post(self.URL, {
+            'kind': 'SUBJECT', 'action': 'CREATE', 'note': note,
+            'payload': {'code': code, 'name': 'Ekonomi', 'level_category': 'UPPER_SEC', 'stream': 'TERAS'},
+        }, format='json')
+
+    def test_admin_proposal_waits_then_supervisor_approves(self):
+        self.as_role(ADMIN)
+        res = self.propose_new()
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['status'], 'PENDING')
+        self.assertFalse(self.Subject.objects.filter(code='EKON').exists())
+
+        self.as_role(SUPERVISOR)
+        listed = self.client.get(self.URL + '?status=PENDING').data
+        self.assertEqual([r['id'] for r in listed], [res.data['id']])
+        done = self.client.post(f"{self.URL}{res.data['id']}/approve/", {'comment': 'OK'}, format='json')
+        self.assertEqual(done.status_code, 200, done.data)
+        self.assertEqual(done.data['status'], 'APPROVED')
+        self.assertEqual(done.data['decided_by'], 'supervisor')
+        self.assertTrue(self.Subject.objects.filter(code='EKON', is_active=True).exists())
+
+        # The requester is told about the decision once, then it is marked as read
+        self.as_role(ADMIN)
+        self.assertEqual(len(self.client.get(self.URL + '?unseen=1').data), 1)
+        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['approvals']['change_requests_unseen'], 1)
+        self.client.post(self.URL + 'acknowledge/')
+        self.assertEqual(len(self.client.get(self.URL + '?unseen=1').data), 0)
+
+    def test_update_changes_nothing_until_approved_and_keeps_old_values(self):
+        self.as_role(ADMIN)
+        res = self.client.post(self.URL, {
+            'kind': 'SUBJECT', 'action': 'UPDATE', 'target_id': self.bm.id, 'note': 'Ejaan',
+            'payload': {'name': 'BM', 'is_active': False},
+        }, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.bm.refresh_from_db()
+        self.assertEqual((self.bm.name, self.bm.is_active), ('Bahasa Melayu', True))
+        self.assertEqual(res.data['before'], {'name': 'Bahasa Melayu', 'is_active': True})
+        self.assertEqual({c['field'] for c in res.data['changes']}, {'name', 'is_active'})
+
+        self.as_role(MANAGEMENT)
+        self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json')
+        self.bm.refresh_from_db()
+        self.assertEqual((self.bm.name, self.bm.is_active), ('BM', False))
+
+    def test_reject_needs_reason_and_changes_nothing(self):
+        self.as_role(ADMIN)
+        req = self.propose_new().data
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post(f"{self.URL}{req['id']}/reject/", {}, format='json').status_code, 400)
+        res = self.client.post(f"{self.URL}{req['id']}/reject/", {'comment': 'Tidak diperlukan'}, format='json')
+        self.assertEqual(res.data['status'], 'REJECTED')
+        self.assertEqual(res.data['decision_comment'], 'Tidak diperlukan')
+        self.assertFalse(self.Subject.objects.filter(code='EKON').exists())
+        # A decided request cannot be decided again
+        self.assertEqual(self.client.post(f"{self.URL}{req['id']}/approve/", {}, format='json').status_code, 400)
+
+    def test_admin_cannot_decide_and_cannot_see_or_touch_other_admins_requests(self):
+        self.as_role(ADMIN)
+        req = self.propose_new().data
+        self.assertEqual(self.client.post(f"{self.URL}{req['id']}/approve/", {}, format='json').status_code, 403)
+        self.assertEqual(self.client.post(f"{self.URL}{req['id']}/reject/", {'comment': 'x'}, format='json').status_code, 403)
+
+        self.client.force_authenticate(self.admin2)
+        self.assertEqual(self.client.get(self.URL).data, [])
+        self.assertEqual(self.client.get(f"{self.URL}{req['id']}/").status_code, 404)
+        self.assertEqual(self.client.post(f"{self.URL}{req['id']}/withdraw/").status_code, 404)
+
+    def test_requester_can_revise_and_withdraw_until_decided(self):
+        self.as_role(ADMIN)
+        req = self.propose_new().data
+        res = self.client.patch(f"{self.URL}{req['id']}/", {
+            'note': 'Pelajar minta lagi',
+            'payload': {'code': 'EKON', 'name': 'Ekonomi Asas', 'level_category': 'UPPER_SEC', 'stream': 'TERAS'},
+        }, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['payload']['name'], 'Ekonomi Asas')
+
+        self.as_role(SUPERVISOR)  # an approver cannot rewrite someone else's request, only decide it
+        self.assertEqual(self.client.patch(f"{self.URL}{req['id']}/", {'payload': {'name': 'X'}}, format='json').status_code, 403)
+        self.client.post(f"{self.URL}{req['id']}/approve/", {}, format='json')
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.patch(f"{self.URL}{req['id']}/", {'note': 'lagi'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(f"{self.URL}{req['id']}/withdraw/").status_code, 400)
+
+        second = self.propose_new(code='SEJ').data
+        out = self.client.post(f"{self.URL}{second['id']}/withdraw/")
+        self.assertEqual(out.data['status'], 'WITHDRAWN')
+        self.assertFalse(self.Subject.objects.filter(code='SEJ').exists())
+
+    def test_approver_changes_apply_at_once_and_are_recorded(self):
+        self.as_role(SUPERVISOR)
+        res = self.propose_new(note='')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual((res.data['status'], res.data['direct']), ('APPROVED', True))
+        self.assertTrue(self.Subject.objects.filter(code='EKON').exists())
+        self.assertEqual(self.client.get(self.URL).data[0]['target_label'], 'EKON Ekonomi')
+        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['approvals']['change_requests_unseen'], 0)
+
+    def test_checks(self):
+        self.as_role(ADMIN)
+        self.assertEqual(self.propose_new(note='').status_code, 400)  # Admin must give a reason
+        self.assertEqual(self.propose_new(code='BM').status_code, 400)  # code already used
+        self.assertEqual(self.propose_new().status_code, 201)
+        self.assertEqual(self.propose_new().status_code, 400)  # same code already waiting
+        bad = self.client.post(self.URL, {'kind': 'SUBJECT', 'action': 'UPDATE', 'target_id': self.bm.id, 'note': 'x',
+                                          'payload': {'code': 'BM2'}}, format='json')
+        self.assertEqual(bad.status_code, 400)  # the code of an existing subject cannot change
+        same = self.client.post(self.URL, {'kind': 'SUBJECT', 'action': 'UPDATE', 'target_id': self.bm.id, 'note': 'x',
+                                           'payload': {'name': 'Bahasa Melayu'}}, format='json')
+        self.assertEqual(same.status_code, 400)  # nothing changed
+        self.assertEqual(self.client.post(self.URL, {'kind': 'NOPE', 'action': 'CREATE', 'note': 'x', 'payload': {}}, format='json').status_code, 400)
+
+    def test_approval_checks_again_if_the_code_was_taken_meanwhile(self):
+        self.as_role(ADMIN)
+        req = self.propose_new().data
+        self.Subject.objects.create(code='EKON', name='Lain', level_category='UPPER_SEC')
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post(f"{self.URL}{req['id']}/approve/", {}, format='json').status_code, 400)
+        self.assertEqual(self.client.get(f"{self.URL}{req['id']}/").data['status'], 'PENDING')
+
+    def test_subjects_cannot_be_written_directly_by_anyone(self):
+        for role in ALL_ROLES:
+            self.as_role(role)
+            self.assertEqual(self.client.post('/api/v1/business-config/subjects/', {
+                'code': 'X1', 'name': 'X', 'level_category': 'UPPER_SEC'}, format='json').status_code, 405)
+            self.assertEqual(self.client.patch(f'/api/v1/business-config/subjects/{self.bm.id}/', {'name': 'X'}, format='json').status_code, 405)
+        self.assertEqual(self.client.get('/api/v1/business-config/subjects/').status_code, 200)
+
+    def test_dashboard_counts(self):
+        self.as_role(ADMIN)
+        self.propose_new()
+        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['approvals']['change_requests_pending'], 1)
+        self.client.force_authenticate(self.admin2)
+        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['approvals']['change_requests_pending'], 0)
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['approvals']['change_requests_pending'], 1)

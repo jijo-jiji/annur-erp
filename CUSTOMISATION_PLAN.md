@@ -107,7 +107,7 @@ No code reads these by category key (checked by searching backend and frontend).
 | Phase | Work | Size | Done when |
 |---|---|---|---|
 | A | Settings audit log and a typed, range-checked settings table (foundation for all below) | Small | Every setting change appears in the history with who and when. |
-| A2 | Change-request mechanism (propose, approve with comment, notify) for subjects, vendors, categories, new teacher, fee packages, discounts. | Medium | An Admin proposes a subject, a Supervisor approves it, and it becomes usable only then. |
+| A2 | Change-request mechanism (propose, approve with comment, notify) for subjects, vendors, categories, new teacher, fee packages, discounts. | Medium | An Admin proposes a subject, a Supervisor approves it, and it becomes usable only then. **Built for subjects (2026-10-05).** Still to apply: vendors, expense categories, new teacher and active / inactive, fee packages, discounts. |
 | B | Login accounts screen (item 1) | Medium | Management creates a Supervisor, that person logs in and sees only Supervisor screens; last Management account cannot be removed. |
 | C | Slots, days, classrooms (item 2) | Medium | A new Saturday 20:30 slot and a new room can be used in the timetable form with no developer. |
 | D | Centre profile in one place (item 3) | Small | Changing the phone number updates the login page, receipt PDF and voucher PDF. |

@@ -11,6 +11,7 @@ from students.views import attendance_rates
 from teachers.staff import alerts as staff_alerts
 from teachers.models import Teacher, TeacherAttendance, LeaveRequest, TeacherRateIncrement, TeacherPayment
 from . import grades
+from .models import ChangeRequest
 from .permissions import ADMIN, MANAGEMENT
 
 LEVEL_LABELS = {'UPPER': 'Menengah Atas', 'LOWER': 'Menengah Rendah', 'PRIMARY': 'Sekolah Rendah'}
@@ -109,7 +110,7 @@ def class_row(c):
     }
 
 
-def build_dashboard(role, today=None):
+def build_dashboard(role, today=None, user=None):
     today = today or date.today()
     month_start, next_month = month_bounds(today)
     prev_start, _ = month_bounds(month_start - timedelta(days=1))
@@ -164,7 +165,15 @@ def build_dashboard(role, today=None):
     else:
         my_pv = pending_pv.filter(status='PENDING_SUPERVISOR')
 
+    # Change requests: approvers see every pending one, Admin only their own; everyone sees decisions not yet read
+    open_requests = ChangeRequest.objects.filter(status='PENDING')
+    if role == ADMIN:
+        open_requests = open_requests.filter(requested_by=user)
+    unseen_decisions = ChangeRequest.objects.filter(requested_by=user, seen=False).exclude(status='PENDING') if user else ChangeRequest.objects.none()
+
     approvals = {
+        'change_requests_pending': open_requests.count(),
+        'change_requests_unseen': unseen_decisions.count(),
         'vouchers_pending_supervisor': pending_pv.filter(status='PENDING_SUPERVISOR').count(),
         'vouchers_pending_management': pending_pv.filter(status='PENDING_MANAGEMENT').count(),
         'leave_pending': LeaveRequest.objects.filter(status='PENDING').count(),
