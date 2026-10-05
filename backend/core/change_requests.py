@@ -4,6 +4,8 @@
 Each kind of setup data has a handler that says who may propose and who may decide, checks the
 values and applies them. A change made by someone who may decide it applies at once but is recorded
 in the same list; anyone else's waits as PENDING."""
+import re
+from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -21,8 +23,8 @@ class Handler:
         """Return (values to apply, values they replace, label of the record)."""
         raise NotImplementedError
 
-    def apply(self, action, target_id, values):
-        """Save the change and return the record."""
+    def apply(self, action, target_id, values, req=None):
+        """Save the change and return the record. `req` is the request being applied (who asked, who decided)."""
         raise NotImplementedError
 
     def display(self, field, value):
@@ -80,7 +82,7 @@ class ModelHandler(Handler):
             raise ValidationError(f'Sudah ada permohonan ubah untuk {self.noun} ini yang menunggu kelulusan.')
         return values, {k: getattr(obj, k) for k in values}, self.label(lambda f: getattr(obj, f))
 
-    def apply(self, action, target_id, values):
+    def apply(self, action, target_id, values, req=None):
         obj = self.model().objects.filter(pk=target_id).first() if action == 'UPDATE' else None
         serializer = self.serializer(values, obj)
         serializer.is_valid(raise_exception=True)
@@ -164,7 +166,163 @@ class VendorHandler(ModelHandler):
         return str(value) if value not in (None, '') else '—'
 
 
-HANDLERS = {h.kind: h for h in (SubjectHandler(), VendorHandler())}
+class MasterEntryHandler(Handler):
+    """Entries of a master-data list that Management controls (j-status.doc: Supervisor sets the
+    categories and monthly budget, Management approves or rejects)."""
+    master = ''  # DynamicMasterData.category
+    proposers = APPROVER_ROLES
+    approvers = (MANAGEMENT,)
+    editable = ()  # fields that may change after the entry exists
+    noun = ''
+
+    def _entries(self):
+        from business_config.models import DynamicMasterData
+        return DynamicMasterData.objects.filter(category=self.master)
+
+    def _code_and_label(self, data):
+        code = re.sub(r'\s', '', str(data.get('code', ''))).upper()
+        label = str(data.get('label', '')).strip()
+        if not re.fullmatch(r'[A-Z0-9_]{1,60}', code):
+            raise ValidationError({'code': 'Kod mesti huruf besar, nombor atau garis bawah sahaja, tanpa ruang.'})
+        if not label or len(label) > 150:
+            raise ValidationError({'label': 'Nama diperlukan (paling panjang 150 aksara).'})
+        return code, label
+
+    def new_values(self, data):
+        """Checked values for a new entry."""
+        raise NotImplementedError
+
+    def changed_values(self, data):
+        """Checked values for the fields that may change."""
+        raise NotImplementedError
+
+    def current(self, entry):
+        """The entry's fields as the request sees them."""
+        raise NotImplementedError
+
+    def meta(self, values, entry=None):
+        raise NotImplementedError
+
+    def validate(self, action, target_id, data, ignore=None):
+        data = {k: data[k] for k in self.fields if k in data}
+        others = ChangeRequest.objects.filter(kind=self.kind, status='PENDING')
+        if ignore:
+            others = others.exclude(pk=ignore.pk)
+        if action == 'CREATE':
+            values = self.new_values(data)
+            code, label = values['code'], values['label']
+            if self._entries().filter(code=code).exists():
+                raise ValidationError({'code': f'Kod {code} sudah digunakan.'})
+            if self._entries().filter(label__iexact=label).exists():
+                raise ValidationError({'label': f'{self.noun.capitalize()} {label} sudah wujud.'})
+            if others.filter(action='CREATE').filter(payload__code=code).exists() or others.filter(action='CREATE', payload__label__iexact=label).exists():
+                raise ValidationError(f'{self.noun.capitalize()} ini sudah dimohon dan menunggu kelulusan.')
+            return values, {}, f'{code} {label}'
+
+        entry = self._entries().filter(pk=target_id).first()
+        if not entry:
+            raise ValidationError(f'{self.noun.capitalize()} tidak dijumpai.')
+        current = self.current(entry)
+        for field, value in data.items():
+            if field not in self.editable and value != current.get(field):
+                raise ValidationError({field: f'{self.fields[field]} tidak boleh diubah kerana ia digunakan dalam baucar sedia ada.'})
+        values = {k: v for k, v in self.changed_values({f: data[f] for f in self.editable if f in data}).items() if current.get(k) != v}
+        if not values:
+            raise ValidationError('Tiada perubahan untuk dihantar.')
+        if others.filter(action='UPDATE', target_id=entry.pk).exists():
+            raise ValidationError(f'Sudah ada permohonan ubah untuk {self.noun} ini yang menunggu kelulusan.')
+        return values, {k: current[k] for k in values}, f'{entry.code} {entry.label}'
+
+    def apply(self, action, target_id, values, req=None):
+        from business_config.models import DynamicMasterData
+        if action == 'CREATE':
+            return DynamicMasterData.objects.create(
+                category=self.master, code=values['code'], label=values['label'], meta_info=self.meta(values), status='APPROVED',
+                created_by=req.requested_by_name if req else '', approved_by=req.decided_by if req else '',
+                proposal_note=req.note if req else '', is_locked=True,
+            )
+        entry = self._entries().get(pk=target_id)
+        entry.meta_info = self.meta(values, entry)
+        entry.save()
+        return entry
+
+
+class ExpenseCategoryHandler(MasterEntryHandler):
+    kind = 'EXPENSE_CATEGORY'
+    master = '18_expense_cat'
+    fields = {'code': 'Kod', 'label': 'Nama kategori', 'budget': 'Bajet bulanan'}
+    editable = ('budget',)
+    noun = 'kategori'
+
+    @staticmethod
+    def _budget(value):
+        try:
+            budget = Decimal(str(value if value not in (None, '') else 0)).quantize(Decimal('0.01'))
+        except InvalidOperation:
+            raise ValidationError({'budget': 'Bajet mesti nombor.'})
+        if budget < 0 or budget > Decimal('10000000'):
+            raise ValidationError({'budget': 'Bajet tidak sah.'})
+        return float(budget)
+
+    def new_values(self, data):
+        code, label = self._code_and_label(data)
+        return {'code': code, 'label': label, 'budget': self._budget(data.get('budget'))}
+
+    def changed_values(self, data):
+        return {'budget': self._budget(data['budget'])} if 'budget' in data else {}
+
+    def current(self, entry):
+        return {'code': entry.code, 'label': entry.label, 'budget': float(entry.meta_info.get('budget') or 0)}
+
+    def meta(self, values, entry=None):
+        meta = dict(entry.meta_info) if entry else {}
+        if 'budget' in values:
+            meta['budget'] = values['budget']
+        return meta
+
+    def display(self, field, value):
+        return f'RM {float(value):,.2f}' if field == 'budget' else str(value)
+
+
+class ExpenseSubcategoryHandler(MasterEntryHandler):
+    kind = 'EXPENSE_SUBCATEGORY'
+    master = '19_expense_subcat'
+    fields = {'code': 'Kod', 'label': 'Nama subkategori', 'cat': 'Kategori'}
+    editable = ('cat',)
+    noun = 'subkategori'
+
+    def _category(self, code):
+        from business_config.models import DynamicMasterData
+        code = str(code or '')
+        if not DynamicMasterData.objects.filter(category='18_expense_cat', code=code, status='APPROVED').exists():
+            raise ValidationError({'cat': 'Pilih kategori perbelanjaan yang sah.'})
+        return code
+
+    def new_values(self, data):
+        code, label = self._code_and_label(data)
+        return {'code': code, 'label': label, 'cat': self._category(data.get('cat'))}
+
+    def changed_values(self, data):
+        return {'cat': self._category(data['cat'])} if 'cat' in data else {}
+
+    def current(self, entry):
+        return {'code': entry.code, 'label': entry.label, 'cat': entry.meta_info.get('cat', '')}
+
+    def meta(self, values, entry=None):
+        meta = dict(entry.meta_info) if entry else {}
+        if 'cat' in values:
+            meta['cat'] = values['cat']
+        return meta
+
+    def display(self, field, value):
+        if field == 'cat':
+            from business_config.models import DynamicMasterData
+            return DynamicMasterData.objects.filter(category='18_expense_cat', code=value).values_list('label', flat=True).first() or str(value)
+        return str(value)
+
+
+HANDLERS = {h.kind: h for h in (SubjectHandler(), VendorHandler(), ExpenseCategoryHandler(), ExpenseSubcategoryHandler())}
+
 
 
 def handler_for(kind):
@@ -217,10 +375,9 @@ def submit(user, kind, action, target_id, data, note):
         payload=values, before=before, note=note, requested_by=user, requested_by_name=display_name(user),
     )
     if direct:
-        record = handler.apply(action, target_id, values)
-        req.target_id = record.pk
         req.status, req.direct, req.seen = 'APPROVED', True, True
         req.decided_by, req.decided_at = display_name(user), timezone.now()
+        req.target_id = handler.apply(action, target_id, values, req).pk
     req.save()
     return req
 
@@ -252,12 +409,11 @@ def approve(req, user, comment):
     handler = handler_for(req.kind)
     # Checked again: the data may have changed since the request was made
     values, before, label = handler.validate(req.action, req.target_id, req.payload, ignore=req)
-    record = handler.apply(req.action, req.target_id, values)
-    req.target_id = record.pk
-    req.payload, req.before = values, before
     req.status, req.decided_by, req.decided_at = 'APPROVED', display_name(user), timezone.now()
     req.decision_comment = (comment or '').strip()
     req.seen = req.requested_by_id == user.id
+    req.payload, req.before = values, before
+    req.target_id = handler.apply(req.action, req.target_id, values, req).pk
     req.save()
     return req
 

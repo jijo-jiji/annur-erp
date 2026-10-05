@@ -9,7 +9,10 @@ class ChangeRequest(models.Model):
     """A proposed change to setup data (a subject, later vendors, categories, ...).
     Admin's proposals wait as PENDING until Supervisor / Management decides; changes made by
     Supervisor / Management apply at once and are recorded here too, so the history is complete."""
-    KINDS = [('SUBJECT', 'Subjek'), ('VENDOR', 'Pembekal')]
+    KINDS = [
+        ('SUBJECT', 'Subjek'), ('VENDOR', 'Pembekal'),
+        ('EXPENSE_CATEGORY', 'Kategori perbelanjaan'), ('EXPENSE_SUBCATEGORY', 'Subkategori perbelanjaan'),
+    ]
     ACTIONS = [('CREATE', 'Tambah'), ('UPDATE', 'Ubah')]
     STATUS_CHOICES = [
         ('PENDING', 'Menunggu kelulusan'),

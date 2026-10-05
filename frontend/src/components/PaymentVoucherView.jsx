@@ -9,6 +9,7 @@ import { date, rm, todayISO } from '../lib/format';
 import { AttachmentList, SignaturePad } from './Attachments';
 import { downloadCsv } from '../lib/csv';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
+import ExpenseCategories from './ExpenseCategories';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, DescriptionList, EmptyState, Input, Modal, PageHeader, Select, Table, Tabs, Td, Textarea, Th } from './ui';
 
@@ -122,10 +123,13 @@ export default function PaymentVoucherView({ role }) {
           { value: 'all', label: 'Semua baucar', count: vouchers.length },
           { value: 'pending', label: 'Menunggu kelulusan', count: pending.length },
           { value: 'vendors', label: 'Pembekal', count: vendors.length },
+          ...(can(role, 'categories.manage') ? [{ value: 'categories', label: 'Kategori' }] : []),
         ]}
       />
 
-      {tab === 'vendors' ? (
+      {tab === 'categories' && can(role, 'categories.manage') ? (
+        <ExpenseCategories role={role} />
+      ) : tab === 'vendors' ? (
         <div className="space-y-6">
         <Card>
           <CardHeader

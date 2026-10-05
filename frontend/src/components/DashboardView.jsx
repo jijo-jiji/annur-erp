@@ -35,6 +35,8 @@ const INVOICE_STATUS = [
 const REQUEST_PAGES = {
   SUBJECT: { name: 'subjek', tab: 'settings', query: '' },
   VENDOR: { name: 'pembekal', tab: 'expenses', query: '?tab=vendors' },
+  EXPENSE_CATEGORY: { name: 'kategori perbelanjaan', tab: 'expenses', query: '?tab=categories' },
+  EXPENSE_SUBCATEGORY: { name: 'subkategori perbelanjaan', tab: 'expenses', query: '?tab=categories' },
 };
 
 function buildNotices(data, role) {

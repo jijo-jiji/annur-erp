@@ -40,6 +40,9 @@ const STATUS = {
   REJECTED: { label: 'Ditolak', tone: 'red' },
 };
 
+// Lists changed only through change requests, in Baucar bayaran (Supervisor asks, Management approves)
+const REQUEST_ONLY = ['18_expense_cat', '19_expense_subcat'];
+
 // Grade entries keep structured details; other lists keep one free-text detail
 const gradeMeta = (v) => ({ level: v.level || 'UPPER', order: Number(v.order) || 0, next: v.next || '', fee_group: v.fee_group || '', description: v.description || '' });
 
@@ -96,7 +99,7 @@ export default function MasterDataView({ role }) {
         actions={
           <>
             {pendingTotal > 0 && <Badge tone="amber">{pendingTotal} menunggu kelulusan</Badge>}
-            <Button variant="primary" icon={Plus} onClick={() => setDialog({ type: 'add' })}>{canApprove ? 'Tambah nilai' : 'Cadang nilai baharu'}</Button>
+            {!REQUEST_ONLY.includes(category) && <Button variant="primary" icon={Plus} onClick={() => setDialog({ type: 'add' })}>{canApprove ? 'Tambah nilai' : 'Cadang nilai baharu'}</Button>}
           </>
         }
       />
@@ -137,6 +140,11 @@ export default function MasterDataView({ role }) {
               />
             }
           />
+          {REQUEST_ONLY.includes(category) && (
+            <p className="border-b border-gray-100 bg-gray-50 px-5 py-3 text-[13px] text-gray-600">
+              Senarai ini diurus di <a href="#/vouchers?tab=categories" className="font-medium text-brand-700 hover:underline">Baucar bayaran &gt; Kategori</a>: Supervisor memohon, Pengurusan meluluskan.
+            </p>
+          )}
           {rows.length === 0 ? (
             <EmptyState icon={Database} title="Tiada nilai dalam senarai ini" />
           ) : (
@@ -179,6 +187,8 @@ export default function MasterDataView({ role }) {
                               </Button>
                             </>
                           ) : <span className="text-[13px] text-gray-400">Menunggu supervisor</span>
+                        ) : REQUEST_ONLY.includes(item.category) ? (
+                          <span className="flex items-center gap-1 text-[13px] text-gray-400"><Lock className="size-3.5" /> Melalui permohonan</span>
                         ) : canApprove ? (
                           <Button size="sm" onClick={() => setDialog({ type: 'edit', item })}>Ubah</Button>
                         ) : (

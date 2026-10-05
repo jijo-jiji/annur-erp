@@ -613,3 +613,102 @@ class VendorChangeRequestTests(RoleTestBase):
             self.assertEqual(self.client.patch(f'/api/v1/expenses/vendors/{self.vendor.id}/', {'bank_account': '1'}, format='json').status_code, 405)
             self.assertEqual(self.client.get('/api/v1/expenses/vendors/').status_code, 200)
         self.assertEqual(Vendor.objects.get(pk=self.vendor.id).bank_account, '111')
+
+
+class ExpenseCategoryRequestTests(RoleTestBase):
+    """Expense categories and monthly budget: Supervisor sets, Management approves; Admin only picks one."""
+    URL = '/api/v1/change-requests/'
+
+    def setUp(self):
+        super().setUp()
+        self.cat = DynamicMasterData.objects.create(
+            category='18_expense_cat', code='SEWA', label='Sewa Premis', meta_info={'budget': 3500.0}, status='APPROVED', is_locked=True)
+
+    def ask(self, kind, action, payload, target_id=None, note='Perlu'):
+        return self.client.post(self.URL, {'kind': kind, 'action': action, 'target_id': target_id, 'payload': payload, 'note': note}, format='json')
+
+    def new_cat(self, code='GAJI', label='Gaji Staf', budget=4500, note='Perlu'):
+        return self.ask('EXPENSE_CATEGORY', 'CREATE', {'code': code, 'label': label, 'budget': budget}, note=note)
+
+    def test_admin_cannot_ask_for_categories(self):
+        self.as_role(ADMIN)
+        self.assertEqual(self.new_cat().status_code, 403)
+        self.assertEqual(self.ask('EXPENSE_SUBCATEGORY', 'CREATE', {'code': 'X', 'label': 'X', 'cat': 'SEWA'}).status_code, 403)
+
+    def test_supervisor_asks_management_approves_and_the_category_becomes_usable(self):
+        self.as_role(SUPERVISOR)
+        res = self.new_cat()
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['status'], 'PENDING')
+        self.assertFalse(DynamicMasterData.objects.filter(category='18_expense_cat', code='GAJI').exists())
+        self.assertEqual(self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json').status_code, 403)
+
+        self.as_role(MANAGEMENT)
+        done = self.client.post(f"{self.URL}{res.data['id']}/approve/", {'comment': 'OK'}, format='json')
+        self.assertEqual(done.status_code, 200, done.data)
+        row = DynamicMasterData.objects.get(category='18_expense_cat', code='GAJI')
+        self.assertEqual((row.status, row.label, row.meta_info['budget'], row.is_locked), ('APPROVED', 'Gaji Staf', 4500.0, True))
+        self.assertEqual((row.created_by, row.approved_by), ('supervisor', 'management'))
+        self.as_role(ADMIN)  # Admin can now pick it in the voucher drop-down
+        listed = self.client.get('/api/v1/business-config/master-data/?category=18_expense_cat&status=APPROVED').data
+        self.assertIn('GAJI', [r['code'] for r in listed])
+
+    def test_budget_change_waits_and_label_cannot_change(self):
+        self.as_role(SUPERVISOR)
+        res = self.ask('EXPENSE_CATEGORY', 'UPDATE', {'budget': 4000}, target_id=self.cat.id)
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['changes'][0]['before'], 'RM 3,500.00')
+        self.assertEqual(res.data['changes'][0]['after'], 'RM 4,000.00')
+        self.cat.refresh_from_db()
+        self.assertEqual(self.cat.meta_info['budget'], 3500.0)
+        # a name is stored on every voucher, so it cannot change
+        self.assertEqual(self.ask('EXPENSE_CATEGORY', 'UPDATE', {'label': 'Lain'}, target_id=self.cat.id).status_code, 400)
+        self.as_role(MANAGEMENT)
+        self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json')
+        self.cat.refresh_from_db()
+        self.assertEqual((self.cat.meta_info['budget'], self.cat.label), (4000.0, 'Sewa Premis'))
+
+    def test_subcategory_needs_an_approved_category(self):
+        self.as_role(SUPERVISOR)
+        bad = self.ask('EXPENSE_SUBCATEGORY', 'CREATE', {'code': 'SUB_X', 'label': 'Sewa kedai', 'cat': 'TIADA'})
+        self.assertEqual(bad.status_code, 400)
+        ok = self.ask('EXPENSE_SUBCATEGORY', 'CREATE', {'code': 'SUB_X', 'label': 'Sewa kedai', 'cat': 'SEWA'})
+        self.assertEqual(ok.status_code, 201, ok.data)
+        self.assertEqual(ok.data['changes'][-1]['after'], 'Sewa Premis')  # shown by name, not code
+        self.as_role(MANAGEMENT)
+        self.client.post(f"{self.URL}{ok.data['id']}/approve/", {}, format='json')
+        row = DynamicMasterData.objects.get(category='19_expense_subcat', code='SUB_X')
+        self.assertEqual((row.meta_info, row.status), ({'cat': 'SEWA'}, 'APPROVED'))
+
+    def test_management_changes_apply_at_once(self):
+        self.as_role(MANAGEMENT)
+        res = self.new_cat(code='jamuan', label='Jamuan', budget='500.5')
+        self.assertEqual((res.status_code, res.data['status'], res.data['direct']), (201, 'APPROVED', True))
+        row = DynamicMasterData.objects.get(category='18_expense_cat', code='JAMUAN')
+        self.assertEqual(row.meta_info['budget'], 500.5)
+
+    def test_checks(self):
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.new_cat(code='SEWA').status_code, 400)  # code used
+        self.assertEqual(self.new_cat(label='sewa premis').status_code, 400)  # name used (vouchers match by name)
+        self.assertEqual(self.new_cat(code='A B!').status_code, 400)  # bad code
+        self.assertEqual(self.new_cat(budget=-5).status_code, 400)
+        self.assertEqual(self.new_cat(budget='abc').status_code, 400)
+        self.assertEqual(self.new_cat(note='').status_code, 400)
+        self.assertEqual(self.new_cat().status_code, 201)
+        self.assertEqual(self.new_cat().status_code, 400)  # already waiting
+        self.assertEqual(self.new_cat(code='GAJI2', label='gaji staf').status_code, 400)  # same name already waiting
+
+    def test_the_two_lists_cannot_be_changed_through_data_induk(self):
+        for role in (ADMIN, SUPERVISOR, MANAGEMENT):
+            self.as_role(role)
+            res = self.client.post('/api/v1/business-config/master-data/', {'category': '18_expense_cat', 'code': 'X', 'label': 'X'}, format='json')
+            self.assertEqual(res.status_code, 403)
+            if role != ADMIN:
+                self.assertEqual(self.client.patch(f'/api/v1/business-config/master-data/{self.cat.id}/', {'label': 'X'}, format='json').status_code, 403)
+                self.assertEqual(self.client.delete(f'/api/v1/business-config/master-data/{self.cat.id}/').status_code, 403)
+        # other lists still work as before
+        self.as_role(ADMIN)
+        ok = self.client.post('/api/v1/business-config/master-data/', {'category': '3_lead_source', 'code': 'X1', 'label': 'X1'}, format='json')
+        self.assertEqual(ok.status_code, 201)
+        self.assertTrue(DynamicMasterData.objects.filter(pk=self.cat.id, label='Sewa Premis').exists())

@@ -446,6 +446,11 @@ export function StoreProvider({ children }) {
         }), { reloads: ['results'] });
       },
 
+      // Any kind of setup change by request (categories, ...): who waits and who decides is decided by the server
+      submitChangeRequest({ kind, action, pk, values, note }) {
+        return act(() => changeRequestApi.create({ kind, action, target_id: pk, payload: values, note }),
+          { refresh: app.refreshAllData });
+      },
       // Vendor details: Supervisor asks, Management approves (Management's own changes apply at once)
       submitVendor({ action, pk, values, note }) {
         return act(() => changeRequestApi.create({ kind: 'VENDOR', action, target_id: pk, payload: values, note }),

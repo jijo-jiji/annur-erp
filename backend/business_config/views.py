@@ -33,6 +33,15 @@ class TeacherRateSettingViewSet(viewsets.ModelViewSet):
     serializer_class = TeacherRateSettingSerializer
     write_roles = (MANAGEMENT,)
 
+# Lists that change only through change requests (Supervisor asks, Management approves)
+REQUEST_ONLY_LISTS = ('18_expense_cat', '19_expense_subcat')
+
+
+def _not_for_request_only(category):
+    if category in REQUEST_ONLY_LISTS:
+        raise PermissionDenied('Kategori perbelanjaan diubah melalui permohonan perubahan di Baucar bayaran > Kategori.')
+
+
 class DynamicMasterDataViewSet(viewsets.ModelViewSet):
     queryset = DynamicMasterData.objects.all().order_by('category', 'code')
     serializer_class = DynamicMasterDataSerializer
@@ -48,6 +57,7 @@ class DynamicMasterDataViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
+        _not_for_request_only(serializer.validated_data.get('category'))
         # Admin proposals wait for approval; Supervisor/Management entries are approved immediately
         user = self.request.user
         if get_role(user) in APPROVER_ROLES:
@@ -55,7 +65,12 @@ class DynamicMasterDataViewSet(viewsets.ModelViewSet):
         else:
             serializer.save(status='PENDING', created_by=display_name(user), is_locked=False)
 
+    def perform_destroy(self, instance):
+        _not_for_request_only(instance.category)
+        instance.delete()
+
     def perform_update(self, serializer):
+        _not_for_request_only(serializer.instance.category)
         # PIC may edit until approved; once locked only Supervisor/Management may change it
         if serializer.instance.is_locked and get_role(self.request.user) not in APPROVER_ROLES:
             raise PermissionDenied('Data ini telah diluluskan. Hanya Supervisor/Management boleh mengubahnya.')
@@ -65,6 +80,7 @@ class DynamicMasterDataViewSet(viewsets.ModelViewSet):
     def approve(self, request, pk=None):
         require_role(request, *APPROVER_ROLES)
         master_item = self.get_object()
+        _not_for_request_only(master_item.category)
         master_item.status = 'APPROVED'
         master_item.approved_by = display_name(request.user)
         master_item.rejection_reason = ''
@@ -76,6 +92,7 @@ class DynamicMasterDataViewSet(viewsets.ModelViewSet):
     def reject(self, request, pk=None):
         require_role(request, *APPROVER_ROLES)
         master_item = self.get_object()
+        _not_for_request_only(master_item.category)
         reason = request.data.get('rejection_reason', 'Ditolak oleh pihak pengurusan / supervisor.')
         master_item.status = 'REJECTED'
         master_item.approved_by = display_name(request.user)

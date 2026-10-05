@@ -51,6 +51,7 @@ export const PERMISSIONS = {
     'timetable.edit', // changes wait for Management
     'vouchers.approve.2', // RM500 – RM3,000
     'vendors.manage', // asks for vendor changes; Management approves
+    'categories.manage', // asks for expense category changes; Management approves
     'masterdata.approve',
     'staff.manage',
     'reports.view',
@@ -79,6 +80,7 @@ export const PERMISSIONS = {
     'vouchers.approve.2',
     'vouchers.approve.3', // above RM3,000
     'vendors.manage',
+    'categories.manage',
     'masterdata.approve',
     'staff.manage',
     'staff.jobs', // job details, add staff
