@@ -6,6 +6,11 @@ class VendorSerializer(serializers.ModelSerializer):
         model = Vendor
         fields = '__all__'
 
+    def validate_status(self, value):
+        if value not in ('ACTIVE', 'INACTIVE'):
+            raise serializers.ValidationError('Status mesti Aktif atau Tidak aktif.')
+        return value
+
 class PaymentVoucherSerializer(serializers.ModelSerializer):
     vendor_name = serializers.CharField(source='vendor.vendor_name', read_only=True)
     vendor_tin = serializers.CharField(source='vendor.tin_number', read_only=True)

@@ -24,10 +24,10 @@ def tier_and_initial_status(amount):
     return 'TIER_3', 'PENDING_MANAGEMENT'
 
 
-class VendorViewSet(viewsets.ModelViewSet):
+class VendorViewSet(viewsets.ReadOnlyModelViewSet):
+    """Vendor details change through change requests (Supervisor asks, Management approves), never here."""
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
-    write_roles = APPROVER_ROLES
 
 class PaymentVoucherViewSet(viewsets.ModelViewSet):
     queryset = PaymentVoucher.objects.all().select_related('vendor').order_by('-date')

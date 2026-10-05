@@ -10,7 +10,7 @@ from students.models import Student, StudentExamResult, StudentEvent, ClassWaitl
 from students.views import attendance_rates
 from teachers.staff import alerts as staff_alerts
 from teachers.models import Teacher, TeacherAttendance, LeaveRequest, TeacherRateIncrement, TeacherPayment
-from . import grades
+from . import change_requests, grades
 from .models import ChangeRequest
 from .permissions import ADMIN, MANAGEMENT
 
@@ -110,6 +110,10 @@ def class_row(c):
     }
 
 
+def by_kind(qs):
+    return {row['kind']: row['n'] for row in qs.values('kind').annotate(n=Count('id'))}
+
+
 def build_dashboard(role, today=None, user=None):
     today = today or date.today()
     month_start, next_month = month_bounds(today)
@@ -165,15 +169,19 @@ def build_dashboard(role, today=None, user=None):
     else:
         my_pv = pending_pv.filter(status='PENDING_SUPERVISOR')
 
-    # Change requests: approvers see every pending one, Admin only their own; everyone sees decisions not yet read
-    open_requests = ChangeRequest.objects.filter(status='PENDING')
-    if role == ADMIN:
-        open_requests = open_requests.filter(requested_by=user)
+    # Change requests: what this role can decide, what the user asked that still waits, and decisions not yet read
+    to_decide = ChangeRequest.objects.filter(status='PENDING', kind__in=change_requests.kinds_decided_by(role))
+    my_pending = ChangeRequest.objects.filter(status='PENDING', requested_by=user) if user else ChangeRequest.objects.none()
     unseen_decisions = ChangeRequest.objects.filter(requested_by=user, seen=False).exclude(status='PENDING') if user else ChangeRequest.objects.none()
 
     approvals = {
-        'change_requests_pending': open_requests.count(),
+        'change_requests_pending': to_decide.count(),
+        'change_requests_mine_pending': my_pending.count(),
         'change_requests_unseen': unseen_decisions.count(),
+        # The same, per kind of request, so each notice can link to the page where it is handled
+        'change_requests_to_decide_by_kind': by_kind(to_decide),
+        'change_requests_mine_by_kind': by_kind(my_pending),
+        'change_requests_unseen_by_kind': by_kind(unseen_decisions),
         'vouchers_pending_supervisor': pending_pv.filter(status='PENDING_SUPERVISOR').count(),
         'vouchers_pending_management': pending_pv.filter(status='PENDING_MANAGEMENT').count(),
         'leave_pending': LeaveRequest.objects.filter(status='PENDING').count(),

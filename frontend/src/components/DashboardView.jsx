@@ -31,6 +31,12 @@ const INVOICE_STATUS = [
 ];
 
 // What needs attention, most urgent first. Only what the role can act on or should know.
+// Where each kind of change request is handled
+const REQUEST_PAGES = {
+  SUBJECT: { name: 'subjek', tab: 'settings', query: '' },
+  VENDOR: { name: 'pembekal', tab: 'expenses', query: '?tab=vendors' },
+};
+
 function buildNotices(data, role) {
   const { classes, finance, approvals, attendance, teachers, staff } = data;
   const approver = role !== 'ADMIN';
@@ -48,9 +54,15 @@ function buildNotices(data, role) {
   add(finance.outstanding > 0 ? 1 : 0, 'amber', `Tunggakan yuran ${rm(finance.outstanding)}`, 'billing', 'Susulan');
   add(approvals.lead_followups_due, 'amber', `${approvals.lead_followups_due} prospek perlu susulan`, 'leads', 'Hubungi', 'Lebih seminggu sejak tindakan terakhir');
   add(classes.full.length, 'amber', `${classes.full.length} kelas penuh`, 'timetable', 'Lihat jadual');
-  add(approvals.change_requests_unseen, 'blue', `${approvals.change_requests_unseen} keputusan baharu pada permohonan perubahan anda`, 'settings', 'Lihat');
+  // Change requests: what waits for this role, what the user asked, and decisions not yet read; each links to its page
+  const requestNotices = (byKind, tone, text, action) => Object.entries(byKind || {}).forEach(([kind, n]) => {
+    const page = REQUEST_PAGES[kind];
+    if (n && page) out.push({ key: `cr-${tone}-${text(n, page.name)}`, tone, title: text(n, page.name), href: `#/${routeOf(page.tab)}${page.query}`, action });
+  });
+  requestNotices(approvals.change_requests_to_decide_by_kind, 'amber', (n, name) => `${n} permohonan perubahan ${name} menunggu kelulusan anda`, 'Semak');
+  requestNotices(approvals.change_requests_mine_by_kind, 'blue', (n, name) => `${n} permohonan perubahan ${name} anda menunggu kelulusan`, 'Lihat');
+  requestNotices(approvals.change_requests_unseen_by_kind, 'blue', (n, name) => `${n} keputusan baharu pada permohonan perubahan ${name} anda`, 'Lihat');
   if (approver) {
-    add(approvals.change_requests_pending, 'amber', `${approvals.change_requests_pending} permohonan perubahan menunggu kelulusan`, 'settings', 'Semak');
     add(approvals.vouchers_pending_supervisor, 'amber', `${approvals.vouchers_pending_supervisor} baucar RM500 hingga RM3,000 menunggu kelulusan`, 'expenses', 'Semak');
     add(approvals.reschedules_pending, 'amber', `${approvals.reschedules_pending} rekod batal / ganti kelas menunggu kelulusan`, 'reschedules', 'Luluskan');
     add(approvals.leave_pending, 'amber', `${approvals.leave_pending} permohonan cuti staf menunggu kelulusan`, 'staff_hr', 'Semak');
@@ -62,7 +74,6 @@ function buildNotices(data, role) {
       `Permit mengajar ${p.name} ${p.days_left < 0 ? 'telah luput' : `luput dalam ${p.days_left} hari`}`, 'teachers', 'Lihat', date(p.expiry)));
     (staff?.birthdays || []).forEach((b) => add(1, 'blue', `Hari lahir ${b.name} ${b.days_left === 0 ? 'hari ini' : `dalam ${b.days_left} hari`}`, 'staff_hr', 'Lihat'));
   } else {
-    add(approvals.change_requests_pending, 'blue', `${approvals.change_requests_pending} permohonan perubahan anda menunggu kelulusan`, 'settings', 'Lihat');
     const waiting = approvals.vouchers_pending_supervisor + approvals.vouchers_pending_management;
     add(waiting, 'blue', `${waiting} baucar sedang menunggu kelulusan`, 'expenses');
     add(approvals.reschedules_pending, 'blue', `${approvals.reschedules_pending} rekod batal / ganti kelas menunggu kelulusan supervisor`, 'reschedules');

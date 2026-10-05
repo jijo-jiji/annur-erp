@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { changeRequestApi } from '../api/client';
 import { date } from '../lib/format';
-import { isApprover } from '../lib/permissions';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, EmptyState, Segmented, useToast } from './ui';
 
@@ -9,15 +8,22 @@ const STATUS_TONE = { PENDING: 'amber', APPROVED: 'green', REJECTED: 'red', WITH
 
 const errorText = (err) => (err?.data && typeof err.data === 'object' ? Object.values(err.data).flat().join(' ') : '') || err?.message || 'Ralat.';
 
+// The requests of one kind (subject, vendor, ...) and a way to reload them
+export function useChangeRequests(kind) {
+  const [requests, setRequests] = useState([]);
+  const load = useCallback(() => changeRequestApi.list(kind).then(setRequests).catch(() => setRequests([])), [kind]);
+  useEffect(() => { load(); }, [load]);
+  return { requests, load };
+}
+
 // Requests to change setup data: Admin's wait here for Supervisor / Management; the person who asked
 // can revise or withdraw until it is decided, and sees the decision (with the comment) afterwards.
 // `requests` and `reload` come from the screen that owns the list; `onApplied` refreshes the data changed.
-export default function ChangeRequestsPanel({ role, requests, reload, onApplied, editFields, editInitial, title = 'Permohonan perubahan' }) {
+export default function ChangeRequestsPanel({ requests, reload, onApplied, editFields, editInitial, description, title = 'Permohonan perubahan' }) {
   const notify = useToast();
   const [tab, setTab] = useState('PENDING');
   const [rejecting, setRejecting] = useState(null);
   const [editing, setEditing] = useState(null);
-  const approver = isApprover(role);
 
   const pending = requests.filter((r) => r.status === 'PENDING');
   const decided = requests.filter((r) => r.status !== 'PENDING');
@@ -45,7 +51,7 @@ export default function ChangeRequestsPanel({ role, requests, reload, onApplied,
     <Card>
       <CardHeader
         title={title}
-        description={approver ? 'Permohonan Admin menunggu kelulusan. Perubahan Supervisor dan Pengurusan terus berkuat kuasa dan direkod di sini.' : 'Perubahan anda berkuat kuasa selepas diluluskan oleh Supervisor atau Pengurusan.'}
+        description={description}
         actions={
           <Segmented
             value={tab}
@@ -86,7 +92,7 @@ export default function ChangeRequestsPanel({ role, requests, reload, onApplied,
               </div>
               <div className="flex items-center gap-1.5">
                 <Badge tone={STATUS_TONE[r.status]}>{r.status_label}</Badge>
-                {r.status === 'PENDING' && approver && (
+                {r.can_decide && (
                   <>
                     <Button size="sm" variant="danger" onClick={() => setRejecting(r)}>Tolak</Button>
                     <Button size="sm" variant="primary" onClick={() => run(() => changeRequestApi.approve(r.id), 'Permohonan diluluskan.').catch(() => {})}>Luluskan</Button>

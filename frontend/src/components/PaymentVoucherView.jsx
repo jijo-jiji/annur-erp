@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Building2, Download, FileText, Plus, Printer } from 'lucide-react';
-import { request } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { CENTRE } from '../lib/config';
 import { useStore } from '../store';
@@ -9,6 +8,7 @@ import { can } from '../lib/permissions';
 import { date, rm, todayISO } from '../lib/format';
 import { AttachmentList, SignaturePad } from './Attachments';
 import { downloadCsv } from '../lib/csv';
+import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, DescriptionList, EmptyState, Input, Modal, PageHeader, Select, Table, Tabs, Td, Textarea, Th } from './ui';
 
@@ -39,18 +39,49 @@ function canDecide(role, v) {
   return false;
 }
 
+const VENDOR_REASON = { name: 'note', label: 'Sebab permohonan', type: 'textarea', required: true, hint: 'Pengurusan akan melihat sebab ini semasa membuat keputusan.' };
+
+function vendorFields(editing) {
+  return [
+    { name: 'vendor_name', label: 'Nama pembekal', required: true },
+    { name: 'vendor_id', label: 'No. SSM / ID pembekal', required: true },
+    { name: 'tin_number', label: 'No. cukai (TIN)' },
+    { name: 'pic_name', label: 'Pegawai dihubungi (PIC)' },
+    { name: 'phone_number', label: 'Telefon' },
+    { name: 'address', label: 'Alamat', type: 'textarea' },
+    { name: 'bank_name', label: 'Bank' },
+    { name: 'bank_account', label: 'No. akaun bank' },
+    ...(editing ? [{ name: 'status', label: 'Status', type: 'select', required: true, options: [{ value: 'ACTIVE', label: 'Aktif' }, { value: 'INACTIVE', label: 'Tidak aktif' }] }] : []),
+  ];
+}
+
+const vendorInitial = (v = {}) => ({
+  vendor_name: v.vendor_name || '', vendor_id: v.vendor_id || '', tin_number: v.tin_number || '', pic_name: v.pic_name || '',
+  phone_number: v.phone_number || '', address: v.address || '', bank_name: v.bank_name || '', bank_account: v.bank_account || '',
+  status: v.status || 'ACTIVE', note: '',
+});
+
 export default function PaymentVoucherView({ role }) {
-  const { vouchers, vendors, approveVoucher, rejectVoucher } = useStore();
+  const { vouchers, vendors, approveVoucher, rejectVoucher, submitVendor } = useStore();
   const { refreshAllData, showToast } = useApp();
-  const [tab, setTab] = useState('all');
+  const [tab, setTab] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'all');
   const [creating, setCreating] = useState(false);
   const [viewing, setViewing] = useState(null);
   const [rejecting, setRejecting] = useState(null);
-  const [addingVendor, setAddingVendor] = useState(false);
+  const [vendorDialog, setVendorDialog] = useState(null); // { type: 'add' } | { type: 'edit', vendor }
+  const { requests: vendorRequests, load: loadVendorRequests } = useChangeRequests('VENDOR');
 
   const pending = vouchers.filter((v) => v.status === 'PENDING');
   const rows = tab === 'pending' ? pending : vouchers;
-  const canAddVendor = can(role, 'vouchers.approve.2');
+  // Vendor details: Supervisor asks, Management approves (Management's own changes apply at once)
+  const canManageVendors = can(role, 'vendors.manage');
+  const vendorDirect = role === 'MANAGEMENT';
+  const vendorWaiting = new Set(vendorRequests.filter((r) => r.status === 'PENDING' && r.action === 'UPDATE').map((r) => r.target_id));
+  const saveVendor = async (action, pk, values, note) => {
+    const done = await submitVendor({ action, pk, values, note });
+    showToast(done.status === 'PENDING' ? 'Permohonan dihantar. Ia berkuat kuasa selepas diluluskan oleh Pengurusan.' : 'Maklumat pembekal disimpan.');
+    await loadVendorRequests();
+  };
   const open = viewing && vouchers.find((v) => v.pk === viewing);
 
   const exportCsv = () => downloadCsv('baucar-bayaran.csv',
@@ -95,16 +126,17 @@ export default function PaymentVoucherView({ role }) {
       />
 
       {tab === 'vendors' ? (
+        <div className="space-y-6">
         <Card>
           <CardHeader
             title="Pembekal berdaftar"
             description="Baucar hanya boleh dibuat kepada pembekal dalam senarai ini."
-            actions={canAddVendor && <Button size="sm" variant="primary" icon={Plus} onClick={() => setAddingVendor(true)}>Tambah pembekal</Button>}
+            actions={canManageVendors && <Button size="sm" variant="primary" icon={Plus} onClick={() => setVendorDialog({ type: 'add' })}>{vendorDirect ? 'Tambah pembekal' : 'Mohon pembekal baharu'}</Button>}
           />
           {vendors.length === 0 ? <EmptyState icon={Building2} title="Tiada pembekal berdaftar" /> : (
             <Table>
               <thead>
-                <tr><Th>Pembekal</Th><Th>No. SSM / ID</Th><Th>No. cukai (TIN)</Th><Th>Telefon</Th><Th>Bank</Th><Th>Status</Th></tr>
+                <tr><Th>Pembekal</Th><Th>No. SSM / ID</Th><Th>No. cukai (TIN)</Th><Th>Telefon</Th><Th>Bank</Th><Th>Status</Th>{canManageVendors && <Th className="text-right"><span className="sr-only">Tindakan</span></Th>}</tr>
               </thead>
               <tbody>
                 {vendors.map((v) => (
@@ -117,13 +149,32 @@ export default function PaymentVoucherView({ role }) {
                     <Td className="text-gray-700">{v.tin_number || '—'}</Td>
                     <Td className="whitespace-nowrap text-gray-700">{v.phone_number || '—'}</Td>
                     <Td className="text-gray-700">{[v.bank_name, v.bank_account].filter(Boolean).join(' ') || '—'}</Td>
-                    <Td><Badge tone={(v.status || 'ACTIVE') === 'ACTIVE' ? 'green' : 'neutral'}>{(v.status || 'ACTIVE') === 'ACTIVE' ? 'Aktif' : 'Tidak aktif'}</Badge></Td>
+                    <Td>
+                      {vendorWaiting.has(v.id) ? <Badge tone="amber">Menunggu kelulusan</Badge> : <Badge tone={(v.status || 'ACTIVE') === 'ACTIVE' ? 'green' : 'neutral'}>{(v.status || 'ACTIVE') === 'ACTIVE' ? 'Aktif' : 'Tidak aktif'}</Badge>}
+                    </Td>
+                    {canManageVendors && (
+                      <Td className="text-right">
+                        <Button size="sm" variant="ghost" disabled={vendorWaiting.has(v.id)} onClick={() => setVendorDialog({ type: 'edit', vendor: v })}>Ubah</Button>
+                      </Td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </Table>
           )}
         </Card>
+        {canManageVendors && (
+          <ChangeRequestsPanel
+            title="Permohonan perubahan pembekal"
+            description={vendorDirect ? 'Permohonan Supervisor menunggu kelulusan anda. Perubahan Pengurusan terus berkuat kuasa dan direkod di sini.' : 'Perubahan anda berkuat kuasa selepas diluluskan oleh Pengurusan.'}
+            requests={vendorRequests}
+            reload={loadVendorRequests}
+            onApplied={refreshAllData}
+            editFields={(r) => vendorFields(r.action === 'UPDATE')}
+            editInitial={(r) => ({ ...vendorInitial(vendors.find((v) => v.id === r.target_id)), ...r.payload })}
+          />
+        )}
+        </div>
       ) : (
         <Card>
           {rows.length === 0 ? (
@@ -190,30 +241,26 @@ export default function PaymentVoucherView({ role }) {
           onClose={() => setRejecting(null)}
         />
       )}
-      {addingVendor && (
+      {vendorDialog?.type === 'add' && (
         <FormModal
-          title="Tambah pembekal"
-          fields={[
-            { name: 'vendor_name', label: 'Nama pembekal', required: true },
-            { name: 'vendor_id', label: 'No. SSM / ID pembekal', required: true },
-            { name: 'tin_number', label: 'No. cukai (TIN)' },
-            { name: 'pic_name', label: 'Pegawai dihubungi (PIC)' },
-            { name: 'phone_number', label: 'Telefon' },
-            { name: 'bank_name', label: 'Bank' },
-            { name: 'bank_account', label: 'No. akaun bank' },
-          ]}
-          onSubmit={async (f) => {
-            try {
-              await request('/expenses/vendors/', { method: 'POST', body: JSON.stringify(f) });
-              await refreshAllData();
-              showToast(`Pembekal ${f.vendor_name} ditambah.`);
-            } catch (err) {
-              const detail = err?.data && typeof err.data === 'object' ? Object.values(err.data).flat().join(' ') : '';
-              showToast(detail || err?.message || 'Ralat menyimpan pembekal.', 'error');
-              throw err;
-            }
-          }}
-          onClose={() => setAddingVendor(false)}
+          title={vendorDirect ? 'Tambah pembekal' : 'Mohon pembekal baharu'}
+          description={vendorDirect ? 'Pembekal ini boleh digunakan serta-merta.' : 'Pembekal ini boleh digunakan selepas diluluskan oleh Pengurusan.'}
+          submitLabel={vendorDirect ? 'Tambah pembekal' : 'Hantar permohonan'}
+          initial={vendorInitial()}
+          fields={[...vendorFields(false), ...(vendorDirect ? [] : [VENDOR_REASON])]}
+          onSubmit={({ note, ...values }) => saveVendor('CREATE', null, values, note)}
+          onClose={() => setVendorDialog(null)}
+        />
+      )}
+      {vendorDialog?.type === 'edit' && (
+        <FormModal
+          title={`Ubah ${vendorDialog.vendor.vendor_name}`}
+          description={vendorDirect ? 'Perubahan berkuat kuasa serta-merta.' : 'Perubahan berkuat kuasa selepas diluluskan oleh Pengurusan. Maklumat bank sangat penting, nyatakan sebab dengan jelas.'}
+          submitLabel={vendorDirect ? 'Simpan' : 'Hantar permohonan'}
+          initial={{ ...vendorInitial(vendorDialog.vendor), note: '' }}
+          fields={[...vendorFields(true), ...(vendorDirect ? [] : [VENDOR_REASON])]}
+          onSubmit={({ note, ...values }) => saveVendor('UPDATE', vendorDialog.vendor.id, values, note)}
+          onClose={() => setVendorDialog(null)}
         />
       )}
     </>

@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { changeRequestApi, configApi, dashboardApi } from '../api/client';
+import { configApi, dashboardApi } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { useStore } from '../store';
 import { can, isApprover } from '../lib/permissions';
 import { date, LEVEL_LABEL, rm, STREAM_LABEL, tierGroupLabel } from '../lib/format';
-import ChangeRequestsPanel from './ChangeRequestsPanel';
+import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, EmptyState, IconButton, inputClass, Input, PageHeader, Select, Table, Tabs, Td, Th, useToast } from './ui';
 
@@ -48,11 +48,8 @@ function Subjects({ role }) {
   const { refreshAllData } = useApp();
   const notify = useToast();
   const direct = isApprover(role);
-  const [requests, setRequests] = useState([]);
+  const { requests, load } = useChangeRequests('SUBJECT');
   const [dialog, setDialog] = useState(null); // { type: 'add' } | { type: 'edit', subject } | { type: 'active', subject }
-
-  const load = useCallback(() => changeRequestApi.list('SUBJECT').then(setRequests).catch(() => setRequests([])), []);
-  useEffect(() => { load(); }, [load]);
 
   const waiting = new Set(requests.filter((r) => r.status === 'PENDING' && r.action === 'UPDATE').map((r) => r.target_id));
   const sentMessage = (done) => (done.status === 'PENDING'
@@ -113,7 +110,7 @@ function Subjects({ role }) {
       </Card>
 
       <ChangeRequestsPanel
-        role={role}
+        description={direct ? 'Permohonan Admin menunggu kelulusan. Perubahan Supervisor dan Pengurusan terus berkuat kuasa dan direkod di sini.' : 'Perubahan anda berkuat kuasa selepas diluluskan oleh Supervisor atau Pengurusan.'}
         requests={requests}
         reload={load}
         onApplied={refreshAllData}

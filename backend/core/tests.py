@@ -510,10 +510,106 @@ class ChangeRequestTests(RoleTestBase):
         self.assertEqual(self.client.get('/api/v1/business-config/subjects/').status_code, 200)
 
     def test_dashboard_counts(self):
+        def counts():
+            a = self.client.get('/api/v1/dashboard/summary/').data['approvals']
+            return a['change_requests_pending'], a['change_requests_mine_pending']
+
         self.as_role(ADMIN)
         self.propose_new()
-        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['approvals']['change_requests_pending'], 1)
+        self.assertEqual(counts(), (0, 1))  # waits for someone else to decide
         self.client.force_authenticate(self.admin2)
-        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['approvals']['change_requests_pending'], 0)
+        self.assertEqual(counts(), (0, 0))
+        self.as_role(SUPERVISOR)
+        self.assertEqual(counts(), (1, 0))
         self.as_role(MANAGEMENT)
-        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['approvals']['change_requests_pending'], 1)
+        self.assertEqual(counts(), (1, 0))
+
+
+class VendorChangeRequestTests(RoleTestBase):
+    """Vendor details: Supervisor asks, Management approves; Admin only chooses a vendor for a voucher."""
+    URL = '/api/v1/change-requests/'
+
+    def setUp(self):
+        super().setUp()
+        self.vendor = Vendor.objects.create(vendor_id='SSM-1', vendor_name='Kedai Buku', bank_name='Maybank', bank_account='111')
+
+    def new_vendor(self, vendor_id='SSM-2', note='Pembekal baharu'):
+        return self.client.post(self.URL, {
+            'kind': 'VENDOR', 'action': 'CREATE', 'note': note,
+            'payload': {'vendor_id': vendor_id, 'vendor_name': 'Syarikat ABC', 'bank_name': 'CIMB', 'bank_account': '222', 'tin_number': 'C123'},
+        }, format='json')
+
+    def test_admin_cannot_ask_for_vendor_changes(self):
+        self.as_role(ADMIN)
+        self.assertEqual(self.new_vendor().status_code, 403)
+        self.assertEqual(Vendor.objects.count(), 1)
+
+    def test_supervisor_asks_and_only_management_decides(self):
+        self.as_role(SUPERVISOR)
+        res = self.new_vendor()
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual((res.data['status'], res.data['direct']), ('PENDING', False))
+        self.assertFalse(Vendor.objects.filter(vendor_id='SSM-2').exists())
+        self.assertFalse(res.data['can_decide'])
+        self.assertEqual(self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json').status_code, 403)
+        self.assertEqual(self.client.post(f"{self.URL}{res.data['id']}/reject/", {'comment': 'x'}, format='json').status_code, 403)
+
+        self.as_role(MANAGEMENT)
+        seen = self.client.get(self.URL + '?status=PENDING').data
+        self.assertTrue(seen[0]['can_decide'])
+        done = self.client.post(f"{self.URL}{res.data['id']}/approve/", {'comment': 'OK'}, format='json')
+        self.assertEqual(done.status_code, 200, done.data)
+        vendor = Vendor.objects.get(vendor_id='SSM-2')
+        self.assertEqual((vendor.vendor_name, vendor.bank_account, vendor.status), ('Syarikat ABC', '222', 'ACTIVE'))
+
+        self.as_role(SUPERVISOR)  # the Supervisor is told, and sees the decision
+        self.assertEqual(len(self.client.get(self.URL + '?unseen=1').data), 1)
+
+    def test_bank_detail_change_waits_for_management(self):
+        self.as_role(SUPERVISOR)
+        res = self.client.post(self.URL, {
+            'kind': 'VENDOR', 'action': 'UPDATE', 'target_id': self.vendor.id, 'note': 'Tukar akaun',
+            'payload': {'bank_account': '999'},
+        }, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.vendor.refresh_from_db()
+        self.assertEqual(self.vendor.bank_account, '111')
+        self.assertEqual(res.data['changes'][0]['before'], '111')
+        # the same vendor cannot have two changes waiting
+        again = self.client.post(self.URL, {'kind': 'VENDOR', 'action': 'UPDATE', 'target_id': self.vendor.id, 'note': 'x',
+                                            'payload': {'phone_number': '012'}}, format='json')
+        self.assertEqual(again.status_code, 400)
+        self.as_role(MANAGEMENT)
+        self.client.post(f"{self.URL}{res.data['id']}/reject/", {'comment': 'Sahkan dahulu dengan pembekal'}, format='json')
+        self.vendor.refresh_from_db()
+        self.assertEqual(self.vendor.bank_account, '111')
+
+    def test_management_changes_apply_at_once(self):
+        self.as_role(MANAGEMENT)
+        res = self.client.post(self.URL, {
+            'kind': 'VENDOR', 'action': 'UPDATE', 'target_id': self.vendor.id, 'payload': {'status': 'INACTIVE'},
+        }, format='json')
+        self.assertEqual((res.status_code, res.data['status'], res.data['direct']), (201, 'APPROVED', True))
+        self.vendor.refresh_from_db()
+        self.assertEqual(self.vendor.status, 'INACTIVE')
+
+    def test_checks(self):
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.new_vendor(vendor_id='SSM-1').status_code, 400)  # id already used
+        self.assertEqual(self.new_vendor(note='').status_code, 400)  # reason needed
+        self.assertEqual(self.new_vendor().status_code, 201)
+        self.assertEqual(self.new_vendor().status_code, 400)  # same id already waiting
+        bad = self.client.post(self.URL, {'kind': 'VENDOR', 'action': 'UPDATE', 'target_id': self.vendor.id, 'note': 'x',
+                                          'payload': {'status': 'DELETED'}}, format='json')
+        self.assertEqual(bad.status_code, 400)
+        blank = self.client.post(self.URL, {'kind': 'VENDOR', 'action': 'CREATE', 'note': 'x',
+                                            'payload': {'vendor_id': 'SSM-9', 'vendor_name': '  '}}, format='json')
+        self.assertEqual(blank.status_code, 400)
+
+    def test_vendors_cannot_be_written_directly_but_everyone_can_read(self):
+        for role in ALL_ROLES:
+            self.as_role(role)
+            self.assertEqual(self.client.post('/api/v1/expenses/vendors/', {'vendor_id': 'X', 'vendor_name': 'X'}, format='json').status_code, 405)
+            self.assertEqual(self.client.patch(f'/api/v1/expenses/vendors/{self.vendor.id}/', {'bank_account': '1'}, format='json').status_code, 405)
+            self.assertEqual(self.client.get('/api/v1/expenses/vendors/').status_code, 200)
+        self.assertEqual(Vendor.objects.get(pk=self.vendor.id).bank_account, '111')

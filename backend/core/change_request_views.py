@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from . import change_requests as service
 from .models import ChangeRequest
-from .permissions import APPROVER_ROLES, get_role, require_role
+from .permissions import APPROVER_ROLES, get_role
 
 
 class ChangeRequestSerializer(serializers.ModelSerializer):
@@ -12,16 +12,21 @@ class ChangeRequestSerializer(serializers.ModelSerializer):
     status_label = serializers.CharField(source='get_status_display', read_only=True)
     changes = serializers.SerializerMethodField()
     mine = serializers.SerializerMethodField()
+    can_decide = serializers.SerializerMethodField()
 
     class Meta:
         model = ChangeRequest
         fields = ('id', 'kind', 'kind_label', 'action', 'action_label', 'target_id', 'target_label', 'payload', 'before',
                   'changes', 'note', 'status', 'status_label', 'direct', 'requested_by_name', 'requested_at', 'decided_by',
-                  'decided_at', 'decision_comment', 'seen', 'mine')
+                  'decided_at', 'decision_comment', 'seen', 'mine', 'can_decide')
         read_only_fields = fields
 
     def get_changes(self, obj):
         return service.changes_of(obj)
+
+    def get_can_decide(self, obj):
+        request = self.context.get('request')
+        return bool(request and obj.status == 'PENDING' and service.can_decide(request.user, obj.kind))
 
     def get_mine(self, obj):
         request = self.context.get('request')
@@ -68,12 +73,10 @@ class ChangeRequestViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
-        require_role(request, *APPROVER_ROLES)
         return Response(self.get_serializer(service.approve(self.get_object(), request.user, request.data.get('comment'))).data)
 
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
-        require_role(request, *APPROVER_ROLES)
         return Response(self.get_serializer(service.reject(self.get_object(), request.user, request.data.get('comment'))).data)
 
     @action(detail=True, methods=['post'])
