@@ -49,11 +49,17 @@ class RolePermission(BasePermission):
     Custom approve/reject actions check their own roles with `require_role`.
     """
     message = 'Anda tidak mempunyai kebenaran untuk tindakan ini.'
+    # A password set by Management is temporary: until it is changed, only these calls work
+    PASSWORD_CHANGE_PATHS = ('/api/v1/auth/me/', '/api/v1/auth/logout/', '/api/v1/auth/change-password/')
 
     def has_permission(self, request, view):
         role = get_role(request.user)
         if role is None:
             return False
+        if request.path not in self.PASSWORD_CHANGE_PATHS:
+            from .accounts import must_change_password
+            if must_change_password(request.user):
+                raise PermissionDenied('Sila tukar kata laluan sementara anda dahulu.')
         if request.method in SAFE_METHODS:
             return role in getattr(view, 'read_roles', ALL_ROLES)
         if request.method == 'DELETE':

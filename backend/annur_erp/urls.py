@@ -24,7 +24,8 @@ from billing.views import DiscountViewSet, InvoiceViewSet, PaymentReceiptViewSet
 from expenses.views import VendorViewSet, PaymentVoucherViewSet
 from core.attachments import AttachmentViewSet
 from core.change_request_views import ChangeRequestViewSet
-from core.views import dashboard_summary, reports_summary, auth_login, auth_me, auth_logout, auth_users
+from core.accounts import AccountViewSet
+from core.views import dashboard_summary, reports_summary, auth_login, auth_me, auth_logout, auth_users, auth_change_password
 
 router = DefaultRouter()
 # Business Config (Management Self-Service Engine & Dynamic Master Data)
@@ -34,6 +35,7 @@ router.register(r'business-config/settings', BusinessSettingViewSet)
 router.register(r'business-config/teacher-rates', TeacherRateSettingViewSet)
 router.register(r'business-config/master-data', DynamicMasterDataViewSet)
 router.register(r'change-requests', ChangeRequestViewSet)
+router.register(r'auth/accounts', AccountViewSet, basename='account')
 
 # Academic & Timetable
 router.register(r'academic/classrooms', ClassroomViewSet)
@@ -78,6 +80,7 @@ urlpatterns = [
     path('api/v1/auth/login/', auth_login),
     path('api/v1/auth/me/', auth_me),
     path('api/v1/auth/logout/', auth_logout),
+    path('api/v1/auth/change-password/', auth_change_password),
     path('api/v1/', include(router.urls)),
     path('api/v1/auth/users/', auth_users),
     path('api/v1/business-config/grades/', grade_list),

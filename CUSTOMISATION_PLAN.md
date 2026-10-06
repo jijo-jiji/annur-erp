@@ -108,7 +108,7 @@ No code reads these by category key (checked by searching backend and frontend).
 |---|---|---|---|
 | A | Settings audit log and a typed, range-checked settings table (foundation for all below) | Small | Every setting change appears in the history with who and when. |
 | A2 | Change-request mechanism (propose, approve with comment, notify) for subjects, vendors, categories, new teacher, fee packages, discounts. | Medium | An Admin proposes a subject, a Supervisor approves it, and it becomes usable only then. **Built for subjects, vendors, expense categories / subcategories / monthly budget, teachers (add, change details, active / inactive), fee packages and discounts (2026-10-05 and 2026-10-06). Every item listed for this phase is now done.** |
-| B | Login accounts screen (item 1) | Medium | Management creates a Supervisor, that person logs in and sees only Supervisor screens; last Management account cannot be removed. |
+| B | Login accounts screen (item 1) | Medium | Management creates a Supervisor, that person logs in and sees only Supervisor screens; last Management account cannot be removed. **Built (2026-10-06): Settings > Pengguna.** |
 | C | Slots, days, classrooms (item 2) | Medium | A new Saturday 20:30 slot and a new room can be used in the timetable form with no developer. |
 | D | Centre profile in one place (item 3) | Small | Changing the phone number updates the login page, receipt PDF and voucher PDF. |
 | E | Message templates (item 4) | Medium | Editing the payment reminder changes the WhatsApp text on the next click. |

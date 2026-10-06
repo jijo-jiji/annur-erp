@@ -1008,3 +1008,163 @@ class DiscountRequestTests(RoleTestBase):
         self.as_role(ADMIN)
         self.assertEqual(self.client.post('/api/v1/billing/discounts/', {'name': 'X', 'code': 'X', 'value': '5'}, format='json').status_code, 403)
         self.assertEqual(float(Discount.objects.get().value), 10.0)
+
+
+class AccountTests(RoleTestBase):
+    """Login accounts: Management creates them, sets roles, switches them off and resets passwords."""
+    URL = '/api/v1/auth/accounts/'
+    GOOD = 'Tuisyen-Annur-2026'
+
+    def create(self, username='aina.r', role='ADMIN', **extra):
+        return self.client.post(self.URL, {'username': username, 'full_name': 'Aina Rahman', 'role': role, **extra}, format='json')
+
+    def login(self, username, password):
+        self.client.force_authenticate(None)
+        return self.client.post('/api/v1/auth/login/', {'username': username, 'password': password}, format='json')
+
+    def test_only_management_can_manage_accounts(self):
+        for role in (ADMIN, SUPERVISOR):
+            self.as_role(role)
+            self.assertEqual(self.client.get(self.URL).status_code, 403)
+            self.assertEqual(self.create().status_code, 403)
+            self.assertEqual(self.client.get(self.URL + 'events/').status_code, 403)
+        self.assertFalse(User.objects.filter(username='aina.r').exists())
+
+    def test_new_account_gets_a_temporary_password_and_must_change_it(self):
+        self.as_role(MANAGEMENT)
+        res = self.create(username='Aina.R')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual((res.data['username'], res.data['role'], res.data['must_change_password']), ('aina.r', 'ADMIN', True))
+        temp = res.data['temporary_password']
+        self.assertEqual(len(temp), 12)
+
+        login = self.login('aina.r', temp)
+        self.assertEqual(login.status_code, 200, login.data)
+        self.assertTrue(login.data['user']['must_change_password'])
+        self.as_role(MANAGEMENT)
+        listed = {x['username']: x for x in self.client.get(self.URL).data}
+        self.assertIsNotNone(listed['aina.r']['last_login'])  # Management can see when someone last logged in
+        self.assertIsNone(listed['admin']['last_login'])
+        self.client.force_authenticate(None)
+        auth = {'HTTP_AUTHORIZATION': f"Token {login.data['token']}"}
+        # until the password is changed only these calls work
+        blocked = self.client.get('/api/v1/students/students/', **auth)
+        self.assertEqual(blocked.status_code, 403)
+        self.assertIn('tukar kata laluan', str(blocked.data).lower())
+        self.assertEqual(self.client.get('/api/v1/auth/me/', **auth).status_code, 200)
+
+        for bad, field in (('salah', 'old_password'), ('12345678901', 'new_password'), ('pendek', 'new_password')):
+            body = {'old_password': 'x' if field == 'old_password' else temp, 'new_password': bad if field == 'new_password' else 'Sesuatu-Baharu-77'}
+            self.assertEqual(self.client.post('/api/v1/auth/change-password/', body, format='json', **auth).status_code, 400)
+        self.assertEqual(self.client.post('/api/v1/auth/change-password/', {'old_password': temp, 'new_password': temp}, format='json', **auth).status_code, 400)
+        done = self.client.post('/api/v1/auth/change-password/', {'old_password': temp, 'new_password': 'Sesuatu-Baharu-77'}, format='json', **auth)
+        self.assertEqual(done.status_code, 200, done.data)
+        self.assertFalse(done.data['user']['must_change_password'])
+
+        # the old token ends; the new one works everywhere
+        self.assertEqual(self.client.get('/api/v1/auth/me/', **auth).status_code, 401)
+        fresh = {'HTTP_AUTHORIZATION': f"Token {done.data['token']}"}
+        self.assertEqual(self.client.get('/api/v1/students/students/', **fresh).status_code, 200)
+        self.assertEqual(self.login('aina.r', temp).status_code, 400)
+        self.assertEqual(self.login('aina.r', 'Sesuatu-Baharu-77').status_code, 200)
+
+    def test_checks_on_new_accounts(self):
+        from teachers.models import StaffMember
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.create().status_code, 201)
+        self.assertEqual(self.create(username='AINA.R').status_code, 400)  # same name, any case
+        for bad in ('ab', 'a b c', 'nama!', 'x' * 31):
+            self.assertEqual(self.create(username=bad).status_code, 400, bad)
+        self.assertEqual(self.create(username='baru', role='BOSS').status_code, 400)
+        self.assertEqual(self.client.post(self.URL, {'username': 'baru', 'role': 'ADMIN'}, format='json').status_code, 400)  # no name
+        self.assertEqual(self.create(username='baru', password='12345678').status_code, 400)  # numeric
+        self.assertEqual(self.create(username='baru', password='pendek').status_code, 400)
+        self.assertEqual(self.create(username='baru', password='password123').status_code, 400)  # too common
+        self.assertFalse(User.objects.filter(username='baru').exists())
+        taken = StaffMember.objects.create(staff_id='S9', name='Siti', role='Admin', phone='1', user=self.users[ADMIN])
+        self.assertEqual(self.create(username='baru', staff=taken.id).status_code, 400)  # that staff already has an account
+
+    def test_a_typed_password_is_not_echoed_back_and_a_staff_record_can_be_linked(self):
+        from teachers.models import StaffMember
+        staff = StaffMember.objects.create(staff_id='S8', name='Nora', role='Admin', phone='1')
+        self.as_role(MANAGEMENT)
+        res = self.create(password=self.GOOD, staff=staff.id)
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertNotIn('temporary_password', res.data)
+        self.assertEqual(res.data['staff']['name'], 'Nora')
+        staff.refresh_from_db()
+        self.assertEqual(staff.user.username, 'aina.r')
+        self.assertEqual(self.login('aina.r', self.GOOD).status_code, 200)
+
+    def test_role_name_and_status_changes_are_recorded(self):
+        self.as_role(MANAGEMENT)
+        uid = self.create().data['id']
+        res = self.client.patch(f'{self.URL}{uid}/', {'role': 'SUPERVISOR', 'full_name': 'Aina R. Rahman'}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual((res.data['role'], res.data['full_name']), ('SUPERVISOR', 'Aina R. Rahman'))
+        self.assertEqual(self.client.patch(f'{self.URL}{uid}/', {'role': 'BOSS'}, format='json').status_code, 400)
+
+        off = self.client.patch(f'{self.URL}{uid}/', {'is_active': False}, format='json')
+        self.assertFalse(off.data['is_active'])
+        self.assertEqual(self.login('aina.r', 'tidak-penting').status_code, 400)
+        self.as_role(MANAGEMENT)
+        self.client.patch(f'{self.URL}{uid}/', {'is_active': True}, format='json')
+        events = self.client.get(self.URL + 'events/').data
+        self.assertEqual([e['action'] for e in events][::-1], ['CREATED', 'RENAMED', 'ROLE_CHANGED', 'DEACTIVATED', 'REACTIVATED'])
+        self.assertEqual(events[-1]['by'], 'management')
+        self.assertIn('Admin → Supervisor', [e['detail'] for e in events])
+
+    def test_a_deactivated_account_is_signed_out_at_once(self):
+        self.as_role(MANAGEMENT)
+        res = self.create(password=self.GOOD)
+        token = self.login('aina.r', self.GOOD).data['token']
+        # change the password so the account is usable, then switch it off
+        auth = {'HTTP_AUTHORIZATION': f'Token {token}'}
+        token = self.client.post('/api/v1/auth/change-password/', {'old_password': self.GOOD, 'new_password': 'Sesuatu-Baharu-77'}, format='json', **auth).data['token']
+        auth = {'HTTP_AUTHORIZATION': f'Token {token}'}
+        self.assertEqual(self.client.get('/api/v1/students/students/', **auth).status_code, 200)
+        self.as_role(MANAGEMENT)
+        self.client.patch(f"{self.URL}{res.data['id']}/", {'is_active': False}, format='json')
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get('/api/v1/students/students/', **auth).status_code, 401)
+
+    def test_nobody_can_lock_the_centre_out(self):
+        from core.accounts import other_active_management
+        me = self.users[MANAGEMENT]
+        self.as_role(MANAGEMENT)
+        for body in ({'role': 'ADMIN'}, {'is_active': False}):
+            self.assertEqual(self.client.patch(f'{self.URL}{me.id}/', body, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(f'{self.URL}{me.id}/', {'full_name': 'Pengurus Baharu'}, format='json').status_code, 200)  # own name is fine
+        self.assertEqual(self.client.post(f'{self.URL}{me.id}/reset_password/', {}, format='json').status_code, 400)  # use change-password
+        self.assertFalse(other_active_management(me))
+        second = self.create(username='pengurus2', role='MANAGEMENT')
+        self.assertTrue(other_active_management(me))
+        self.assertEqual(second.status_code, 201)
+
+    def test_system_administrator_accounts_are_not_editable_here(self):
+        root = User.objects.create_superuser('root', password='Tuisyen-Annur-2026')
+        self.as_role(MANAGEMENT)
+        listed = {a['username']: a for a in self.client.get(self.URL).data}
+        self.assertEqual((listed['root']['is_superuser'], listed['root']['role']), (True, 'MANAGEMENT'))
+        self.assertEqual(self.client.patch(f'{self.URL}{root.id}/', {'is_active': False}, format='json').status_code, 403)
+        self.assertEqual(self.client.post(f'{self.URL}{root.id}/reset_password/', {}, format='json').status_code, 403)
+
+    def test_reset_password_signs_the_person_out_and_forces_a_change(self):
+        self.as_role(MANAGEMENT)
+        res = self.create(password=self.GOOD)
+        uid = res.data['id']
+        token = self.login('aina.r', self.GOOD).data['token']
+        self.as_role(MANAGEMENT)
+        reset = self.client.post(f'{self.URL}{uid}/reset_password/', {}, format='json')
+        self.assertEqual(reset.status_code, 200, reset.data)
+        temp = reset.data['temporary_password']
+        self.assertTrue(reset.data['must_change_password'])
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get('/api/v1/auth/me/', HTTP_AUTHORIZATION=f'Token {token}').status_code, 401)
+        self.assertEqual(self.login('aina.r', self.GOOD).status_code, 400)
+        self.assertTrue(self.login('aina.r', temp).data['user']['must_change_password'])
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.post(f'{self.URL}{uid}/reset_password/', {'password': 'pendek'}, format='json').status_code, 400)
+        typed = self.client.post(f'{self.URL}{uid}/reset_password/', {'password': 'Lain-Sementara-55'}, format='json')
+        self.assertNotIn('temporary_password', typed.data)
+        self.assertEqual(self.login('aina.r', 'Lain-Sementara-55').status_code, 200)

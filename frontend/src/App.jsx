@@ -5,6 +5,7 @@ import { StoreProvider } from './store';
 import { ToastProvider, useToast } from './components/ui';
 import Sidebar from './components/Sidebar';
 import LoginView from './components/LoginView';
+import { ChangePasswordModal, ForcedPasswordChange } from './components/ChangePassword';
 import CommandPalette from './components/CommandPalette';
 import StudentRegistrationView from './components/StudentRegistrationView';
 import StudentProfileView from './components/StudentProfileView';
@@ -57,7 +58,8 @@ const VIEWS = {
 };
 
 function Shell() {
-  const { user, currentRole: role, authChecked, login, logout } = useApp();
+  const { user, currentRole: role, authChecked, login, logout, changePassword } = useApp();
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [route, setRoute] = useState(readRoute);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -96,6 +98,7 @@ function Shell() {
 
   if (!authChecked) return <div className="grid min-h-dvh place-items-center text-sm text-gray-500">Memuatkan…</div>;
   if (!user) return <LoginView onLogin={login} />;
+  if (user.must_change_password) return <ForcedPasswordChange user={user} onChange={changePassword} onLogout={() => { logout(); navigate(''); }} />;
 
   const allowed = navItemsFor(role).filter((n) => VIEWS[n.id]).map((n) => n.id);
   const current = allowed.includes(route.base) ? route.base : allowed[0];
@@ -110,6 +113,7 @@ function Shell() {
         user={user}
         items={navItemsFor(role).filter((n) => VIEWS[n.id])}
         onSearch={can(role, 'search') ? () => setSearchOpen(true) : null}
+        onChangePassword={() => setPasswordOpen(true)}
         onLogout={() => {
           logout();
           navigate('');
@@ -140,6 +144,7 @@ function Shell() {
       </main>
 
       {searchOpen && <CommandPalette role={role} onClose={() => setSearchOpen(false)} />}
+      {passwordOpen && <ChangePasswordModal onChange={changePassword} onClose={() => setPasswordOpen(false)} />}
     </div>
   );
 }

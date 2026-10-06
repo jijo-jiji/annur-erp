@@ -104,6 +104,19 @@ export const authApi = {
   me: () => request('/auth/me/'),
   users: () => request('/auth/users/'),
   logout: () => request('/auth/logout/', { method: 'POST' }),
+  changePassword: (oldPassword, newPassword) => request('/auth/change-password/', {
+    method: 'POST',
+    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  }),
+};
+
+// Login accounts (Management only)
+export const accountsApi = {
+  list: () => request('/auth/accounts/'),
+  events: () => request('/auth/accounts/events/'),
+  create: (body) => request('/auth/accounts/', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id, body) => request(`/auth/accounts/${id}/`, { method: 'PATCH', body: JSON.stringify(body) }),
+  resetPassword: (id, password) => request(`/auth/accounts/${id}/reset_password/`, { method: 'POST', body: JSON.stringify({ password }) }),
 };
 
 // 1. Dynamic Master Data API

@@ -5,6 +5,30 @@ from django.db import models
 from django.utils import timezone
 
 
+class AccountSecurity(models.Model):
+    """Per login account: a password set by Management is temporary and must be changed at first login."""
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='security')
+    must_change_password = models.BooleanField(default=False)
+
+
+class AccountEvent(models.Model):
+    """Who changed which login account, and how (accounts are never deleted, so this stays complete)."""
+    ACTIONS = [
+        ('CREATED', 'Akaun dibuat'), ('ROLE_CHANGED', 'Peranan diubah'), ('DEACTIVATED', 'Dinyahaktifkan'),
+        ('REACTIVATED', 'Diaktifkan semula'), ('PASSWORD_RESET', 'Kata laluan ditetapkan semula'),
+        ('PASSWORD_CHANGED', 'Kata laluan ditukar'), ('RENAMED', 'Nama diubah'), ('LINKED', 'Pautan staf diubah'),
+    ]
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    username = models.CharField(max_length=150)
+    action = models.CharField(max_length=20, choices=ACTIONS)
+    detail = models.CharField(max_length=250, blank=True)
+    by_name = models.CharField(max_length=150, blank=True)
+    at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-at', '-id']
+
+
 class ChangeRequest(models.Model):
     """A proposed change to setup data (a subject, later vendors, categories, ...).
     Admin's proposals wait as PENDING until Supervisor / Management decides; changes made by

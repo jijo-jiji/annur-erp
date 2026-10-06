@@ -123,13 +123,22 @@ export function AppProvider({ children, notify }) {
   }, []);
 
   useEffect(() => {
-    if (user) refreshAllData();
+    // A temporary password has to be replaced first; until then the server only answers password calls
+    if (user && !user.must_change_password) refreshAllData();
   }, [user, refreshAllData]);
 
   const login = async (username, password) => {
     const res = await authApi.login(username, password);
     tokenStore.set(res.token);
     setActiveTab('dashboard');
+    setUser(res.user);
+    return res.user;
+  };
+
+  // Anyone changes their own password; the server ends other sessions and gives this one a new token
+  const changePassword = async (oldPassword, newPassword) => {
+    const res = await authApi.changePassword(oldPassword, newPassword);
+    tokenStore.set(res.token);
     setUser(res.user);
     return res.user;
   };
@@ -550,6 +559,7 @@ export function AppProvider({ children, notify }) {
     authChecked,
     login,
     logout,
+    changePassword,
 
     // Navigation & Notifications
     activeTab,

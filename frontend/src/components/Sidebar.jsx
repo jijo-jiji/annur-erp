@@ -1,4 +1,4 @@
-import { LogOut, Search, X } from 'lucide-react';
+import { KeyRound, LogOut, Search, X } from 'lucide-react';
 import { ROLE_LABEL, initials } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { Avatar, cx } from './ui';
@@ -17,7 +17,7 @@ export function BrandMark({ inverted, className }) {
   );
 }
 
-export default function Sidebar({ current, role, user, items, onSearch, onLogout, open, onClose }) {
+export default function Sidebar({ current, role, user, items, onSearch, onLogout, onChangePassword, open, onClose }) {
 
   return (
     <>
@@ -83,6 +83,11 @@ export default function Sidebar({ current, role, user, items, onSearch, onLogout
             <p className="truncate text-sm font-medium text-gray-900">{user?.full_name || user?.username}</p>
             <p className="text-xs text-gray-500">{ROLE_LABEL[role]}</p>
           </div>
+          {onChangePassword && (
+            <button type="button" onClick={onChangePassword} title="Tukar kata laluan" aria-label="Tukar kata laluan" className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900">
+              <KeyRound className="size-4" />
+            </button>
+          )}
           <button type="button" onClick={onLogout} title="Log keluar" aria-label="Log keluar" className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-red-700">
             <LogOut className="size-4" />
           </button>

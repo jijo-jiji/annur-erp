@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { useStore } from '../store';
 import { can, isApprover } from '../lib/permissions';
 import { date, LEVEL_LABEL, rm, STREAM_LABEL, tierGroupLabel } from '../lib/format';
+import AccountsPanel from './AccountsPanel';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, EmptyState, IconButton, inputClass, Input, PageHeader, Select, Table, Tabs, Td, Th, useToast } from './ui';
@@ -13,6 +14,7 @@ export default function ManagementConfigView({ role }) {
   // The page can open on a tab, e.g. from a dashboard notice: #/settings?tab=pricing
   const [tab, setTab] = useState(() => {
     const asked = new URLSearchParams(window.location.hash.split('?')[1]).get('tab');
+    if (asked === 'accounts' && can(role, 'accounts.manage')) return asked;
     return ['pricing', 'discounts', 'policies'].includes(asked) && can(role, 'settings.advanced') ? asked : 'subjects';
   });
   return (
@@ -32,11 +34,13 @@ export default function ManagementConfigView({ role }) {
             { value: 'discounts', label: 'Diskaun' },
             { value: 'policies', label: 'Polisi & elaun' },
           ] : []),
+          ...(can(role, 'accounts.manage') ? [{ value: 'accounts', label: 'Pengguna' }] : []),
         ]}
       />
       {tab === 'subjects' && <Subjects role={role} />}
       {tab === 'pricing' && can(role, 'settings.advanced') && <Pricing role={role} />}
       {tab === 'discounts' && can(role, 'settings.advanced') && <Discounts role={role} />}
+      {tab === 'accounts' && can(role, 'accounts.manage') && <AccountsPanel />}
       {tab === 'policies' && can(role, 'settings.advanced') && <Policies editable={can(role, 'settings.policies')} />}
     </>
   );

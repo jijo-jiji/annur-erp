@@ -92,6 +92,7 @@ export const PERMISSIONS = {
     'settings.advanced', // fee packages, discounts, policies
     'settings.pricing',
     'settings.policies',
+    'accounts.manage', // login accounts: create, role, switch off, reset password
     'settings.discounts',
   ],
 };
