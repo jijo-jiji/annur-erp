@@ -37,6 +37,7 @@ class ChangeRequest(models.Model):
         ('SUBJECT', 'Subjek'), ('VENDOR', 'Pembekal'),
         ('EXPENSE_CATEGORY', 'Kategori perbelanjaan'), ('EXPENSE_SUBCATEGORY', 'Subkategori perbelanjaan'),
         ('TEACHER', 'Guru'), ('PRICING_TIER', 'Pakej yuran'), ('DISCOUNT', 'Diskaun'),
+        ('TIME_SLOT', 'Slot masa'), ('CLASSROOM', 'Bilik darjah'), ('CLOSED_DATE', 'Tarikh tutup'),
     ]
     ACTIONS = [('CREATE', 'Tambah'), ('UPDATE', 'Ubah'), ('DELETE', 'Padam')]
     STATUS_CHOICES = [

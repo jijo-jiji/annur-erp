@@ -14,6 +14,7 @@ class TimeSlot(models.Model):
     DAY_CHOICES = [
         ('JUMAAT', 'Jumaat'),
         ('SABTU', 'Sabtu'),
+        ('AHAD', 'Ahad'),
         ('ISNIN', 'Isnin'),
         ('SELASA', 'Selasa'),
         ('RABU', 'Rabu'),
@@ -23,12 +24,26 @@ class TimeSlot(models.Model):
     start_time = models.CharField(max_length=10) # e.g. "09:00"
     end_time = models.CharField(max_length=10)   # e.g. "10:30"
     period_label = models.CharField(max_length=30) # e.g. "Pagi 9.00 - 10.30"
+    is_active = models.BooleanField(default=True)  # a retired slot stays on the classes that use it but cannot be chosen for new ones
 
     class Meta:
         ordering = ['day', 'start_time']
 
     def __str__(self):
         return f"{self.day} {self.start_time}-{self.end_time} ({self.period_label})"
+
+class ClosedDate(models.Model):
+    """A day the centre is closed (public or state holiday, cuti sekolah, ...). No classes are held,
+    so no class attendance is taken and no teacher is paid for that day."""
+    date = models.DateField(unique=True)
+    reason = models.CharField(max_length=150)
+
+    class Meta:
+        ordering = ['date']
+
+    def __str__(self):
+        return f"{self.date} {self.reason}"
+
 
 class ClassTimetable(models.Model):
     SECTION_CHOICES = [

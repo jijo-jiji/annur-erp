@@ -23,6 +23,7 @@ export default function TeacherAttendanceView({ role }) {
   const [day, setDay] = useState(todayISO());
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [closed, setClosed] = useState('');
   const [saving, setSaving] = useState(false);
   const [summary, setSummary] = useState([]);
   const showPay = can(role, 'teachers.pay');
@@ -40,6 +41,7 @@ export default function TeacherAttendanceView({ role }) {
     teacherPayApi.roster(day)
       .then((r) => {
         if (cancelled) return;
+        setClosed(r.closed || '');
         // Unrecorded classes default to present with the assigned teacher
         setRows(r.classes.map((c) => ({
           ...c,
@@ -102,7 +104,9 @@ export default function TeacherAttendanceView({ role }) {
           }
         />
         {loading ? <p className="py-10 text-center text-sm text-gray-500">Memuatkan…</p> : rows.length === 0 ? (
-          <EmptyState icon={CalendarDays} title="Tiada kelas dijadualkan pada tarikh ini" />
+          <EmptyState icon={CalendarDays} title={closed ? `Pusat tutup: ${closed}` : 'Tiada kelas dijadualkan pada tarikh ini'}>
+            {closed ? 'Tiada kelas dan tiada bayaran guru pada hari ini.' : undefined}
+          </EmptyState>
         ) : (
           <Table>
             <thead>

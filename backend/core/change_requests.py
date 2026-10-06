@@ -60,6 +60,9 @@ class ModelHandler(Handler):
         """Extra values stored with the record (who created it, ...)."""
         return {}
 
+    def check(self, action, merged, obj, others):
+        """Extra checks on the values as they would end up (the record's own values plus the change)."""
+
     def duplicate_pending(self, values, others):
         key = values.get(self.key_field)
         if key is not None and others.filter(action='CREATE', **{f'payload__{self.key_field}': key}).exists():
@@ -88,6 +91,7 @@ class ModelHandler(Handler):
             serializer.is_valid(raise_exception=True)
             values = {k: v for k, v in serializer.validated_data.items() if k in self.fields}
             self.duplicate_pending(values, others)
+            self.check(action, values, None, others)
             return self._json(values), {}, self.label(values.get)
 
         obj = self.model().objects.filter(pk=target_id).first()
@@ -113,6 +117,7 @@ class ModelHandler(Handler):
         values = {k: v for k, v in serializer.validated_data.items() if k in self.fields and getattr(obj, k) != v}
         if not values:
             raise ValidationError('Tiada perubahan untuk dihantar.')
+        self.check(action, {f: values.get(f, getattr(obj, f)) for f in self.fields}, obj, others)
         return self._json(values), self._json({k: getattr(obj, k) for k in values}), label
 
     def apply(self, action, target_id, values, req=None):
@@ -600,9 +605,199 @@ class DiscountHandler(ModelHandler):
         return str(value)
 
 
+_TIME = re.compile(r'^([01]\d|2[0-3]):[0-5]\d$')
+
+
+def _clock(value):
+    """09:00 -> 9.00, 16:30 -> 4.30 (12-hour, as the centre writes its slots)."""
+    h, m = value.split(':')
+    return f'{int(h) % 12 or 12}.{m}'
+
+
+def slot_label(start, end):
+    """Pagi 9.00 - 10.30, Petang 4.00 - 5.30 ..."""
+    hour = int(start.split(':')[0])
+    part = 'Pagi' if hour < 12 else 'Tengah hari' if hour < 15 else 'Petang' if hour < 19 else 'Malam'
+    return f'{part} {_clock(start)} - {_clock(end)}'
+
+
+DAY_NAMES = {'JUMAAT': 'Jumaat', 'SABTU': 'Sabtu', 'AHAD': 'Ahad', 'ISNIN': 'Isnin', 'SELASA': 'Selasa', 'RABU': 'Rabu', 'KHAMIS': 'Khamis'}
+
+
+class TimeSlotHandler(ModelHandler):
+    """When classes can be held (day and time). Slots are retired, not removed, once classes use them."""
+    kind = 'TIME_SLOT'
+    fields = {'day': 'Hari', 'start_time': 'Masa mula', 'end_time': 'Masa tamat', 'period_label': 'Nama slot', 'is_active': 'Status'}
+    proposers = APPROVER_ROLES
+    approvers = (MANAGEMENT,)
+    deletable = True
+    noun = 'slot masa'
+
+    def model(self):
+        from academic.models import TimeSlot
+        return TimeSlot
+
+    def serializer(self, data, instance=None):
+        from academic.serializers import TimeSlotSerializer
+        return TimeSlotSerializer(instance, data=data, partial=instance is not None)
+
+    def normalise(self, data, creating):
+        for f in ('start_time', 'end_time'):
+            if f in data:
+                data[f] = str(data[f]).strip()
+        if creating:
+            data.setdefault('is_active', True)
+            if _TIME.match(data.get('start_time', '')) and _TIME.match(data.get('end_time', '')):
+                data['period_label'] = slot_label(data['start_time'], data['end_time'])
+            else:
+                data.setdefault('period_label', '-')  # the time check below gives the real message
+        return data
+
+    def label(self, get):
+        return f"{DAY_NAMES.get(get('day'), get('day'))} {get('start_time')}-{get('end_time')}"
+
+    def check(self, action, merged, obj, others):
+        start, end = merged['start_time'], merged['end_time']
+        for field, value in (('start_time', start), ('end_time', end)):
+            if not _TIME.match(value):
+                raise ValidationError({field: 'Masa mesti dalam format 24 jam HH:MM, cth. 16:00.'})
+        if end <= start:
+            raise ValidationError({'end_time': 'Masa tamat mesti selepas masa mula.'})
+        same = self.model().objects.filter(day=merged['day'], start_time=start, end_time=end)
+        if obj:
+            same = same.exclude(pk=obj.pk)
+        pending = others.filter(payload__day=merged['day'], payload__start_time=start, payload__end_time=end).exclude(action='DELETE')
+        if same.exists() or (action == 'CREATE' and pending.exists()):
+            raise ValidationError('Slot untuk hari dan masa ini sudah wujud.')
+
+    def validate(self, action, target_id, data, ignore=None):
+        values, before, label = super().validate(action, target_id, data, ignore)
+        if action == 'UPDATE' and ('start_time' in values or 'end_time' in values):
+            # the slot's name follows its times
+            slot = self.model().objects.get(pk=target_id)
+            start, end = values.get('start_time', slot.start_time), values.get('end_time', slot.end_time)
+            values['period_label'] = slot_label(start, end)
+            before['period_label'] = slot.period_label
+        return values, before, label
+
+    def delete_problem(self, slot):
+        n = slot.classes.count()
+        return f'Slot ini digunakan oleh {n} kelas. Nyahaktifkan sahaja.' if n else None
+
+    def display(self, field, value):
+        if field == 'day':
+            return DAY_NAMES.get(value, value)
+        if field == 'is_active':
+            return 'Aktif' if value else 'Tidak aktif'
+        return str(value) if value not in (None, '') else '—'
+
+
+class ClassroomHandler(ModelHandler):
+    """Rooms classes can be given. Rooms are retired, not removed, once classes use them."""
+    kind = 'CLASSROOM'
+    fields = {'name': 'Nama bilik', 'capacity': 'Muatan', 'is_active': 'Status'}
+    proposers = APPROVER_ROLES
+    approvers = (MANAGEMENT,)
+    key_field = 'name'
+    deletable = True
+    noun = 'bilik darjah'
+
+    def model(self):
+        from academic.models import Classroom
+        return Classroom
+
+    def serializer(self, data, instance=None):
+        from academic.serializers import ClassroomSerializer
+        return ClassroomSerializer(instance, data=data, partial=instance is not None)
+
+    def normalise(self, data, creating):
+        if 'name' in data:
+            data['name'] = ' '.join(str(data['name']).split())
+        if creating:
+            data.setdefault('is_active', True)
+        return data
+
+    def label(self, get):
+        return f"{get('name')}"
+
+    def check(self, action, merged, obj, others):
+        if not 1 <= int(merged['capacity']) <= 500:
+            raise ValidationError({'capacity': 'Muatan mesti antara 1 dan 500.'})
+        same = self.model().objects.filter(name__iexact=merged['name'])
+        if obj:
+            same = same.exclude(pk=obj.pk)
+        if same.exists():
+            raise ValidationError({'name': f"Bilik {merged['name']} sudah wujud."})
+        if action == 'CREATE' and others.filter(action='CREATE', payload__name__iexact=merged['name']).exists():
+            raise ValidationError({'name': 'Bilik ini sudah dimohon dan menunggu kelulusan.'})
+
+    def delete_problem(self, room):
+        from academic.models import ClassTimetable
+        n = ClassTimetable.objects.filter(classroom=room).count()
+        return f'Bilik ini digunakan oleh {n} kelas. Nyahaktifkan sahaja.' if n else None
+
+    def display(self, field, value):
+        if field == 'is_active':
+            return 'Aktif' if value else 'Tidak aktif'
+        if field == 'capacity':
+            return f'{value} pelajar'
+        return str(value) if value not in (None, '') else '—'
+
+
+class ClosedDateHandler(ModelHandler):
+    """Days the centre is closed. Nothing is held, taken or paid on them."""
+    kind = 'CLOSED_DATE'
+    fields = {'date': 'Tarikh', 'reason': 'Sebab'}
+    proposers = APPROVER_ROLES
+    approvers = (MANAGEMENT,)
+    key_field = 'date'
+    immutable = ('date',)
+    deletable = True
+    noun = 'tarikh tutup'
+
+    def model(self):
+        from academic.models import ClosedDate
+        return ClosedDate
+
+    def serializer(self, data, instance=None):
+        from academic.serializers import ClosedDateSerializer
+        return ClosedDateSerializer(instance, data=data, partial=instance is not None)
+
+    def normalise(self, data, creating):
+        if 'reason' in data:
+            data['reason'] = ' '.join(str(data['reason']).split())
+        return data
+
+    def label(self, get):
+        value = get('date')
+        value = value.isoformat() if hasattr(value, 'isoformat') else str(value)
+        y, m, d = value.split('-')
+        return f"{d}/{m}/{y} {get('reason')}"
+
+    def duplicate_pending(self, values, others):
+        day = self.jsonable(values.get('date'))
+        if others.filter(action='CREATE', payload__date=day).exists():
+            raise ValidationError({'date': 'Tarikh ini sudah dimohon dan menunggu kelulusan.'})
+
+    def check(self, action, merged, obj, others):
+        if action != 'CREATE':
+            return
+        from students.models import ClassAttendanceSession
+        from teachers.models import TeacherAttendance
+        on = merged['date']
+        if TeacherAttendance.objects.filter(date=on).exists() or ClassAttendanceSession.objects.filter(date=on).exists():
+            raise ValidationError({'date': 'Kehadiran sudah direkod pada tarikh ini, jadi ia tidak boleh ditandakan tutup.'})
+
+    def display(self, field, value):
+        if field == 'date' and value:
+            y, m, d = str(value).split('-')
+            return f'{d}/{m}/{y}'
+        return str(value) if value not in (None, '') else '—'
+
+
 HANDLERS = {h.kind: h for h in (
     SubjectHandler(), VendorHandler(), ExpenseCategoryHandler(), ExpenseSubcategoryHandler(), TeacherHandler(),
-    PricingTierHandler(), DiscountHandler(),
+    PricingTierHandler(), DiscountHandler(), TimeSlotHandler(), ClassroomHandler(), ClosedDateHandler(),
 )}
 
 

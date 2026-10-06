@@ -98,12 +98,12 @@ export function CardHeader({ title, description, actions, className }) {
   );
 }
 
-export function EmptyState({ icon: Icon, title, children }) {
+export function EmptyState({ icon: Icon, title, description, children }) {
   return (
     <div className="px-6 py-12 text-center">
       {Icon && <Icon className="mx-auto size-8 text-gray-300" aria-hidden />}
       <p className="mt-3 text-sm font-medium text-gray-900">{title}</p>
-      {children && <p className="mt-1 text-sm text-gray-500">{children}</p>}
+      {(description || children) && <p className="mt-1 text-sm text-gray-500">{description ?? children}</p>}
     </div>
   );
 }

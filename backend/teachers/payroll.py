@@ -36,7 +36,11 @@ def locked_teachers(on):
 def roster(on):
     """Classes held on `on`: the weekly timetable for that weekday plus replacement / extra
     classes moved to that date, with anything already recorded."""
+    from academic.calendar import closed_reason
     from academic.models import ClassTimetable, ClassRescheduleLog
+
+    if closed_reason(on):
+        return []  # the centre is closed: no classes are held
 
     classes = {c.id: c for c in ClassTimetable.objects.select_related('slot', 'subject', 'teacher', 'classroom')
                .filter(slot__day=WEEKDAY_TO_DAY.get(on.weekday(), '-'))}
@@ -84,8 +88,10 @@ def rate_of(teacher_id, cache):
 
 @transaction.atomic
 def save_roster(on, marks, by):
+    from academic.calendar import require_open
     from academic.models import ClassTimetable
 
+    require_open(on)
     locked = locked_teachers(on)
     rates = {}
     saved = 0

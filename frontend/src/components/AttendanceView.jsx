@@ -128,6 +128,7 @@ function Roster({ cls, day, teacher, onBack }) {
   const [saved, setSaved] = useState(false);
   const [existing, setExisting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [closed, setClosed] = useState('');
   const future = day > todayISO();
   const label = classLabel(cls, subjects);
 
@@ -143,6 +144,7 @@ function Roster({ cls, day, teacher, onBack }) {
         setNote(r.note || '');
         setSaved(Boolean(r.saved));
         setExisting(Boolean(r.saved));
+        setClosed(r.closed || '');
       })
       .catch(() => {
         if (!cancelled) { setRoster([]); notify('Gagal memuat senarai kelas.', 'error'); }
@@ -189,6 +191,10 @@ function Roster({ cls, day, teacher, onBack }) {
       {future ? (
         <Card>
           <EmptyState title="Kedatangan hanya boleh diambil pada hari kelas" />
+        </Card>
+      ) : closed ? (
+        <Card>
+          <EmptyState title={`Pusat tutup: ${closed}`}>Kedatangan tidak direkod pada hari cuti.</EmptyState>
         </Card>
       ) : roster.length === 0 ? (
         <Card>

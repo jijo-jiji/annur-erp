@@ -195,7 +195,7 @@ export default function TimetableView({ role }) {
 function ClassFormModal({ cls, onClose, onSaved }) {
   const { subjects, teachers, timeSlots, classrooms, settings, saveClass } = useStore();
   const isNew = !cls.id;
-  const slots = [...timeSlots].sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || a.start_time.localeCompare(b.start_time));
+  const slots = timeSlots.filter((s) => s.is_active !== false || s.id === cls.slotPk).sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || a.start_time.localeCompare(b.start_time));
   const [f, setF] = useState({
     slot: cls.slotPk ?? slots[0]?.id ?? '',
     subject: cls.subjectPk ?? '',
@@ -264,7 +264,7 @@ function ClassFormModal({ cls, onClose, onSaved }) {
         </Select>
         <Select label="Bilik" value={f.classroom} onChange={(e) => set({ classroom: e.target.value })}>
           <option value="">Belum ditetapkan</option>
-          {classrooms.map((r) => (
+          {classrooms.filter((r) => r.is_active !== false || r.id === cls.roomPk).map((r) => (
             <option key={r.id} value={r.id}>{r.name}</option>
           ))}
         </Select>

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Download, FileText, Plus, Printer, Trash2, UploadCloud } from 'lucide-react';
 import { academicApi, filesApi } from '../api/client';
 import { useApp } from '../context/AppContext';
-import { DAYS } from '../lib/config';
 import { useStore } from '../store';
 import { classLabel } from '../lib/domain';
 import { date, DAY_LABEL, FORMS, timeRange, todayISO } from '../lib/format';
@@ -139,7 +138,7 @@ export default function HandoutRepositoryView({ role }) {
 
 function AddModal({ onClose }) {
   const { createHandout, refreshAllData, timetable } = useApp();
-  const { classes, subjects } = useStore();
+  const { classes, subjects, days: DAYS } = useStore();
   const notify = useToast();
   const [f, setF] = useState({ title: '', classId: '', date: todayISO(), copies: 20, description: '', file: null });
   const [busy, setBusy] = useState(false);

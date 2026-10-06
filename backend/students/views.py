@@ -445,7 +445,9 @@ def attendance_roster(request):
     cls = get_class(source.get('class_id'))
     on = get_date(source.get('date'), 'date', date.today())
 
+    from academic.calendar import closed_reason, require_open
     if request.method == 'POST':
+        require_open(on)
         students = {s.id: s for s in _roster_students(cls)}
         with transaction.atomic():
             session, _ = ClassAttendanceSession.objects.update_or_create(
@@ -479,6 +481,7 @@ def attendance_roster(request):
         'class_id': cls.id,
         'class_code': cls.class_code,
         'date': on,
+        'closed': closed_reason(on),
         'saved': session is not None,
         'note': session.note if session else '',
         'recorded_by': session.recorded_by if session else '',

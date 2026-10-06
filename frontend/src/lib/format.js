@@ -19,7 +19,7 @@ const MONTHS = ['Januari', 'Februari', 'Mac', 'April', 'Mei', 'Jun', 'Julai', 'O
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogo', 'Sep', 'Okt', 'Nov', 'Dis'];
 
 export const DAY_LABEL = {
-  JUMAAT: 'Jumaat', SABTU: 'Sabtu', ISNIN: 'Isnin', SELASA: 'Selasa', RABU: 'Rabu', KHAMIS: 'Khamis',
+  JUMAAT: 'Jumaat', SABTU: 'Sabtu', AHAD: 'Ahad', ISNIN: 'Isnin', SELASA: 'Selasa', RABU: 'Rabu', KHAMIS: 'Khamis',
 };
 
 export const ROLE_LABEL = {

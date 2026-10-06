@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from core import grades
-from .models import TimetableChange, Classroom, TimeSlot, ClassTimetable, ClassRescheduleLog, LessonHandout
+from .models import TimetableChange, Classroom, TimeSlot, ClosedDate, ClassTimetable, ClassRescheduleLog, LessonHandout
 from business_config.serializers import SubjectMasterSerializer
 from teachers.serializers import TeacherSerializer
 
@@ -8,6 +8,12 @@ class ClassroomSerializer(serializers.ModelSerializer):
     class Meta:
         model = Classroom
         fields = '__all__'
+
+class ClosedDateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClosedDate
+        fields = '__all__'
+
 
 class TimeSlotSerializer(serializers.ModelSerializer):
     class Meta:

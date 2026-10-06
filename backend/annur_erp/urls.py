@@ -13,7 +13,7 @@ from teachers.views import (
 )
 from academic.views import (
     TimetableChangeViewSet,
-    ClassroomViewSet, TimeSlotViewSet, ClassTimetableViewSet,
+    ClassroomViewSet, TimeSlotViewSet, ClosedDateViewSet, ClassTimetableViewSet,
     ClassRescheduleLogViewSet, LessonHandoutViewSet
 )
 from students.views import (
@@ -40,6 +40,7 @@ router.register(r'auth/accounts', AccountViewSet, basename='account')
 # Academic & Timetable
 router.register(r'academic/classrooms', ClassroomViewSet)
 router.register(r'academic/time-slots', TimeSlotViewSet)
+router.register(r'academic/closed-dates', ClosedDateViewSet)
 router.register(r'academic/timetable', ClassTimetableViewSet)
 router.register(r'academic/reschedule-logs', ClassRescheduleLogViewSet)
 router.register(r'academic/timetable-changes', TimetableChangeViewSet)

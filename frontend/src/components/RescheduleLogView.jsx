@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CalendarClock, Check, Copy, Download, Plus } from 'lucide-react';
-import { CENTRE, DAYS } from '../lib/config';
+import { CENTRE } from '../lib/config';
 import { downloadCsv } from '../lib/csv';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
@@ -183,7 +183,7 @@ const MONTH_CODES = ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL', 'OGO', 'SE
 const logMonth = (iso) => (iso ? `${MONTH_CODES[Number(iso.slice(5, 7)) - 1]} '${iso.slice(2, 4)}` : '');
 
 function CreateModal({ open, role, presetClass, onClose }) {
-  const { classes, subjects, addReschedule } = useStore();
+  const { classes, subjects, addReschedule, days: DAYS } = useStore();
   const empty = { classId: presetClass || '', cancelled: '', replacement: '', reason: 'PH', remarks: '' };
   const [kind, setKind] = useState('replace');
   const [f, setF] = useState(empty);

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Download, GraduationCap, Plus, Search } from 'lucide-react';
 import { staffApi } from '../api/client';
 import { useApp } from '../context/AppContext';
-import { DAYS } from '../lib/config';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
 import { navigate } from '../lib/nav';
@@ -68,7 +67,7 @@ export default function TeachersView({ role }) {
   // Rates, complaints and increments are for Supervisor and Management; the server leaves them out for Admin
   const showPay = can(role, 'teachers.pay');
   const canDecide = can(role, 'payroll.approve');
-  const { teachers, classes, subjects, submitChangeRequest } = useStore();
+  const { teachers, classes, subjects, submitChangeRequest, days: DAYS } = useStore();
   const { refreshTeachers, refreshAllData } = useApp();
   const notify = useToast();
   const [view, setView] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'directory');

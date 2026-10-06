@@ -5,15 +5,21 @@ from rest_framework.response import Response
 from django.db import transaction
 from django.utils import timezone
 from core.permissions import APPROVER_ROLES, MANAGEMENT, display_name, get_role, require_role
-from .models import Classroom, TimeSlot, ClassTimetable, ClassRescheduleLog, LessonHandout, TimetableChange
+from .models import Classroom, TimeSlot, ClosedDate, ClassTimetable, ClassRescheduleLog, LessonHandout, TimetableChange
 from .serializers import (
-    ClassroomSerializer, TimeSlotSerializer, ClassTimetableSerializer,
+    ClassroomSerializer, TimeSlotSerializer, ClosedDateSerializer, ClassTimetableSerializer,
     ClassRescheduleLogSerializer, LessonHandoutSerializer, TimetableChangeSerializer
 )
 
 class ClassroomViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Classroom.objects.all()
     serializer_class = ClassroomSerializer
+
+class ClosedDateViewSet(viewsets.ReadOnlyModelViewSet):
+    """Closed days are changed through change requests (Supervisor asks, Management approves), never here."""
+    queryset = ClosedDate.objects.all()
+    serializer_class = ClosedDateSerializer
+
 
 class TimeSlotViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = TimeSlot.objects.all()

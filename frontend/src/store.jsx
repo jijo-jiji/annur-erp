@@ -4,6 +4,7 @@ import {
   academicApi, attendanceApi, billingApi, changeRequestApi, configApi, dashboardApi, request, studentsApi,
 } from './api/client';
 import { setForms, todayISO } from './lib/format';
+import { DAYS } from './lib/config';
 
 // Adapter between the server and the screens. Screens read data in one consistent shape
 // (student.name, student.form, class.enrolled, invoice.paid, ...) and call actions here;
@@ -326,6 +327,8 @@ export function StoreProvider({ children }) {
       ...toExamResults(resultRows, classes, students),
       grades,
       timeSlots: app.timeSlots,
+      // The days the centre opens: days with a class or an active slot, in the centre's week order
+      days: DAYS.filter((d) => classes.some((c) => c.day === d) || app.timeSlots.some((s) => s.day === d && s.is_active !== false)),
       classrooms: app.classrooms,
     };
   }, [app.students, app.timetable, app.invoices, app.subjects, app.teachers, app.receipts, app.vouchers, app.vendors,

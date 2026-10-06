@@ -276,6 +276,7 @@ export const expensesApi = {
 export const academicApi = {
   getClassrooms: () => request('/academic/classrooms/'),
   getTimeSlots: () => request('/academic/time-slots/'),
+  getClosedDates: () => request('/academic/closed-dates/'),
   getTimetable: () => request('/academic/timetable/'),
   createClass: (data) => request('/academic/timetable/', {
     method: 'POST',

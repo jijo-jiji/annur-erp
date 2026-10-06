@@ -7,4 +7,5 @@ export const CENTRE = {
   whatsapp: '60139838085',
 };
 
-export const DAYS = ['JUMAAT', 'SABTU', 'ISNIN', 'SELASA', 'RABU', 'KHAMIS'];
+// Every day of the week, in the order the centre uses (Friday first). The days it opens are the days that have a slot.
+export const DAYS = ['JUMAAT', 'SABTU', 'AHAD', 'ISNIN', 'SELASA', 'RABU', 'KHAMIS'];

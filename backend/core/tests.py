@@ -1168,3 +1168,156 @@ class AccountTests(RoleTestBase):
         typed = self.client.post(f'{self.URL}{uid}/reset_password/', {'password': 'Lain-Sementara-55'}, format='json')
         self.assertNotIn('temporary_password', typed.data)
         self.assertEqual(self.login('aina.r', 'Lain-Sementara-55').status_code, 200)
+
+
+class ScheduleRequestTests(RoleTestBase):
+    """Time slots, classrooms and closed days: Supervisor asks, Management approves; nobody needs the developer."""
+    URL = '/api/v1/change-requests/'
+
+    def setUp(self):
+        super().setUp()
+        from academic.models import ClassTimetable, Classroom, TimeSlot
+        from business_config.models import SubjectMaster
+        self.TimeSlot, self.Classroom = TimeSlot, Classroom
+        self.slot = TimeSlot.objects.create(day='SABTU', start_time='09:00', end_time='10:30', period_label='Pagi 9.00 - 10.30')
+        self.room = Classroom.objects.create(name='Bilik Al-Farabi', capacity=20)
+        self.math = SubjectMaster.objects.create(code='MT', name='Matematik', level_category='UPPER_SEC')
+        self.cls = ClassTimetable.objects.create(slot=self.slot, subject=self.math, form_level='F5', section='A', max_seats=10, classroom=self.room)
+
+    def ask(self, kind, action, payload=None, target_id=None, note='Perlu'):
+        return self.client.post(self.URL, {'kind': kind, 'action': action, 'target_id': target_id, 'payload': payload or {}, 'note': note}, format='json')
+
+    def approve(self, req):
+        self.as_role(MANAGEMENT)
+        res = self.client.post(f"{self.URL}{req.data['id']}/approve/", {}, format='json')
+        self.as_role(SUPERVISOR)
+        return res
+
+    def test_admin_cannot_ask_and_nothing_can_be_written_directly(self):
+        self.as_role(ADMIN)
+        for kind, payload in (('TIME_SLOT', {'day': 'SABTU', 'start_time': '20:30', 'end_time': '22:00'}), ('CLASSROOM', {'name': 'Bilik Baru', 'capacity': 10}),
+                              ('CLOSED_DATE', {'date': '2026-12-25', 'reason': 'Krismas'})):
+            self.assertEqual(self.ask(kind, 'CREATE', payload).status_code, 403, kind)
+        for role in (SUPERVISOR, MANAGEMENT):
+            self.as_role(role)
+            for url in ('time-slots', 'classrooms', 'closed-dates'):
+                self.assertEqual(self.client.post(f'/api/v1/academic/{url}/', {}, format='json').status_code, 405, url)
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.get('/api/v1/academic/closed-dates/').status_code, 200)
+
+    def test_new_saturday_evening_slot_is_usable_after_approval(self):
+        self.as_role(SUPERVISOR)
+        res = self.ask('TIME_SLOT', 'CREATE', {'day': 'SABTU', 'start_time': '20:30', 'end_time': '22:00'})
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['status'], 'PENDING')
+        self.assertEqual(res.data['target_label'], 'Sabtu 20:30-22:00')
+        self.assertEqual(self.TimeSlot.objects.count(), 1)
+        self.assertEqual(self.approve(res).status_code, 200)
+        slot = self.TimeSlot.objects.get(start_time='20:30')
+        self.assertEqual((slot.day, slot.end_time, slot.period_label, slot.is_active), ('SABTU', '22:00', 'Malam 8.30 - 10.00', True))
+        self.as_role(ADMIN)
+        self.assertIn('20:30', [s['start_time'] for s in self.client.get('/api/v1/academic/time-slots/').data])
+
+    def test_a_sunday_slot_is_possible(self):
+        self.as_role(MANAGEMENT)
+        res = self.ask('TIME_SLOT', 'CREATE', {'day': 'AHAD', 'start_time': '10:00', 'end_time': '11:30'}, note='')
+        self.assertEqual((res.status_code, res.data['status']), (201, 'APPROVED'))
+        self.assertEqual(self.TimeSlot.objects.get(day='AHAD').period_label, 'Pagi 10.00 - 11.30')
+
+    def test_slot_checks(self):
+        self.as_role(SUPERVISOR)
+        make = lambda **kw: self.ask('TIME_SLOT', 'CREATE', {'day': 'SABTU', 'start_time': '20:30', 'end_time': '22:00', **kw})
+        self.assertEqual(make(start_time='8:30').status_code, 400)
+        self.assertEqual(make(start_time='25:00').status_code, 400)
+        self.assertEqual(make(end_time='20:30').status_code, 400)  # not after the start
+        self.assertEqual(make(end_time='19:00').status_code, 400)
+        self.assertEqual(make(day='ISNEN').status_code, 400)
+        self.assertEqual(make(start_time='09:00', end_time='10:30').status_code, 400)  # already exists
+        self.assertEqual(make().status_code, 201)
+        self.assertEqual(make().status_code, 400)  # already waiting
+
+    def test_changing_times_renames_the_slot_and_classes_keep_it(self):
+        self.as_role(SUPERVISOR)
+        res = self.ask('TIME_SLOT', 'UPDATE', {'start_time': '16:00', 'end_time': '17:30'}, self.slot.id)
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(self.approve(res).status_code, 200)
+        self.slot.refresh_from_db()
+        self.assertEqual((self.slot.start_time, self.slot.period_label), ('16:00', 'Petang 4.00 - 5.30'))
+        self.cls.refresh_from_db()
+        self.assertEqual(self.cls.slot_id, self.slot.id)
+
+    def test_a_slot_used_by_classes_is_retired_not_removed(self):
+        self.as_role(SUPERVISOR)
+        blocked = self.ask('TIME_SLOT', 'DELETE', None, self.slot.id)
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('1 kelas', str(blocked.data))
+        retire = self.ask('TIME_SLOT', 'UPDATE', {'is_active': False}, self.slot.id)
+        self.assertEqual(retire.status_code, 201, retire.data)
+        self.approve(retire)
+        self.slot.refresh_from_db()
+        self.assertFalse(self.slot.is_active)
+        self.cls.refresh_from_db()
+        self.assertEqual(self.cls.slot_id, self.slot.id)  # the class keeps it
+        spare = self.TimeSlot.objects.create(day='ISNIN', start_time='09:00', end_time='10:30', period_label='x')
+        gone = self.ask('TIME_SLOT', 'DELETE', None, spare.id)
+        self.assertEqual(gone.status_code, 201, gone.data)
+        self.approve(gone)
+        self.assertFalse(self.TimeSlot.objects.filter(pk=spare.id).exists())
+
+    def test_classrooms(self):
+        self.as_role(SUPERVISOR)
+        res = self.ask('CLASSROOM', 'CREATE', {'name': '  Bilik   Ibnu Sina ', 'capacity': 15})
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(self.approve(res).status_code, 200)
+        self.assertEqual(self.Classroom.objects.get(name='Bilik Ibnu Sina').capacity, 15)
+        self.assertEqual(self.ask('CLASSROOM', 'CREATE', {'name': 'bilik al-farabi', 'capacity': 10}).status_code, 400)  # name used, any case
+        self.assertEqual(self.ask('CLASSROOM', 'CREATE', {'name': 'Bilik Besar', 'capacity': 0}).status_code, 400)
+        self.assertEqual(self.ask('CLASSROOM', 'CREATE', {'name': 'Bilik Besar', 'capacity': 900}).status_code, 400)
+        self.assertEqual(self.ask('CLASSROOM', 'DELETE', None, self.room.id).status_code, 400)  # a class uses it
+        rename = self.ask('CLASSROOM', 'UPDATE', {'name': 'Bilik Al-Farabi 2', 'capacity': 25}, self.room.id)
+        self.assertEqual(rename.status_code, 201, rename.data)
+        self.approve(rename)
+        self.room.refresh_from_db()
+        self.assertEqual((self.room.name, self.room.capacity), ('Bilik Al-Farabi 2', 25))
+
+    def test_a_closed_day_blocks_attendance_and_roster(self):
+        from datetime import date
+        on = date(2026, 12, 25)
+        self.as_role(SUPERVISOR)
+        res = self.ask('CLOSED_DATE', 'CREATE', {'date': '2026-12-25', 'reason': 'Hari Krismas'})
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['target_label'], '25/12/2026 Hari Krismas')
+        self.assertEqual(self.ask('CLOSED_DATE', 'CREATE', {'date': '2026-12-25', 'reason': 'Lain'}).status_code, 400)  # waiting
+        self.assertEqual(self.approve(res).status_code, 200)
+        self.assertEqual(self.ask('CLOSED_DATE', 'CREATE', {'date': '2026-12-25', 'reason': 'Lain'}).status_code, 400)  # exists
+        self.assertEqual(self.ask('CLOSED_DATE', 'UPDATE', {'date': '2026-12-26'}, 1).status_code, 400)  # the date cannot move
+
+        self.as_role(ADMIN)
+        teacher = self.client.get('/api/v1/teachers/attendance/roster/?date=2026-12-25').data
+        self.assertEqual((teacher['closed'], teacher['classes']), ('Hari Krismas', []))
+        self.assertEqual(self.client.post('/api/v1/teachers/attendance/roster/', {'date': '2026-12-25', 'marks': []}, format='json').status_code, 400)
+        student = self.client.get(f'/api/v1/attendance/roster/?class_id={self.cls.id}&date=2026-12-25').data
+        self.assertEqual(student['closed'], 'Hari Krismas')
+        self.assertEqual(self.client.post('/api/v1/attendance/roster/', {'class_id': self.cls.id, 'date': '2026-12-25', 'marks': []}, format='json').status_code, 400)
+        # an open day is unaffected
+        self.assertIsNone(self.client.get(f'/api/v1/attendance/roster/?class_id={self.cls.id}&date=2026-12-24').data['closed'])
+        self.assertEqual(self.client.post('/api/v1/attendance/roster/', {'class_id': self.cls.id, 'date': '2026-12-24', 'marks': []}, format='json').status_code, 200)
+
+    def test_a_day_with_attendance_cannot_be_closed_and_a_closed_day_can_reopen(self):
+        from students.models import ClassAttendanceSession
+        ClassAttendanceSession.objects.create(timetable_class=self.cls, date='2026-12-24', recorded_by='x')
+        self.as_role(SUPERVISOR)
+        blocked = self.ask('CLOSED_DATE', 'CREATE', {'date': '2026-12-24', 'reason': 'Cuti'})
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('Kehadiran sudah direkod', str(blocked.data))
+        res = self.ask('CLOSED_DATE', 'CREATE', {'date': '2026-12-25', 'reason': 'Krismas'})
+        self.approve(res)
+        from academic.models import ClosedDate
+        cd = ClosedDate.objects.get()
+        reopen = self.ask('CLOSED_DATE', 'DELETE', None, cd.id)
+        self.assertEqual(reopen.status_code, 201, reopen.data)
+        self.assertTrue(ClosedDate.objects.exists())
+        self.approve(reopen)
+        self.assertFalse(ClosedDate.objects.exists())
+        self.as_role(ADMIN)
+        self.assertIsNone(self.client.get('/api/v1/teachers/attendance/roster/?date=2026-12-25').data['closed'])

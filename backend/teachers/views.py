@@ -95,7 +95,8 @@ class TeacherAttendanceViewSet(viewsets.ReadOnlyModelViewSet):
             raise ValidationError({'date': 'Tarikh tidak sah.'})
         if request.method == 'POST':
             payroll.save_roster(on, request.data.get('marks') or [], display_name(request.user))
-        return Response({'date': on, 'classes': payroll.roster(on)})
+        from academic.calendar import closed_reason
+        return Response({'date': on, 'closed': closed_reason(on), 'classes': payroll.roster(on)})
 
     @action(detail=False, methods=['get'])
     def summary(self, request):
