@@ -37,6 +37,8 @@ const REQUEST_PAGES = {
   VENDOR: { name: 'pembekal', tab: 'expenses', query: '?tab=vendors' },
   EXPENSE_CATEGORY: { name: 'kategori perbelanjaan', tab: 'expenses', query: '?tab=categories' },
   TEACHER: { name: 'guru', tab: 'teachers', query: '?tab=requests' },
+  PRICING_TIER: { name: 'pakej yuran', tab: 'settings', query: '?tab=pricing' },
+  DISCOUNT: { name: 'diskaun', tab: 'settings', query: '?tab=discounts' },
   EXPENSE_SUBCATEGORY: { name: 'subkategori perbelanjaan', tab: 'expenses', query: '?tab=categories' },
 };
 

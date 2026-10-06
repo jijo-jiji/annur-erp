@@ -10,7 +10,11 @@ import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, EmptyState, IconButton, inputClass, Input, PageHeader, Select, Table, Tabs, Td, Th, useToast } from './ui';
 
 export default function ManagementConfigView({ role }) {
-  const [tab, setTab] = useState('subjects');
+  // The page can open on a tab, e.g. from a dashboard notice: #/settings?tab=pricing
+  const [tab, setTab] = useState(() => {
+    const asked = new URLSearchParams(window.location.hash.split('?')[1]).get('tab');
+    return ['pricing', 'discounts', 'policies'].includes(asked) && can(role, 'settings.advanced') ? asked : 'subjects';
+  });
   return (
     <>
       <PageHeader
@@ -31,9 +35,9 @@ export default function ManagementConfigView({ role }) {
         ]}
       />
       {tab === 'subjects' && <Subjects role={role} />}
-      {tab === 'pricing' && <Pricing editable={can(role, 'settings.pricing')} />}
-      {tab === 'discounts' && <Discounts editable={can(role, 'settings.discounts')} />}
-      {tab === 'policies' && <Policies editable={can(role, 'settings.policies')} />}
+      {tab === 'pricing' && can(role, 'settings.advanced') && <Pricing role={role} />}
+      {tab === 'discounts' && can(role, 'settings.advanced') && <Discounts role={role} />}
+      {tab === 'policies' && can(role, 'settings.advanced') && <Policies editable={can(role, 'settings.policies')} />}
     </>
   );
 }
@@ -171,42 +175,69 @@ function Subjects({ role }) {
   );
 }
 
-function Pricing({ editable }) {
-  const { pricingTiers, grades, saveTiers, addTier, deleteTier, renameTierGroup } = useStore();
+const FEE_REASON = { name: 'note', label: 'Sebab permohonan', type: 'textarea', required: true, hint: 'Pengurusan akan melihat sebab ini semasa membuat keputusan.' };
+
+// Fee packages change by request: Supervisor asks, Management approves; Management's own changes apply at once.
+// The package total always follows the per-subject rate.
+function Pricing({ role }) {
+  const { pricingTiers, grades, submitChangeRequest } = useStore();
+  const { refreshAllData } = useApp();
   const notify = useToast();
-  // Edits by package id; anything not edited shows the saved rate
+  const direct = role === 'MANAGEMENT';
+  const editable = can(role, 'settings.pricing');
+  const { requests, load } = useChangeRequests('PRICING_TIER');
+  // Rate edits by package id; anything not edited shows the saved rate
   const [edits, setEdits] = useState({});
-  const [dialog, setDialog] = useState(null); // { type: 'group' } | { type: 'package', group } | { type: 'rename', group }
+  const [dialog, setDialog] = useState(null); // { type: 'group' | 'save' } | { type: 'package' | 'rename', group } | { type: 'remove', tier }
   const draft = pricingTiers.map((t) => (t.id in edits ? { ...t, rate: edits[t.id] } : t));
-  const setDraft = (rows) => setEdits(Object.fromEntries(rows.filter((t) => t.rate !== pricingTiers.find((x) => x.id === t.id)?.rate).map((t) => [t.id, t.rate])));
-  const dirty = Object.keys(edits).length > 0;
+  const changed = draft.filter((t) => t.id in edits && t.rate !== pricingTiers.find((x) => x.id === t.id)?.rate);
+  const setRate = (id, rate) => setEdits((e) => {
+    const next = { ...e };
+    if (rate === pricingTiers.find((x) => x.id === id)?.rate) delete next[id]; else next[id] = rate;
+    return next;
+  });
+  const dirty = changed.length > 0;
+  const waiting = new Set(requests.filter((r) => r.status === 'PENDING' && r.target_id).map((r) => r.target_id));
 
   const groups = [...new Set(draft.map((t) => t.category))];
   const gradesOf = (group) => grades.filter((g) => g.fee_group === group).map((g) => g.label);
   const withoutPackage = grades.filter((g) => !g.fee_group || !groups.includes(g.fee_group)).map((g) => g.label);
 
-  const remove = (t) => {
-    if (!window.confirm(`Padam pakej ${t.count} subjek? Yuran dikira mengikut pakej terdekat dalam kumpulan yang sama.`)) return;
-    deleteTier(t.id).then(() => notify('Pakej dipadam.')).catch(() => {});
+  // Sends one request per change; each is applied at once for Management or waits for Management's approval
+  const send = async (items, note) => {
+    let last;
+    try {
+      for (const item of items) last = await submitChangeRequest({ kind: 'PRICING_TIER', note, ...item });
+    } finally {
+      await load();
+    }
+    notify(last?.status === 'PENDING'
+      ? `Permohonan dihantar${items.length > 1 ? ` (${items.length})` : ''}. Ia berkuat kuasa selepas diluluskan oleh Pengurusan.`
+      : 'Pakej yuran dikemas kini.');
   };
+  const reasonIfAsking = direct ? [] : [FEE_REASON];
 
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader
           title="Pakej yuran bulanan"
-          description="Kadar seunit subjek; jumlah pakej dikira secara automatik. Tambah kumpulan atau pakej baharu bila-bila masa, kemudian pilih kumpulan itu pada gred di Data induk."
+          description={direct
+            ? 'Kadar seunit subjek; jumlah pakej dikira secara automatik. Permohonan Supervisor menunggu kelulusan anda di bawah.'
+            : 'Kadar seunit subjek; jumlah pakej dikira secara automatik. Perubahan berkuat kuasa selepas diluluskan oleh Pengurusan. Pilih kumpulan pada gred di Data induk.'}
           actions={
             editable ? (
               <>
-                {dirty && <Button size="sm" variant="ghost" onClick={() => setDraft(pricingTiers)}>Buang perubahan</Button>}
+                {dirty && <Button size="sm" variant="ghost" onClick={() => setEdits({})}>Buang perubahan</Button>}
                 <Button
                   size="sm"
                   variant="primary"
                   disabled={!dirty}
-                  onClick={() => saveTiers(draft).then(() => { setEdits({}); notify('Pakej yuran dikemas kini.'); }).catch(() => {})}
+                  onClick={() => (direct
+                    ? send(changed.map((t) => ({ action: 'UPDATE', pk: t.id, values: { price_per_subject: t.rate } }))).then(() => setEdits({})).catch(() => {})
+                    : setDialog({ type: 'save' }))}
                 >
-                  Simpan
+                  {direct ? 'Simpan' : 'Hantar permohonan'}
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => setDialog({ type: 'group' })}><Plus size={14} /> Kumpulan baharu</Button>
               </>
@@ -230,7 +261,7 @@ function Pricing({ editable }) {
             description={group === 'WALK_IN' ? 'Kadar walk-in sesi' : gradesOf(group).length ? `Digunakan oleh: ${gradesOf(group).join(', ')}` : 'Belum digunakan oleh mana-mana gred'}
             actions={editable && (
               <>
-                <Button size="sm" variant="ghost" onClick={() => setDialog({ type: 'rename', group })}><Pencil size={14} /> Nama</Button>
+                <Button size="sm" variant="ghost" disabled={draft.filter((t) => t.category === group).every((t) => waiting.has(t.id))} onClick={() => setDialog({ type: 'rename', group })}><Pencil size={14} /> Nama</Button>
                 <Button size="sm" variant="secondary" onClick={() => setDialog({ type: 'package', group })}><Plus size={14} /> Pakej</Button>
               </>
             )}
@@ -247,6 +278,7 @@ function Pricing({ editable }) {
             <tbody>
               {draft.filter((t) => t.category === group).sort((a, b) => a.count - b.count).map((t) => {
                 const original = pricingTiers.find((x) => x.id === t.id);
+                const isWaiting = waiting.has(t.id);
                 return (
                   <tr key={t.id}>
                     <Td className="tnum">{t.count} subjek</Td>
@@ -257,18 +289,19 @@ function Pricing({ editable }) {
                         step="1"
                         aria-label={`Kadar ${tierGroupLabel(group, pricingTiers)} ${t.count} subjek`}
                         value={t.rate}
-                        disabled={!editable}
-                        onChange={(e) => setDraft(draft.map((x) => (x.id === t.id ? { ...x, rate: Number(e.target.value) } : x)))}
+                        disabled={!editable || isWaiting}
+                        onChange={(e) => setRate(t.id, Number(e.target.value))}
                         className={`${inputClass} max-w-24 tnum`}
                       />
                     </Td>
                     <Td className="text-right font-medium tnum">
                       {rm(t.rate * t.count)}
                       {original && original.rate !== t.rate && <Badge tone="amber" className="ml-2">Diubah</Badge>}
+                      {isWaiting && <Badge tone="amber" className="ml-2">Menunggu kelulusan</Badge>}
                     </Td>
                     {editable && (
                       <Td>
-                        <IconButton label={`Padam pakej ${t.count} subjek`} icon={Trash2} onClick={() => remove(t)} />
+                        <IconButton label={`Padam pakej ${t.count} subjek`} icon={Trash2} disabled={isWaiting} onClick={() => setDialog({ type: 'remove', tier: t })} />
                       </Td>
                     )}
                   </tr>
@@ -279,48 +312,96 @@ function Pricing({ editable }) {
         </Card>
       ))}
 
+      {editable && (
+        <ChangeRequestsPanel
+          title="Permohonan perubahan pakej yuran"
+          description={direct ? 'Permohonan Supervisor menunggu kelulusan anda. Perubahan Pengurusan terus berkuat kuasa dan direkod di sini.' : 'Perubahan anda berkuat kuasa selepas diluluskan oleh Pengurusan.'}
+          requests={requests}
+          reload={load}
+          onApplied={refreshAllData}
+          editFields={(r) => (r.action === 'DELETE' ? []
+            : r.action === 'CREATE' ? [
+              { name: 'group_label', label: 'Nama kumpulan', required: true },
+              { name: 'subject_count', label: 'Bilangan subjek', type: 'number', min: '1', required: true },
+              { name: 'price_per_subject', label: 'Kadar / subjek (RM)', type: 'number', min: '0', step: '0.01', required: true },
+            ] : 'group_label' in r.payload
+              ? [{ name: 'group_label', label: 'Nama kumpulan', required: true }]
+              : [{ name: 'price_per_subject', label: 'Kadar / subjek (RM)', type: 'number', min: '0', step: '0.01', required: true }])}
+          editInitial={(r) => {
+            const tier = pricingTiers.find((t) => t.id === r.target_id);
+            return { ...(tier ? { group_label: tier.label || tierGroupLabel(tier.category, pricingTiers), price_per_subject: tier.rate } : {}), ...r.payload };
+          }}
+        />
+      )}
+
+      {dialog?.type === 'save' && (
+        <FormModal
+          title="Hantar permohonan kadar baharu"
+          description={`${changed.length} pakej akan dimohon: ${changed.map((t) => `${tierGroupLabel(t.category, pricingTiers)} ${t.count} subjek ${rm(t.rate)}`).join(', ')}.`}
+          submitLabel="Hantar permohonan"
+          fields={[FEE_REASON]}
+          onSubmit={({ note }) => send(changed.map((t) => ({ action: 'UPDATE', pk: t.id, values: { price_per_subject: t.rate } })), note).then(() => setEdits({}))}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {dialog?.type === 'group' && (
         <FormModal
-          title="Kumpulan pakej baharu"
+          title={direct ? 'Kumpulan pakej baharu' : 'Mohon kumpulan pakej baharu'}
           description="Contoh: Darjah 1-4. Masukkan pakej pertama sekarang; pakej lain boleh ditambah kemudian."
-          initial={{ label: '', count: 1, rate: '' }}
+          submitLabel={direct ? 'Tambah kumpulan' : 'Hantar permohonan'}
+          initial={{ label: '', count: 1, rate: '', note: '' }}
           fields={[
             { name: 'label', label: 'Nama kumpulan', required: true, placeholder: 'cth. Darjah 1-4' },
             { name: 'count', label: 'Bilangan subjek pakej', type: 'number', min: '1', required: true },
-            { name: 'rate', label: 'Kadar / subjek (RM)', type: 'number', min: '0', step: '1', required: true },
+            { name: 'rate', label: 'Kadar / subjek (RM)', type: 'number', min: '0', step: '0.01', required: true },
+            ...reasonIfAsking,
           ]}
           onSubmit={async (v) => {
             const base = v.label.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'KUMPULAN';
-            const taken = new Set(pricingTiers.map((t) => t.category));
+            const taken = new Set([...pricingTiers.map((t) => t.category), ...requests.filter((r) => r.status === 'PENDING').map((r) => r.payload.level_category)]);
             let key = base;
             for (let i = 2; taken.has(key); i += 1) key = `${base}_${i}`;
-            await addTier({ group: key, label: v.label.trim(), count: Number(v.count), rate: Number(v.rate) });
-            notify('Kumpulan pakej ditambah. Pilih kumpulan ini pada gred di Data induk.');
+            await send([{ action: 'CREATE', values: { level_category: key, group_label: v.label.trim(), subject_count: Number(v.count), price_per_subject: Number(v.rate) } }], v.note);
           }}
           onClose={() => setDialog(null)}
         />
       )}
       {dialog?.type === 'package' && (
         <FormModal
-          title={`Pakej baharu: ${tierGroupLabel(dialog.group, pricingTiers)}`}
-          initial={{ count: '', rate: '' }}
+          title={`${direct ? 'Pakej baharu' : 'Mohon pakej baharu'}: ${tierGroupLabel(dialog.group, pricingTiers)}`}
+          submitLabel={direct ? 'Tambah pakej' : 'Hantar permohonan'}
+          initial={{ count: '', rate: '', note: '' }}
           fields={[
             { name: 'count', label: 'Bilangan subjek', type: 'number', min: '1', required: true },
-            { name: 'rate', label: 'Kadar / subjek (RM)', type: 'number', min: '0', step: '1', required: true },
+            { name: 'rate', label: 'Kadar / subjek (RM)', type: 'number', min: '0', step: '0.01', required: true },
+            ...reasonIfAsking,
           ]}
-          onSubmit={async (v) => {
-            await addTier({ group: dialog.group, label: tierGroupLabel(dialog.group, pricingTiers), count: Number(v.count), rate: Number(v.rate) });
-            notify('Pakej ditambah.');
-          }}
+          onSubmit={(v) => send([{ action: 'CREATE', values: { level_category: dialog.group, group_label: tierGroupLabel(dialog.group, pricingTiers), subject_count: Number(v.count), price_per_subject: Number(v.rate) } }], v.note)}
           onClose={() => setDialog(null)}
         />
       )}
       {dialog?.type === 'rename' && (
         <FormModal
           title="Tukar nama kumpulan"
-          initial={{ label: tierGroupLabel(dialog.group, pricingTiers) }}
-          fields={[{ name: 'label', label: 'Nama kumpulan', required: true }]}
-          onSubmit={async (v) => { await renameTierGroup(dialog.group, v.label.trim()); notify('Nama kumpulan dikemas kini.'); }}
+          description="Semua pakej dalam kumpulan ini menggunakan nama baharu."
+          submitLabel={direct ? 'Simpan' : 'Hantar permohonan'}
+          initial={{ label: tierGroupLabel(dialog.group, pricingTiers), note: '' }}
+          fields={[{ name: 'label', label: 'Nama kumpulan', required: true }, ...reasonIfAsking]}
+          onSubmit={(v) => {
+            const tier = draft.filter((t) => t.category === dialog.group && !waiting.has(t.id)).sort((a, b) => a.count - b.count)[0];
+            return send([{ action: 'UPDATE', pk: tier.id, values: { group_label: v.label.trim() } }], v.note);
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'remove' && (
+        <FormModal
+          title={`${direct ? 'Padam' : 'Mohon padam'} pakej ${dialog.tier.count} subjek`}
+          description={`${tierGroupLabel(dialog.tier.category, pricingTiers)}. Yuran pelajar dikira mengikut pakej terdekat dalam kumpulan yang sama.`}
+          danger
+          submitLabel={direct ? 'Padam pakej' : 'Hantar permohonan'}
+          fields={reasonIfAsking}
+          onSubmit={({ note }) => send([{ action: 'DELETE', pk: dialog.tier.id }], note)}
           onClose={() => setDialog(null)}
         />
       )}
@@ -444,85 +525,142 @@ function Policies({ editable }) {
 }
 
 // Discount rules are set on a student's profile (standing) or on one invoice
-function Discounts({ editable }) {
-  const { discounts, students, saveDiscount, deleteDiscount } = useStore();
+// Discount types and voucher codes change by request: Supervisor asks, Management approves (Management's own apply at once)
+function discountFields(adding) {
+  return [
+    { name: 'name', label: 'Nama diskaun', required: true, hint: 'cth. Adik-beradik, Anak staf, Promosi awal tahun' },
+    ...(adding ? [{ name: 'code', label: 'Kod', required: true, hint: 'Kod ringkas tanpa ruang, cth. SIBLING. Tidak boleh diubah selepas dibuat.' }] : []),
+    { name: 'mode', label: 'Jenis', type: 'select', required: true, options: [{ value: 'PERCENT', label: 'Peratus (%)' }, { value: 'FIXED', label: 'Amaun tetap (RM)' }] },
+    { name: 'value', label: 'Nilai', type: 'number', min: '0', step: '0.01', required: true },
+    { name: 'recurring', label: 'Berulang setiap bulan', type: 'checkbox', hint: 'Jika tidak, diskaun dikenakan sekali sahaja.' },
+    { name: 'valid_from', label: 'Sah dari', type: 'date' },
+    { name: 'valid_until', label: 'Sah hingga', type: 'date' },
+    { name: 'max_uses', label: 'Had penggunaan', type: 'number', min: '1', hint: 'Kosongkan jika tiada had.' },
+    { name: 'is_active', label: 'Aktif', type: 'checkbox' },
+  ];
+}
+
+const discountInitial = (d) => ({
+  name: d?.label ?? '', code: d?.id ?? '', mode: d?.type ?? 'PERCENT', value: d?.value ?? '', recurring: d?.recurring ?? true,
+  valid_from: d?.validFrom ?? '', valid_until: d?.validUntil ?? '', max_uses: d?.maxUses ?? '', is_active: d?.active ?? true, note: '',
+});
+
+function Discounts({ role }) {
+  const { discounts, students, submitChangeRequest, reload } = useStore();
+  const { refreshAllData } = useApp();
   const notify = useToast();
-  const [editing, setEditing] = useState(null); // a discount, or {} for a new one
+  const direct = role === 'MANAGEMENT';
+  const editable = can(role, 'settings.discounts');
+  const { requests, load } = useChangeRequests('DISCOUNT');
+  const [dialog, setDialog] = useState(null); // { type: 'add' } | { type: 'edit' | 'remove', discount }
+  const waiting = new Set(requests.filter((r) => r.status === 'PENDING' && r.target_id).map((r) => r.target_id));
   const usage = (id) => students.filter((x) => ['ACTIVE', 'ON_HOLD'].includes(x.status) && x.discounts?.includes(id)).length;
   const validity = (d) => (d.validFrom || d.validUntil ? `${d.validFrom ? date(d.validFrom) : 'mula'} hingga ${d.validUntil ? date(d.validUntil) : 'tiada had'}` : 'Tiada had tempoh');
+  const reasonIfAsking = direct ? [] : [FEE_REASON];
+
+  const send = async (action, pk, values, note) => {
+    const done = await submitChangeRequest({ kind: 'DISCOUNT', action, pk, values, note });
+    notify(done.status === 'PENDING' ? 'Permohonan dihantar. Ia berkuat kuasa selepas diluluskan oleh Pengurusan.' : 'Diskaun disimpan.');
+    await Promise.all([load(), reload('discounts')]);
+  };
+  // The form sends text; numbers and blanks are tidied before they go
+  const tidy = (v) => ({
+    ...v, value: Number(v.value), max_uses: v.max_uses ? Number(v.max_uses) : null,
+    valid_from: v.valid_from || null, valid_until: v.valid_until || null,
+    ...(v.code ? { code: v.code.toUpperCase().replace(/[^A-Z0-9_]+/g, '_') } : {}),
+  });
 
   return (
-    <Card>
-      <CardHeader
-        title="Peraturan diskaun"
-        description="Diskaun tetap ditetapkan pada profil pelajar dan dikenakan dalam setiap larian invois bulanan; diskaun sekali ditolak pada satu invois."
-        actions={editable ? <Button size="sm" variant="primary" icon={Plus} onClick={() => setEditing({})}>Diskaun baharu</Button> : <Badge>Hanya supervisor dan pengurusan boleh mengubah</Badge>}
-      />
-      {discounts.length === 0 ? <EmptyState title="Belum ada peraturan diskaun" /> : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Diskaun</Th>
-              <Th>Nilai</Th>
-              <Th className="hidden md:table-cell">Tempoh sah</Th>
-              <Th className="text-right">Pelajar</Th>
-              <Th>Status</Th>
-              {editable && <Th className="w-0"><span className="sr-only">Tindakan</span></Th>}
-            </tr>
-          </thead>
-          <tbody>
-            {discounts.map((d) => (
-              <tr key={d.pk}>
-                <Td>
-                  <p className="font-medium text-gray-900">{d.label} <span className="font-normal text-gray-400">· {d.id}</span></p>
-                  <p className="text-[13px] text-gray-500">{d.recurring ? 'Berulang setiap bulan' : 'Sekali sahaja'}{d.maxUses ? ` · digunakan ${d.used}/${d.maxUses}` : ''}</p>
-                </Td>
-                <Td className="whitespace-nowrap tnum">{d.type === 'PERCENT' ? `${d.value}%` : rm(d.value)}</Td>
-                <Td className="hidden text-gray-700 md:table-cell">{validity(d)}</Td>
-                <Td className="text-right tnum">{usage(d.id)}</Td>
-                <Td>{d.active ? <Badge tone="green">Aktif</Badge> : <Badge>Tidak aktif</Badge>}</Td>
-                {editable && (
-                  <Td className="whitespace-nowrap">
-                    <IconButton label="Ubah" icon={Pencil} onClick={() => setEditing(d)} />
-                    <IconButton
-                      label="Padam"
-                      icon={Trash2}
-                      onClick={() => {
-                        if (!window.confirm(`Padam diskaun ${d.label}?`)) return;
-                        deleteDiscount(d).then(() => notify('Diskaun dipadam.', 'info')).catch(() => {});
-                      }}
-                    />
-                  </Td>
-                )}
+    <div className="space-y-6">
+      <Card>
+        <CardHeader
+          title="Peraturan diskaun"
+          description={`Diskaun tetap ditetapkan pada profil pelajar dan dikenakan dalam setiap larian invois bulanan; diskaun sekali ditolak pada satu invois.${direct ? '' : ' Perubahan berkuat kuasa selepas diluluskan oleh Pengurusan.'}`}
+          actions={editable ? <Button size="sm" variant="primary" icon={Plus} onClick={() => setDialog({ type: 'add' })}>{direct ? 'Diskaun baharu' : 'Mohon diskaun baharu'}</Button> : <Badge>Hanya supervisor dan pengurusan boleh mengubah</Badge>}
+        />
+        {discounts.length === 0 ? <EmptyState title="Belum ada peraturan diskaun" /> : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Diskaun</Th>
+                <Th>Nilai</Th>
+                <Th className="hidden md:table-cell">Tempoh sah</Th>
+                <Th className="text-right">Pelajar</Th>
+                <Th>Status</Th>
+                {editable && <Th className="w-0"><span className="sr-only">Tindakan</span></Th>}
               </tr>
-            ))}
-          </tbody>
-        </Table>
-      )}
-      {editing && (
-        <FormModal
-          title={editing.pk ? `Ubah ${editing.label}` : 'Diskaun baharu'}
-          initial={{
-            label: editing.label ?? '', id: editing.id ?? '', type: editing.type ?? 'PERCENT', value: editing.value ?? '',
-            recurring: editing.recurring ?? true, validFrom: editing.validFrom ?? '', validUntil: editing.validUntil ?? '',
-            maxUses: editing.maxUses ?? '', active: editing.active ?? true,
+            </thead>
+            <tbody>
+              {discounts.map((d) => (
+                <tr key={d.pk}>
+                  <Td>
+                    <p className="font-medium text-gray-900">{d.label} <span className="font-normal text-gray-400">· {d.id}</span></p>
+                    <p className="text-[13px] text-gray-500">{d.recurring ? 'Berulang setiap bulan' : 'Sekali sahaja'}{d.maxUses ? ` · digunakan ${d.used}/${d.maxUses}` : ''}</p>
+                  </Td>
+                  <Td className="whitespace-nowrap tnum">{d.type === 'PERCENT' ? `${d.value}%` : rm(d.value)}</Td>
+                  <Td className="hidden text-gray-700 md:table-cell">{validity(d)}</Td>
+                  <Td className="text-right tnum">{usage(d.id)}</Td>
+                  <Td>{waiting.has(d.pk) ? <Badge tone="amber">Menunggu kelulusan</Badge> : d.active ? <Badge tone="green">Aktif</Badge> : <Badge>Tidak aktif</Badge>}</Td>
+                  {editable && (
+                    <Td className="whitespace-nowrap">
+                      <IconButton label="Ubah" icon={Pencil} disabled={waiting.has(d.pk)} onClick={() => setDialog({ type: 'edit', discount: d })} />
+                      <IconButton label="Padam" icon={Trash2} disabled={waiting.has(d.pk)} onClick={() => setDialog({ type: 'remove', discount: d })} />
+                    </Td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      {editable && (
+        <ChangeRequestsPanel
+          title="Permohonan perubahan diskaun"
+          description={direct ? 'Permohonan Supervisor menunggu kelulusan anda. Perubahan Pengurusan terus berkuat kuasa dan direkod di sini.' : 'Perubahan anda berkuat kuasa selepas diluluskan oleh Pengurusan.'}
+          requests={requests}
+          reload={load}
+          onApplied={() => Promise.all([refreshAllData(), reload('discounts')])}
+          editFields={(r) => (r.action === 'DELETE' ? [] : discountFields(r.action === 'CREATE'))}
+          editInitial={(r) => {
+            const { note, ...current } = discountInitial(discounts.find((d) => d.pk === r.target_id));
+            return { ...current, ...r.payload };
           }}
-          fields={[
-            { name: 'label', label: 'Nama diskaun', required: true, hint: 'cth. Adik-beradik, Anak staf, Promosi awal tahun' },
-            { name: 'id', label: 'Kod', required: true, hint: 'Kod ringkas tanpa ruang, cth. SIBLING' },
-            { name: 'type', label: 'Jenis', type: 'select', required: true, options: [{ value: 'PERCENT', label: 'Peratus (%)' }, { value: 'FIXED', label: 'Amaun tetap (RM)' }] },
-            { name: 'value', label: 'Nilai', type: 'number', min: '0', step: '0.01', required: true },
-            { name: 'recurring', label: 'Berulang setiap bulan', type: 'checkbox', hint: 'Jika tidak, diskaun dikenakan sekali sahaja.' },
-            { name: 'validFrom', label: 'Sah dari', type: 'date' },
-            { name: 'validUntil', label: 'Sah hingga', type: 'date' },
-            { name: 'maxUses', label: 'Had penggunaan', type: 'number', min: '1', hint: 'Kosongkan jika tiada had.' },
-            { name: 'active', label: 'Aktif', type: 'checkbox' },
-          ]}
-          onSubmit={(v) => saveDiscount({ ...v, pk: editing.pk, id: v.id.toUpperCase().replace(/[^A-Z0-9_]+/g, '_'), value: Number(v.value), maxUses: v.maxUses ? Number(v.maxUses) : null })
-            .then(() => notify('Diskaun disimpan.'))}
-          onClose={() => setEditing(null)}
         />
       )}
-    </Card>
+
+      {dialog?.type === 'add' && (
+        <FormModal
+          title={direct ? 'Diskaun baharu' : 'Mohon diskaun baharu'}
+          submitLabel={direct ? 'Simpan' : 'Hantar permohonan'}
+          initial={discountInitial()}
+          fields={[...discountFields(true), ...reasonIfAsking]}
+          onSubmit={({ note, ...v }) => send('CREATE', null, tidy(v), note)}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'edit' && (
+        <FormModal
+          title={`Ubah ${dialog.discount.label}`}
+          description={`Kod ${dialog.discount.id} tidak boleh diubah.`}
+          submitLabel={direct ? 'Simpan' : 'Hantar permohonan'}
+          initial={discountInitial(dialog.discount)}
+          fields={[...discountFields(false), ...reasonIfAsking]}
+          onSubmit={({ note, code, ...v }) => send('UPDATE', dialog.discount.pk, tidy(v), note)}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.type === 'remove' && (
+        <FormModal
+          title={`${direct ? 'Padam' : 'Mohon padam'} diskaun ${dialog.discount.label}`}
+          description="Diskaun yang telah digunakan tidak boleh dipadam; nyahaktifkan sahaja."
+          danger
+          submitLabel={direct ? 'Padam diskaun' : 'Hantar permohonan'}
+          fields={reasonIfAsking}
+          onSubmit={({ note }) => send('DELETE', dialog.discount.pk, null, note)}
+          onClose={() => setDialog(null)}
+        />
+      )}
+    </div>
   );
 }

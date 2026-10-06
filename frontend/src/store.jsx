@@ -463,46 +463,11 @@ export function StoreProvider({ children }) {
           { refresh: app.refreshAllData });
       },
 
-      // Existing fee packages: rate per subject (the package total follows from it)
-      saveTiers(tiers) {
-        const changed = tiers.filter((t) => {
-          const old = app.pricingTiers.find((x) => x.id === t.id);
-          return old && num(old.price_per_subject) !== num(t.rate);
-        });
-        return act(() => Promise.all(changed.map((t) => configApi.updatePricingTier(t.id, { price_per_subject: t.rate, total_price: t.rate * t.count }))),
-          { refresh: app.refreshAllData });
-      },
-
-      // Management can add any package group (e.g. Darjah 1-4), package and per-subject rate
-      addTier({ group, label, count, rate }) {
-        return act(() => configApi.createPricingTier({
-          level_category: group, group_label: label || '', subject_count: count, price_per_subject: rate,
-        }), { refresh: app.refreshAllData });
-      },
-      deleteTier(id) {
-        return act(() => configApi.deletePricingTier(id), { refresh: app.refreshAllData });
-      },
-      renameTierGroup(group, label) {
-        return act(() => Promise.all(app.pricingTiers.filter((t) => t.level_category === group)
-          .map((t) => configApi.updatePricingTier(t.id, { group_label: label }))), { refresh: app.refreshAllData });
-      },
-
       saveSettings(settings) {
         const rows = Object.entries(SETTING_KEYS)
           .map(([field, key]) => ({ row: settingRows.find((r) => r.key === key), value: settings[field] }))
           .filter(({ row, value }) => row && value !== undefined && num(row.value) !== num(value));
         return act(() => Promise.all(rows.map(({ row, value }) => configApi.updateSetting(row.id, { value: String(value) }))), { reloads: ['settings'] });
-      },
-
-      saveDiscount(d) {
-        return act(() => billingApi.saveDiscount({
-          ...(d.pk ? { id: d.pk } : {}), name: d.label, code: d.id, mode: d.type === 'PERCENT' ? 'PERCENT' : 'FIXED', value: d.value,
-          recurring: d.recurring ?? true, is_active: d.active ?? true,
-          valid_from: d.validFrom || null, valid_until: d.validUntil || null, max_uses: d.maxUses || null,
-        }), { reloads: ['discounts'] });
-      },
-      deleteDiscount(d) {
-        return act(() => billingApi.deleteDiscount(d.pk), { reloads: ['discounts'] });
       },
 
       saveClass: (pk, payload) => app.saveClass(pk, payload),

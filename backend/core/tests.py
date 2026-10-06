@@ -831,3 +831,180 @@ class TeacherRequestTests(RoleTestBase):
             self.assertEqual(self.client.post('/api/v1/teachers/teachers/', body, format='json').status_code, 405)
             self.assertEqual(self.client.patch(f'/api/v1/teachers/teachers/{self.teacher.id}/', {'rate_per_session': '1'}, format='json').status_code, 405)
         self.assertEqual(Teacher.objects.get(pk=self.teacher.id).rate_per_session, 60)
+
+
+class FeePackageRequestTests(RoleTestBase):
+    """Fee packages: Supervisor asks, Management approves; the package total always follows the rate."""
+    URL = '/api/v1/change-requests/'
+
+    def setUp(self):
+        super().setUp()
+        from business_config.models import PricingTier
+        self.Tier = PricingTier
+        self.t4 = PricingTier.objects.create(level_category='SECONDARY', group_label='Sekolah menengah', subject_count=4, price_per_subject=60, total_price=240)
+        self.t5 = PricingTier.objects.create(level_category='SECONDARY', group_label='Sekolah menengah', subject_count=5, price_per_subject=55, total_price=275)
+        self.d5 = PricingTier.objects.create(level_category='DARJAH_5', group_label='Darjah 5', subject_count=2, price_per_subject=50, total_price=100)
+
+    def ask(self, action, payload=None, target_id=None, note='Perlu'):
+        return self.client.post(self.URL, {'kind': 'PRICING_TIER', 'action': action, 'target_id': target_id, 'payload': payload or {}, 'note': note}, format='json')
+
+    def test_admin_cannot_ask(self):
+        self.as_role(ADMIN)
+        self.assertEqual(self.ask('UPDATE', {'price_per_subject': '1'}, self.t4.id).status_code, 403)
+
+    def test_rate_change_waits_and_the_total_follows_the_rate(self):
+        self.as_role(SUPERVISOR)
+        res = self.ask('UPDATE', {'price_per_subject': '65'}, self.t4.id)
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual((res.data['changes'][0]['before'], res.data['changes'][0]['after']), ('RM 60.00', 'RM 65.00'))
+        self.t4.refresh_from_db()
+        self.assertEqual(float(self.t4.price_per_subject), 60.0)
+        self.assertEqual(self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json').status_code, 403)
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.post(f"{self.URL}{res.data['id']}/approve/", {'comment': 'OK'}, format='json').status_code, 200)
+        self.t4.refresh_from_db()
+        self.assertEqual((float(self.t4.price_per_subject), float(self.t4.total_price)), (65.0, 260.0))
+
+    def test_new_package_and_new_group(self):
+        self.as_role(SUPERVISOR)
+        res = self.ask('CREATE', {'level_category': 'darjah 1 4', 'group_label': 'Darjah 1-4', 'subject_count': 2, 'price_per_subject': '45'})
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['target_label'], 'Darjah 1-4 · 2 subjek')
+        self.assertFalse(self.Tier.objects.filter(group_label='Darjah 1-4').exists())
+        self.assertEqual(self.ask('CREATE', {'level_category': 'DARJAH_1_4', 'group_label': 'Darjah 1-4', 'subject_count': 2, 'price_per_subject': '40'}).status_code, 400)  # already waiting
+        self.assertEqual(self.ask('CREATE', {'level_category': 'SECONDARY', 'subject_count': 4, 'price_per_subject': '40'}).status_code, 400)  # exists
+        self.as_role(MANAGEMENT)
+        self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json')
+        tier = self.Tier.objects.get(level_category='DARJAH_1_4')
+        self.assertEqual((float(tier.total_price), tier.group_label), (90.0, 'Darjah 1-4'))
+
+    def test_renaming_a_group_renames_every_package_in_it(self):
+        self.as_role(SUPERVISOR)
+        res = self.ask('UPDATE', {'group_label': 'Menengah (T1-T5)'}, self.t4.id)
+        self.assertEqual(res.status_code, 201, res.data)
+        self.as_role(MANAGEMENT)
+        self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json')
+        self.assertEqual(set(self.Tier.objects.filter(level_category='SECONDARY').values_list('group_label', flat=True)), {'Menengah (T1-T5)'})
+        self.assertEqual(self.Tier.objects.get(pk=self.d5.id).group_label, 'Darjah 5')
+
+    def test_group_and_count_cannot_change_and_only_one_change_waits(self):
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.ask('UPDATE', {'subject_count': 9}, self.t4.id).status_code, 400)
+        self.assertEqual(self.ask('UPDATE', {'level_category': 'LAIN'}, self.t4.id).status_code, 400)
+        self.assertEqual(self.ask('UPDATE', {'price_per_subject': '60'}, self.t4.id).status_code, 400)  # no change
+        self.assertEqual(self.ask('UPDATE', {'price_per_subject': '-1'}, self.t4.id).status_code, 400)
+        self.assertEqual(self.ask('UPDATE', {'price_per_subject': '61'}, self.t4.id).status_code, 201)
+        self.assertEqual(self.ask('UPDATE', {'price_per_subject': '62'}, self.t4.id).status_code, 400)
+        self.assertEqual(self.ask('DELETE', None, self.t4.id).status_code, 400)  # a change is already waiting
+
+    def test_removing_a_package(self):
+        self.as_role(SUPERVISOR)
+        # the only Darjah 5 package is still used by grade S5 (Darjah 5), so fees would drop to RM0
+        blocked = self.ask('DELETE', None, self.d5.id)
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('Darjah 5', str(blocked.data))
+        res = self.ask('DELETE', None, self.t5.id)
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['action'], 'DELETE')
+        self.assertEqual(res.data['changes'][0]['after'], 'dipadam')
+        self.assertTrue(self.Tier.objects.filter(pk=self.t5.id).exists())
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json').status_code, 200)
+        self.assertFalse(self.Tier.objects.filter(pk=self.t5.id).exists())
+        self.assertEqual(self.client.get(f"{self.URL}{res.data['id']}/").data['target_id'], self.t5.id)
+
+    def test_management_changes_apply_at_once_and_direct_writes_are_closed(self):
+        self.as_role(MANAGEMENT)
+        res = self.ask('UPDATE', {'price_per_subject': '70'}, self.t4.id, note='')
+        self.assertEqual((res.status_code, res.data['status'], res.data['direct']), (201, 'APPROVED', True))
+        self.t4.refresh_from_db()
+        self.assertEqual(float(self.t4.total_price), 280.0)
+        for role in (SUPERVISOR, MANAGEMENT):
+            self.as_role(role)
+            self.assertEqual(self.client.patch(f'/api/v1/business-config/pricing-tiers/{self.t4.id}/', {'price_per_subject': '1'}, format='json').status_code, 405)
+            self.assertEqual(self.client.delete(f'/api/v1/business-config/pricing-tiers/{self.t4.id}/').status_code, 405)
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.patch(f'/api/v1/business-config/pricing-tiers/{self.t4.id}/', {'price_per_subject': '1'}, format='json').status_code, 403)
+        self.assertEqual(self.client.get('/api/v1/business-config/pricing-tiers/').status_code, 200)
+
+
+class DiscountRequestTests(RoleTestBase):
+    """Discount types and voucher codes: Supervisor asks, Management approves; the counter only reads them."""
+    URL = '/api/v1/change-requests/'
+
+    def ask(self, action, payload=None, target_id=None, note='Perlu'):
+        return self.client.post(self.URL, {'kind': 'DISCOUNT', 'action': action, 'target_id': target_id, 'payload': payload or {}, 'note': note}, format='json')
+
+    def new_discount(self, note='Perlu', **extra):
+        return self.ask('CREATE', {'name': 'Adik-beradik', 'code': 'sib10', 'mode': 'PERCENT', 'value': '10', 'recurring': True, **extra}, note=note)
+
+    def test_supervisor_asks_management_approves(self):
+        from billing.models import Discount
+        self.as_role(ADMIN)
+        self.assertEqual(self.new_discount().status_code, 403)
+        self.as_role(SUPERVISOR)
+        res = self.new_discount()
+        self.assertEqual(res.status_code, 201, res.data)
+        shown = {c['field']: c['after'] for c in res.data['changes']}
+        self.assertEqual((shown['code'], shown['mode'], shown['recurring']), ('SIB10', '%', 'Setiap bulan'))
+        self.assertFalse(Discount.objects.exists())
+        self.assertEqual(self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json').status_code, 403)
+        self.as_role(MANAGEMENT)
+        self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json')
+        d = Discount.objects.get()
+        self.assertEqual((d.code, d.mode, float(d.value), d.recurring, d.is_active, d.created_by), ('SIB10', 'PERCENT', 10.0, True, True, 'supervisor'))
+        self.as_role(ADMIN)  # the counter can read and use it
+        self.assertEqual(len(self.client.get('/api/v1/billing/discounts/').data), 1)
+
+    def test_checks(self):
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.new_discount(value='150').status_code, 400)  # over 100 per cent
+        self.assertEqual(self.new_discount(value='0').status_code, 400)
+        self.assertEqual(self.new_discount(valid_from='2026-05-01', valid_until='2026-04-01').status_code, 400)
+        self.assertEqual(self.new_discount(note='').status_code, 400)
+        self.assertEqual(self.new_discount().status_code, 201)
+        self.assertEqual(self.new_discount().status_code, 400)  # same code already waiting
+        self.assertEqual(self.new_discount(code='SIB10', name='Lain').status_code, 400)
+
+    def test_edit_and_code_is_fixed(self):
+        from billing.models import Discount
+        d = Discount.objects.create(name='Promosi', code='PROMO', mode='FIXED', value=20)
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.ask('UPDATE', {'code': 'LAIN'}, d.id).status_code, 400)
+        res = self.ask('UPDATE', {'value': '25', 'valid_until': '2026-12-31', 'is_active': False}, d.id)
+        self.assertEqual(res.status_code, 201, res.data)
+        d.refresh_from_db()
+        self.assertEqual((float(d.value), d.is_active), (20.0, True))
+        self.as_role(MANAGEMENT)
+        self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json')
+        d.refresh_from_db()
+        self.assertEqual((float(d.value), d.is_active, str(d.valid_until)), (25.0, False, '2026-12-31'))
+
+    def test_a_used_discount_cannot_be_removed_but_an_unused_one_can(self):
+        from billing.models import Discount
+        used = Discount.objects.create(name='Dipakai', code='USED', mode='FIXED', value=5, used_count=2)
+        spare = Discount.objects.create(name='Tidak dipakai', code='SPARE', mode='FIXED', value=5)
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.ask('DELETE', None, used.id).status_code, 400)
+        res = self.ask('DELETE', None, spare.id)
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertTrue(Discount.objects.filter(pk=spare.id).exists())
+        self.as_role(MANAGEMENT)
+        self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json')
+        self.assertFalse(Discount.objects.filter(pk=spare.id).exists())
+        self.assertTrue(Discount.objects.filter(pk=used.id).exists())
+
+    def test_management_applies_at_once_and_direct_writes_are_closed(self):
+        from billing.models import Discount
+        self.as_role(MANAGEMENT)
+        res = self.new_discount(note='')
+        self.assertEqual((res.status_code, res.data['status'], res.data['direct']), (201, 'APPROVED', True))
+        d = Discount.objects.get()
+        for role in (SUPERVISOR, MANAGEMENT):
+            self.as_role(role)
+            self.assertEqual(self.client.post('/api/v1/billing/discounts/', {'name': 'X', 'code': 'X', 'value': '5'}, format='json').status_code, 405)
+            self.assertEqual(self.client.patch(f'/api/v1/billing/discounts/{d.id}/', {'value': '99'}, format='json').status_code, 405)
+            self.assertEqual(self.client.delete(f'/api/v1/billing/discounts/{d.id}/').status_code, 405)
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.post('/api/v1/billing/discounts/', {'name': 'X', 'code': 'X', 'value': '5'}, format='json').status_code, 403)
+        self.assertEqual(float(Discount.objects.get().value), 10.0)

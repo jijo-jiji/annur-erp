@@ -296,10 +296,12 @@ class MonthlyInvoicingTests(Phase2Base):
                                 {'month': self.next_month.strftime('%Y-%m'), 'dry_run': dry_run}, format='json').data
 
     def discount(self, **fields):
-        self.as_role(SUPERVISOR)
-        res = self.client.post('/api/v1/billing/discounts/', {'name': 'Adik-beradik', 'code': 'sib10', 'mode': 'PERCENT', 'value': '10', **fields}, format='json')
+        # Discounts are set up through a change request; Management's applies at once
+        self.as_role(MANAGEMENT)
+        payload = {'name': 'Adik-beradik', 'code': 'sib10', 'mode': 'PERCENT', 'value': '10', **fields}
+        res = self.client.post('/api/v1/change-requests/', {'kind': 'DISCOUNT', 'action': 'CREATE', 'payload': payload}, format='json')
         self.assertEqual(res.status_code, 201, res.data)
-        return res.data
+        return self.client.get(f"/api/v1/billing/discounts/{res.data['target_id']}/").data
 
     def test_run_previews_then_creates_once(self):
         preview = self.run_month(True)
@@ -428,13 +430,14 @@ class CustomFeeGroupTests(Phase2Base):
         DynamicMasterData.objects.create(category='1_form', code='S1', label='Darjah 1', status='APPROVED',
                                          meta_info={'order': 1, 'level': 'PRIMARY', 'next': '', 'fee_group': 'DARJAH_1_4'})
         self.as_role(MANAGEMENT)
-        res = self.client.post('/api/v1/business-config/pricing-tiers/', {
-            'level_category': 'darjah 1 4', 'group_label': 'Darjah 1-4', 'subject_count': 2, 'price_per_subject': '45'}, format='json')
+        res = self.client.post('/api/v1/change-requests/', {'kind': 'PRICING_TIER', 'action': 'CREATE', 'payload': {
+            'level_category': 'darjah 1 4', 'group_label': 'Darjah 1-4', 'subject_count': 2, 'price_per_subject': '45'}}, format='json')
         self.assertEqual(res.status_code, 201, res.data)
-        self.assertEqual(res.data['level_category'], 'DARJAH_1_4')
-        self.assertEqual(float(res.data['total_price']), 90.0)  # the total follows the per-subject rate
-        dup = self.client.post('/api/v1/business-config/pricing-tiers/', {
-            'level_category': 'DARJAH_1_4', 'subject_count': 2, 'price_per_subject': '40'}, format='json')
+        tier = PricingTier.objects.get(pk=res.data['target_id'])
+        self.assertEqual(tier.level_category, 'DARJAH_1_4')
+        self.assertEqual(float(tier.total_price), 90.0)  # the total follows the per-subject rate
+        dup = self.client.post('/api/v1/change-requests/', {'kind': 'PRICING_TIER', 'action': 'CREATE', 'payload': {
+            'level_category': 'DARJAH_1_4', 'subject_count': 2, 'price_per_subject': '40'}}, format='json')
         self.assertEqual(dup.status_code, 400)
 
         student = Student.objects.create(full_name='Adik', ic_number='1', form_level='S1', phone_number='1', join_date='2026-01-01',

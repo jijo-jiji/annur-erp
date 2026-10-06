@@ -12,9 +12,9 @@ class ChangeRequest(models.Model):
     KINDS = [
         ('SUBJECT', 'Subjek'), ('VENDOR', 'Pembekal'),
         ('EXPENSE_CATEGORY', 'Kategori perbelanjaan'), ('EXPENSE_SUBCATEGORY', 'Subkategori perbelanjaan'),
-        ('TEACHER', 'Guru'),
+        ('TEACHER', 'Guru'), ('PRICING_TIER', 'Pakej yuran'), ('DISCOUNT', 'Diskaun'),
     ]
-    ACTIONS = [('CREATE', 'Tambah'), ('UPDATE', 'Ubah')]
+    ACTIONS = [('CREATE', 'Tambah'), ('UPDATE', 'Ubah'), ('DELETE', 'Padam')]
     STATUS_CHOICES = [
         ('PENDING', 'Menunggu kelulusan'),
         ('APPROVED', 'Diluluskan'),

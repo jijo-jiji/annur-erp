@@ -18,7 +18,8 @@ class SubjectMasterViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SubjectMaster.objects.all().order_by('level_category', 'code')
     serializer_class = SubjectMasterSerializer
 
-class PricingTierViewSet(viewsets.ModelViewSet):
+class PricingTierViewSet(viewsets.ReadOnlyModelViewSet):
+    """Fee packages change through change requests (Supervisor asks, Management approves), never here."""
     queryset = PricingTier.objects.all()
     serializer_class = PricingTierSerializer
     write_roles = APPROVER_ROLES

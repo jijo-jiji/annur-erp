@@ -227,11 +227,6 @@ export const billingApi = {
     body: JSON.stringify({ month, dry_run: dryRun }),
   }),
   getDiscounts: () => request('/billing/discounts/'),
-  saveDiscount: (data) => request(data.id ? `/billing/discounts/${data.id}/` : '/billing/discounts/', {
-    method: data.id ? 'PATCH' : 'POST',
-    body: JSON.stringify(data),
-  }),
-  deleteDiscount: (id) => request(`/billing/discounts/${id}/`, { method: 'DELETE' }),
   calculateFees: (levelCategory, subjectCount, isNewStudent) => request('/billing/calculate-fees/', {
     method: 'POST',
     body: JSON.stringify({
@@ -406,15 +401,6 @@ export const changeRequestApi = {
 
 export const configApi = {
   getSubjects: () => request('/business-config/subjects/'),
-  createPricingTier: (data) => request('/business-config/pricing-tiers/', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  deletePricingTier: (id) => request(`/business-config/pricing-tiers/${id}/`, { method: 'DELETE' }),
-  updatePricingTier: (id, data) => request(`/business-config/pricing-tiers/${id}/`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  }),
   updateSetting: (id, data) => request(`/business-config/settings/${id}/`, {
     method: 'PATCH',
     body: JSON.stringify(data),

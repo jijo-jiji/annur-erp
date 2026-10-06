@@ -13,20 +13,12 @@ from .models import Discount, Invoice, PaymentReceipt
 from .serializers import DiscountSerializer, InvoiceSerializer, PaymentReceiptSerializer
 from business_config.models import PricingTier, BusinessSetting
 
-class DiscountViewSet(viewsets.ModelViewSet):
-    """Discount types and voucher codes: set by Supervisor / Management, used by the counter."""
+class DiscountViewSet(viewsets.ReadOnlyModelViewSet):
+    """Discount types and voucher codes are changed through change requests (Supervisor asks,
+    Management approves); the counter only reads them."""
     queryset = Discount.objects.all()
     serializer_class = DiscountSerializer
     write_roles = APPROVER_ROLES
-
-    def perform_create(self, serializer):
-        serializer.save(created_by=display_name(self.request.user))
-
-    def perform_destroy(self, instance):
-        # A discount that was used stays for the record; switch it off instead
-        if instance.used_count or instance.invoices.exists() or instance.students.exists():
-            raise ValidationError({'detail': 'Diskaun ini telah digunakan. Nyahaktifkan sahaja.'})
-        instance.delete()
 
 
 class InvoiceViewSet(viewsets.ModelViewSet):
