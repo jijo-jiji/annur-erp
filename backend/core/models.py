@@ -12,6 +12,7 @@ class ChangeRequest(models.Model):
     KINDS = [
         ('SUBJECT', 'Subjek'), ('VENDOR', 'Pembekal'),
         ('EXPENSE_CATEGORY', 'Kategori perbelanjaan'), ('EXPENSE_SUBCATEGORY', 'Subkategori perbelanjaan'),
+        ('TEACHER', 'Guru'),
     ]
     ACTIONS = [('CREATE', 'Tambah'), ('UPDATE', 'Ubah')]
     STATUS_CHOICES = [

@@ -321,7 +321,131 @@ class ExpenseSubcategoryHandler(MasterEntryHandler):
         return str(value)
 
 
-HANDLERS = {h.kind: h for h in (SubjectHandler(), VendorHandler(), ExpenseCategoryHandler(), ExpenseSubcategoryHandler())}
+class TeacherHandler(Handler):
+    """Teachers (j-status.doc: Supervisor adds a teacher and converts them to active / inactive,
+    Management approves or rejects). The pay rate is set when the teacher is added; later rises
+    go through the rate-increment flow, which keeps their history."""
+    kind = 'TEACHER'
+    fields = {
+        'teacher_code': 'Kod guru', 'full_name': 'Nama', 'phone_number': 'Telefon', 'email': 'E-mel', 'teacher_type': 'Kategori',
+        'is_active': 'Status', 'rate_per_session': 'Kadar sesi', 'bank_name': 'Bank', 'bank_account': 'No. akaun bank',
+        'teaching_permit_expiry': 'Permit mengajar luput', 'subjects_qualified': 'Subjek', 'joined_date': 'Tarikh sertai',
+        'teaching_since': 'Mula mengajar', 'remarks': 'Catatan',
+    }
+    proposers = APPROVER_ROLES
+    approvers = (MANAGEMENT,)
+    TYPES = {'PERMANENT': 'Tetap (Permanent)', 'REPLACEMENT': 'Sambilan (Part-time)'}
+    DATES = ('teaching_permit_expiry', 'joined_date', 'teaching_since')
+    TEXT = ('teacher_code', 'full_name', 'phone_number', 'email', 'bank_name', 'bank_account', 'remarks')
+
+    @staticmethod
+    def _jsonable(value):
+        if hasattr(value, 'isoformat'):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return f'{value:.2f}'
+        if isinstance(value, (list, tuple, set)):
+            return sorted(getattr(v, 'pk', v) for v in value)
+        return value
+
+    def _serializer(self, data, instance=None):
+        from teachers.serializers import TeacherSerializer
+        return TeacherSerializer(instance, data=data, partial=instance is not None)
+
+    def _current(self, teacher):
+        current = {f: self._jsonable(getattr(teacher, f)) for f in self.fields if f != 'subjects_qualified'}
+        current['subjects_qualified'] = sorted(teacher.subjects_qualified.values_list('pk', flat=True))
+        return current
+
+    def _clean(self, data):
+        for f in self.TEXT:
+            if isinstance(data.get(f), str):
+                data[f] = data[f].strip()
+        for f in self.DATES:
+            if f in data and data[f] in ('', None):
+                data[f] = None
+        return data
+
+    def validate(self, action, target_id, data, ignore=None):
+        from academic.models import ClassTimetable
+        from teachers.models import Teacher
+        data = self._clean({k: data[k] for k in self.fields if k in data})
+        others = ChangeRequest.objects.filter(kind=self.kind, status='PENDING')
+        if ignore:
+            others = others.exclude(pk=ignore.pk)
+
+        if action == 'CREATE':
+            code = re.sub(r'\s', '', str(data.get('teacher_code', ''))).upper()
+            if not re.fullmatch(r'[A-Z0-9]{1,12}', code):
+                raise ValidationError({'teacher_code': 'Kod guru mesti 1 hingga 12 huruf atau nombor, cth. NAK. Ia digunakan dalam kod kelas.'})
+            data['teacher_code'] = code
+            data.setdefault('is_active', True)
+            if data.get('rate_per_session') in (None, ''):
+                raise ValidationError({'rate_per_session': 'Kadar sesi permulaan diperlukan.'})
+            serializer = self._serializer(data)
+            serializer.is_valid(raise_exception=True)
+            if not 0 <= serializer.validated_data['rate_per_session'] <= 5000:
+                raise ValidationError({'rate_per_session': 'Kadar sesi tidak sah.'})
+            values = {k: self._jsonable(v) for k, v in serializer.validated_data.items()}
+            if others.filter(action='CREATE', payload__teacher_code=code).exists():
+                raise ValidationError({'teacher_code': f'Kod {code} sudah dimohon dan menunggu kelulusan.'})
+            return values, {}, f"{code} {values['full_name']}"
+
+        teacher = Teacher.objects.filter(pk=target_id).first()
+        if not teacher:
+            raise ValidationError('Guru tidak dijumpai.')
+        if 'teacher_code' in data and str(data['teacher_code']).upper() != teacher.teacher_code:
+            raise ValidationError({'teacher_code': 'Kod guru tidak boleh diubah kerana ia digunakan dalam kod kelas.'})
+        if 'rate_per_session' in data:
+            try:
+                same = Decimal(str(data['rate_per_session'])) == teacher.rate_per_session
+            except InvalidOperation:
+                same = False
+            if not same:
+                raise ValidationError({'rate_per_session': 'Kadar guru diubah melalui Kenaikan kadar, supaya sejarah kenaikan direkod.'})
+        data.pop('teacher_code', None)
+        data.pop('rate_per_session', None)
+        serializer = self._serializer(data, teacher)
+        serializer.is_valid(raise_exception=True)
+        current = self._current(teacher)
+        values = {k: self._jsonable(v) for k, v in serializer.validated_data.items() if self._jsonable(v) != current[k]}
+        if not values:
+            raise ValidationError('Tiada perubahan untuk dihantar.')
+        if values.get('is_active') is False:
+            n = ClassTimetable.objects.filter(teacher=teacher).count()
+            if n:
+                raise ValidationError({'is_active': f'Guru ini masih ditugaskan pada {n} kelas. Tukar guru kelas itu dahulu.'})
+        if others.filter(action='UPDATE', target_id=teacher.pk).exists():
+            raise ValidationError('Sudah ada permohonan ubah untuk guru ini yang menunggu kelulusan.')
+        return values, {k: current[k] for k in values}, f'{teacher.teacher_code} {teacher.full_name}'
+
+    def apply(self, action, target_id, values, req=None):
+        from teachers.models import Teacher
+        teacher = Teacher.objects.filter(pk=target_id).first() if action == 'UPDATE' else None
+        serializer = self._serializer(values, teacher)
+        serializer.is_valid(raise_exception=True)
+        return serializer.save()
+
+    def display(self, field, value):
+        from business_config.models import SubjectMaster
+        if value in (None, ''):
+            return '—'
+        if field == 'teacher_type':
+            return self.TYPES.get(value, value)
+        if field == 'is_active':
+            return 'Aktif' if value else 'Tidak aktif'
+        if field == 'rate_per_session':
+            return f'RM {float(value):,.2f}'
+        if field == 'subjects_qualified':
+            names = dict(SubjectMaster.objects.filter(pk__in=value).values_list('pk', 'name'))
+            return ', '.join(names.get(pk, str(pk)) for pk in value) or '—'
+        if field in self.DATES:
+            y, m, d = str(value).split('-')
+            return f'{d}/{m}/{y}'
+        return str(value)
+
+
+HANDLERS = {h.kind: h for h in (SubjectHandler(), VendorHandler(), ExpenseCategoryHandler(), ExpenseSubcategoryHandler(), TeacherHandler())}
 
 
 

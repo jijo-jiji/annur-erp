@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, Input, Modal, Select, Textarea } from './ui';
 
 // A small form in a dialog, described by a list of fields:
-// { name, label, type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox', options, required, hint }
+// { name, label, type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox' | 'checkgroup', options, required, hint }
 // onSubmit receives the values; if it throws, the dialog stays open (the reason is shown as a toast).
 // onChange (optional) is told the values as they change, for fields that depend on another field.
 export default function FormModal({ title, description, fields, initial = {}, submitLabel = 'Simpan', danger, onSubmit, onChange, onClose }) {
@@ -48,6 +48,26 @@ export default function FormModal({ title, description, fields, initial = {}, su
                   <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>
                 ))}
               </Select>
+            );
+          }
+          if (f.type === 'checkgroup') {
+            // Several choices ticked from a list; the value is the list of ticked option values
+            const ticked = values[f.name] ?? [];
+            return (
+              <fieldset key={f.name}>
+                <legend className="mb-1.5 block text-[13px] font-medium text-gray-700">{f.label}{f.required && <span className="text-red-600"> *</span>}</legend>
+                <div className="grid grid-cols-1 gap-2 rounded-md border border-gray-200 p-3 sm:grid-cols-2">
+                  {f.options.map((o) => (
+                    <Checkbox
+                      key={o.value}
+                      label={o.label}
+                      checked={ticked.includes(o.value)}
+                      onChange={(e) => set(f.name, e.target.checked ? [...ticked, o.value] : ticked.filter((x) => x !== o.value))}
+                    />
+                  ))}
+                </div>
+                {f.hint && <p className="mt-1.5 text-[13px] text-gray-500">{f.hint}</p>}
+              </fieldset>
             );
           }
           if (f.type === 'textarea') return <Textarea key={f.name} {...common} value={values[f.name] ?? ''} onChange={(e) => set(f.name, e.target.value)} />;

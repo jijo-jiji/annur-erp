@@ -19,6 +19,7 @@ class Teacher(models.Model):
     rate_per_session = models.DecimalField(max_digits=8, decimal_places=2, default=60.00)
     subjects_qualified = models.ManyToManyField(SubjectMaster, blank=True)
     joined_date = models.DateField(null=True, blank=True)
+    teaching_since = models.DateField(null=True, blank=True)  # when they started teaching, possibly before joining the centre
     remarks = models.TextField(blank=True)
 
     def __str__(self):

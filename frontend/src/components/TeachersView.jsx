@@ -9,10 +9,48 @@ import { navigate } from '../lib/nav';
 import { classLabel } from '../lib/domain';
 import { CURRENT_MONTH, date, DAY_LABEL, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
+import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
 import { Avatar, Badge, Button, Card, CardHeader, Checkbox, EmptyState, PageHeader, SearchInput, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon } from './ui';
 
 const WEEKS_PER_MONTH = 4;
+const TEACHER_TYPES = [{ value: 'PERMANENT', label: 'Tetap (Permanent)' }, { value: 'REPLACEMENT', label: 'Sambilan (Part-time)' }];
+
+// Years of teaching from the date they started (can be before joining the centre)
+function experienceYears(since) {
+  if (!since) return null;
+  const years = Math.floor((new Date(`${todayISO()}T00:00:00`) - new Date(`${since}T00:00:00`)) / (365.25 * 86400000));
+  return years >= 0 ? years : null;
+}
+
+// The teacher form; the code and the starting rate are set when the teacher is added. Later pay rises go through Kenaikan kadar.
+function teacherFields(adding, subjectOptions) {
+  return [
+    ...(adding ? [{ name: 'teacher_code', label: 'Kod guru', required: true, hint: 'Singkatan nama, cth. NAK. Digunakan dalam kod kelas dan tidak boleh diubah.' }] : []),
+    { name: 'full_name', label: 'Nama penuh', required: true },
+    { name: 'phone_number', label: 'Telefon', required: true },
+    { name: 'email', label: 'E-mel', type: 'email' },
+    { name: 'teacher_type', label: 'Kategori guru', type: 'select', required: true, options: TEACHER_TYPES },
+    ...(adding ? [{ name: 'rate_per_session', label: 'Kadar permulaan (RM / sesi)', type: 'number', min: '0', step: '0.01', required: true, hint: 'Kenaikan seterusnya melalui tab Kenaikan kadar supaya sejarah direkod.' }] : []),
+    { name: 'bank_name', label: 'Bank' },
+    { name: 'bank_account', label: 'No. akaun bank' },
+    { name: 'subjects_qualified', label: 'Subjek yang boleh diajar', type: 'checkgroup', options: subjectOptions },
+    { name: 'teaching_permit_expiry', label: 'Permit mengajar luput', type: 'date' },
+    { name: 'joined_date', label: 'Tarikh sertai pusat', type: 'date' },
+    { name: 'teaching_since', label: 'Mula mengajar', type: 'date', hint: 'Boleh sebelum sertai pusat ini. Pengalaman dikira daripada tarikh ini.' },
+    { name: 'remarks', label: 'Catatan', type: 'textarea', hint: 'Sekolah, cadangan, kepakaran, pengalaman di pusat tuisyen lain.' },
+    ...(adding ? [] : [{ name: 'is_active', label: 'Guru aktif', type: 'checkbox' }]),
+  ];
+}
+
+const teacherInitial = (t) => ({
+  teacher_code: '', full_name: t?.raw.full_name ?? '', phone_number: t?.raw.phone_number ?? '', email: t?.raw.email ?? '',
+  teacher_type: t?.raw.teacher_type ?? 'PERMANENT', rate_per_session: '', bank_name: t?.raw.bank_name ?? '', bank_account: t?.raw.bank_account ?? '',
+  subjects_qualified: t?.raw.subjects_qualified ?? [], teaching_permit_expiry: t?.raw.teaching_permit_expiry ?? '',
+  joined_date: t?.raw.joined_date ?? '', teaching_since: t?.raw.teaching_since ?? '', remarks: t?.raw.remarks ?? '', is_active: t?.raw.is_active ?? true, note: '',
+});
+
+const TEACHER_REASON = { name: 'note', label: 'Sebab permohonan', type: 'textarea', required: true, hint: 'Pengurusan akan melihat sebab ini semasa membuat keputusan.' };
 const PERMIT_WARNING_DAYS = 60;
 const SEVERITY = { LOW: { label: 'Rendah', tone: 'blue' }, MEDIUM: { label: 'Sederhana', tone: 'amber' }, HIGH: { label: 'Tinggi', tone: 'red' } };
 const COMPLAINT_STATUS = { OPEN: 'Baru', IN_PROGRESS: 'Dalam tindakan', RESOLVED: 'Selesai' };
@@ -30,16 +68,28 @@ export default function TeachersView({ role }) {
   // Rates, complaints and increments are for Supervisor and Management; the server leaves them out for Admin
   const showPay = can(role, 'teachers.pay');
   const canDecide = can(role, 'payroll.approve');
-  const { teachers, classes, subjects } = useStore();
-  const { refreshTeachers } = useApp();
+  const { teachers, classes, subjects, submitChangeRequest } = useStore();
+  const { refreshTeachers, refreshAllData } = useApp();
   const notify = useToast();
-  const [view, setView] = useState('directory');
+  const [view, setView] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'directory');
   const [type, setType] = useState('ALL');
   const [inactive, setInactive] = useState(false);
   const [q, setQ] = useState('');
   const [complaints, setComplaints] = useState([]);
   const [increments, setIncrements] = useState([]);
   const [dialog, setDialog] = useState(null);
+  // Adding a teacher and active / inactive changes: Supervisor asks, Management approves (Management's own apply at once)
+  const canManage = can(role, 'teachers.manage');
+  const direct = role === 'MANAGEMENT';
+  const { requests: teacherRequests, load: loadTeacherRequests } = useChangeRequests('TEACHER');
+  const [teacherDialog, setTeacherDialog] = useState(null); // { type: 'add' } | { type: 'edit' | 'active', teacher }
+  const waitingFor = new Set(teacherRequests.filter((r) => r.status === 'PENDING' && r.action === 'UPDATE').map((r) => r.target_id));
+  const subjectOptions = subjects.filter((s) => s.active).map((s) => ({ value: s.pk, label: s.name }));
+  const saveTeacher = async (action, pk, values, note) => {
+    const done = await submitChangeRequest({ kind: 'TEACHER', action, pk, values, note });
+    notify(done.status === 'PENDING' ? 'Permohonan dihantar. Ia berkuat kuasa selepas diluluskan oleh Pengurusan.' : 'Maklumat guru disimpan.');
+    await loadTeacherRequests();
+  };
 
   const loadExtras = useCallback(() => {
     if (!showPay) return Promise.resolve();
@@ -90,6 +140,7 @@ export default function TeachersView({ role }) {
         actions={
           <>
             <Button icon={Download} onClick={exportCsv}>Excel</Button>
+            {canManage && <Button variant="primary" icon={Plus} onClick={() => setTeacherDialog({ type: 'add' })}>{direct ? 'Tambah guru' : 'Mohon guru baharu'}</Button>}
             {can(role, 'payroll.view') && <Button onClick={() => navigate('payroll')}>Bayaran elaun</Button>}
           </>
         }
@@ -112,6 +163,7 @@ export default function TeachersView({ role }) {
         items={[
           { value: 'directory', label: 'Direktori', count: active.length },
           { value: 'assigned', label: 'Kelas ditugaskan' },
+          ...(canManage ? [{ value: 'requests', label: 'Permohonan', count: teacherRequests.filter((r) => r.status === 'PENDING').length }] : []),
           ...(showPay ? [
             { value: 'complaints', label: 'Aduan & tindakan', count: complaints.filter((c) => c.status !== 'RESOLVED').length },
             { value: 'increments', label: 'Kenaikan kadar', count: increments.filter((i) => i.status === 'PENDING').length },
@@ -155,6 +207,7 @@ export default function TeachersView({ role }) {
                     <Th className="text-right">Kelas / minggu</Th>
                     <Th>Permit mengajar</Th>
                     {showPay && <Th className="text-right">Kadar / sesi</Th>}
+                    {canManage && <Th className="text-right"><span className="sr-only">Tindakan</span></Th>}
                     <Th className="w-0"><span className="sr-only">Hubungi</span></Th>
                   </tr>
                 </thead>
@@ -172,7 +225,7 @@ export default function TeachersView({ role }) {
                                 Cikgu {t.name} <span className="font-normal text-gray-400">· {t.code}</span>
                               </p>
                               <p className="text-[13px] text-gray-500">
-                                {t.type === 'PERMANENT' ? 'Guru tetap' : 'Guru ganti'}{t.since ? ` · sejak ${t.since}` : ''} · {t.phone}
+                                {t.type === 'PERMANENT' ? 'Guru tetap' : 'Guru ganti'}{t.since ? ` · sejak ${t.since}` : ''}{experienceYears(t.teachingSince) !== null ? ` · ${experienceYears(t.teachingSince)} tahun mengajar` : ''} · {t.phone}
                                 <span className="xl:hidden">{t.subjects && ` · ${t.subjects}`}</span>
                               </p>
                             </div>
@@ -187,6 +240,16 @@ export default function TeachersView({ role }) {
                               : <Badge tone={permit.state === 'EXPIRED' ? 'red' : 'amber'}>{permit.label}</Badge>}
                         </Td>
                         {showPay && <Td className="text-right font-medium tnum">{rm(t.rate)}</Td>}
+                        {canManage && (
+                          <Td className="whitespace-nowrap text-right">
+                            {waitingFor.has(t.pk) ? <Badge tone="amber">Menunggu kelulusan</Badge> : (
+                              <div className="flex justify-end gap-1.5">
+                                <Button size="sm" variant="ghost" onClick={() => setTeacherDialog({ type: 'edit', teacher: t })}>Ubah</Button>
+                                <Button size="sm" variant="ghost" onClick={() => setTeacherDialog({ type: 'active', teacher: t })}>{t.active ? 'Nyahaktif' : 'Aktifkan'}</Button>
+                              </div>
+                            )}
+                          </Td>
+                        )}
                         <Td>
                           {t.phone && (
                             <Button as="a" size="sm" href={waLink(t.phone)} target="_blank" rel="noreferrer" title="WhatsApp" className="px-2">
@@ -207,6 +270,52 @@ export default function TeachersView({ role }) {
             </p>
           )}
         </>
+      )}
+
+      {view === 'requests' && canManage && (
+        <ChangeRequestsPanel
+          title="Permohonan guru"
+          description={direct ? 'Permohonan Supervisor menunggu kelulusan anda. Perubahan Pengurusan terus berkuat kuasa dan direkod di sini.' : 'Guru baharu dan perubahan status berkuat kuasa selepas diluluskan oleh Pengurusan.'}
+          requests={teacherRequests}
+          reload={loadTeacherRequests}
+          onApplied={refreshAllData}
+          editFields={(r) => teacherFields(r.action === 'CREATE', subjectOptions)}
+          editInitial={(r) => ({ ...teacherInitial(teachers.find((t) => t.pk === r.target_id)), ...r.payload })}
+        />
+      )}
+
+      {teacherDialog?.type === 'add' && (
+        <FormModal
+          title={direct ? 'Tambah guru' : 'Mohon guru baharu'}
+          description={direct ? 'Guru ini boleh ditugaskan ke kelas serta-merta.' : 'Guru ini boleh ditugaskan ke kelas selepas diluluskan oleh Pengurusan.'}
+          submitLabel={direct ? 'Tambah guru' : 'Hantar permohonan'}
+          initial={teacherInitial()}
+          fields={[...teacherFields(true, subjectOptions), ...(direct ? [] : [TEACHER_REASON])]}
+          onSubmit={({ note, ...values }) => saveTeacher('CREATE', null, values, note)}
+          onClose={() => setTeacherDialog(null)}
+        />
+      )}
+      {teacherDialog?.type === 'edit' && (
+        <FormModal
+          title={`Ubah Cikgu ${teacherDialog.teacher.name}`}
+          description={direct ? 'Perubahan berkuat kuasa serta-merta.' : 'Perubahan berkuat kuasa selepas diluluskan oleh Pengurusan. Kadar sesi diubah melalui tab Kenaikan kadar.'}
+          submitLabel={direct ? 'Simpan' : 'Hantar permohonan'}
+          initial={teacherInitial(teacherDialog.teacher)}
+          fields={[...teacherFields(false, subjectOptions), ...(direct ? [] : [TEACHER_REASON])]}
+          onSubmit={({ note, ...values }) => saveTeacher('UPDATE', teacherDialog.teacher.pk, values, note)}
+          onClose={() => setTeacherDialog(null)}
+        />
+      )}
+      {teacherDialog?.type === 'active' && (
+        <FormModal
+          title={`${teacherDialog.teacher.active ? 'Nyahaktifkan' : 'Aktifkan'} Cikgu ${teacherDialog.teacher.name}`}
+          description={teacherDialog.teacher.active ? 'Guru yang tidak aktif tidak lagi ditugaskan ke kelas. Guru yang masih mempunyai kelas tidak boleh dinyahaktifkan.' : 'Guru akan boleh ditugaskan ke kelas semula.'}
+          submitLabel={direct ? 'Teruskan' : 'Hantar permohonan'}
+          initial={{ note: '' }}
+          fields={direct ? [] : [{ ...TEACHER_REASON, label: 'Sebab / keterangan', hint: undefined }]}
+          onSubmit={({ note }) => saveTeacher('UPDATE', teacherDialog.teacher.pk, { is_active: !teacherDialog.teacher.active }, note)}
+          onClose={() => setTeacherDialog(null)}
+        />
       )}
 
       {view === 'assigned' && (

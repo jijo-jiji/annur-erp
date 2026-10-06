@@ -52,6 +52,7 @@ export const PERMISSIONS = {
     'vouchers.approve.2', // RM500 – RM3,000
     'vendors.manage', // asks for vendor changes; Management approves
     'categories.manage', // asks for expense category changes; Management approves
+    'teachers.manage', // asks to add a teacher or change active / inactive; Management approves
     'masterdata.approve',
     'staff.manage',
     'reports.view',
@@ -81,6 +82,7 @@ export const PERMISSIONS = {
     'vouchers.approve.3', // above RM3,000
     'vendors.manage',
     'categories.manage',
+    'teachers.manage',
     'masterdata.approve',
     'staff.manage',
     'staff.jobs', // job details, add staff

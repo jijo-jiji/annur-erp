@@ -88,6 +88,7 @@ function toTeacher(t) {
     email: t.email,
     rate: t.rate_per_session === undefined ? null : num(t.rate_per_session), // hidden from Admin by the server
     since: t.joined_date ? Number(t.joined_date.slice(0, 4)) : null,
+    teachingSince: t.teaching_since,
     joined: t.joined_date,
     active: t.is_active,
     permitExpiry: t.teaching_permit_expiry,

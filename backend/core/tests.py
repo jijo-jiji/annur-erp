@@ -712,3 +712,122 @@ class ExpenseCategoryRequestTests(RoleTestBase):
         ok = self.client.post('/api/v1/business-config/master-data/', {'category': '3_lead_source', 'code': 'X1', 'label': 'X1'}, format='json')
         self.assertEqual(ok.status_code, 201)
         self.assertTrue(DynamicMasterData.objects.filter(pk=self.cat.id, label='Sewa Premis').exists())
+
+
+class TeacherRequestTests(RoleTestBase):
+    """New teachers and active / inactive changes: Supervisor asks, Management approves."""
+    URL = '/api/v1/change-requests/'
+
+    def setUp(self):
+        super().setUp()
+        from business_config.models import SubjectMaster
+        self.math = SubjectMaster.objects.create(code='MT', name='Matematik', level_category='UPPER_SEC')
+        self.bio = SubjectMaster.objects.create(code='BIO', name='Biologi', level_category='UPPER_SEC')
+        self.teacher = Teacher.objects.create(teacher_code='NAK', full_name='Nur Aini', phone_number='011', rate_per_session=60)
+
+    def ask(self, action, payload, target_id=None, note='Perlu'):
+        return self.client.post(self.URL, {'kind': 'TEACHER', 'action': action, 'target_id': target_id, 'payload': payload, 'note': note}, format='json')
+
+    def new_teacher(self, code='sf', **extra):
+        payload = {'teacher_code': code, 'full_name': 'Siti Fatimah', 'phone_number': '012', 'teacher_type': 'REPLACEMENT',
+                   'rate_per_session': '55', 'bank_name': 'Maybank', 'bank_account': '555', 'subjects_qualified': [self.math.id, self.bio.id],
+                   'teaching_since': '2015-01-01', 'teaching_permit_expiry': '2027-03-01', **extra}
+        return self.ask('CREATE', payload)
+
+    def test_admin_cannot_ask(self):
+        self.as_role(ADMIN)
+        self.assertEqual(self.new_teacher().status_code, 403)
+        self.assertEqual(Teacher.objects.count(), 1)
+
+    def test_supervisor_asks_management_approves_and_the_teacher_is_created(self):
+        self.as_role(SUPERVISOR)
+        res = self.new_teacher()
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['status'], 'PENDING')
+        self.assertFalse(Teacher.objects.filter(teacher_code='SF').exists())
+        shown = {c['field']: c['after'] for c in res.data['changes']}
+        self.assertEqual((shown['teacher_type'], shown['rate_per_session'], shown['subjects_qualified']), ('Sambilan (Part-time)', 'RM 55.00', 'Matematik, Biologi'))
+        self.assertEqual(self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json').status_code, 403)
+
+        self.as_role(ADMIN)  # Admin never sees pay: the request, with its rate and bank details, is not theirs
+        self.assertEqual(self.client.get(self.URL).data, [])
+        self.as_role(MANAGEMENT)
+        done = self.client.post(f"{self.URL}{res.data['id']}/approve/", {'comment': 'OK'}, format='json')
+        self.assertEqual(done.status_code, 200, done.data)
+        t = Teacher.objects.get(teacher_code='SF')
+        self.assertEqual((t.teacher_type, float(t.rate_per_session), t.is_active, t.bank_account), ('REPLACEMENT', 55.0, True, '555'))
+        self.assertEqual(set(t.subjects_qualified.values_list('code', flat=True)), {'MT', 'BIO'})
+        self.assertEqual(str(t.teaching_since), '2015-01-01')
+
+    def test_rate_and_code_cannot_change_here_but_other_details_can(self):
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.ask('UPDATE', {'rate_per_session': '99'}, self.teacher.id).status_code, 400)
+        self.assertEqual(self.ask('UPDATE', {'teacher_code': 'ZZ'}, self.teacher.id).status_code, 400)
+        res = self.ask('UPDATE', {'phone_number': '019', 'bank_account': '777', 'teacher_type': 'REPLACEMENT', 'rate_per_session': '60'}, self.teacher.id)
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual({c['field'] for c in res.data['changes']}, {'phone_number', 'bank_account', 'teacher_type'})  # the unchanged rate is dropped
+        self.teacher.refresh_from_db()
+        self.assertEqual((self.teacher.phone_number, self.teacher.teacher_type), ('011', 'PERMANENT'))
+        self.as_role(MANAGEMENT)
+        self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json')
+        self.teacher.refresh_from_db()
+        self.assertEqual((self.teacher.phone_number, self.teacher.bank_account, self.teacher.teacher_type, float(self.teacher.rate_per_session)),
+                         ('019', '777', 'REPLACEMENT', 60.0))
+
+    def test_a_teacher_with_classes_cannot_be_made_inactive(self):
+        from academic.models import ClassTimetable, TimeSlot
+        slot = TimeSlot.objects.create(day='SABTU', start_time='09:00', end_time='10:30', period_label='Pagi')
+        cls = ClassTimetable.objects.create(slot=slot, form_level='F5', section='A', max_seats=10, subject=self.math, teacher=self.teacher)
+        self.as_role(SUPERVISOR)
+        blocked = self.ask('UPDATE', {'is_active': False}, self.teacher.id, note='Berhenti')
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('1 kelas', str(blocked.data))
+        cls.teacher = None
+        cls.save()
+        res = self.ask('UPDATE', {'is_active': False}, self.teacher.id, note='Berhenti')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['changes'][0]['after'], 'Tidak aktif')
+        # a class is given back to the teacher before the decision: approval checks again
+        cls.teacher = self.teacher
+        cls.save()
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json').status_code, 400)
+        self.teacher.refresh_from_db()
+        self.assertTrue(self.teacher.is_active)
+
+    def test_management_changes_apply_at_once(self):
+        self.as_role(MANAGEMENT)
+        res = self.new_teacher(code='az')
+        self.assertEqual((res.status_code, res.data['status'], res.data['direct']), (201, 'APPROVED', True))
+        self.assertTrue(Teacher.objects.filter(teacher_code='AZ').exists())
+        off = self.ask('UPDATE', {'is_active': False}, self.teacher.id, note='')
+        self.assertEqual(off.status_code, 201, off.data)
+        self.teacher.refresh_from_db()
+        self.assertFalse(self.teacher.is_active)
+
+    def test_checks(self):
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.new_teacher(code='NAK').status_code, 400)  # code used
+        self.assertEqual(self.new_teacher(code='A B!').status_code, 400)
+        self.assertEqual(self.new_teacher(rate_per_session='-1').status_code, 400)
+        self.assertEqual(self.new_teacher(rate_per_session='').status_code, 400)  # the starting rate is needed
+        self.assertEqual(self.new_teacher(full_name='   ').status_code, 400)
+        self.assertEqual(self.new_teacher(email='bukan-emel').status_code, 400)
+        self.assertEqual(self.new_teacher(subjects_qualified=[9999]).status_code, 400)
+        self.assertEqual(self.new_teacher(teaching_since='bukan tarikh').status_code, 400)
+        self.assertEqual(self.new_teacher().status_code, 201)
+        self.assertEqual(self.new_teacher().status_code, 400)  # same code already waiting
+        self.assertEqual(self.ask('UPDATE', {'phone_number': '019'}, self.teacher.id).status_code, 201)
+        self.assertEqual(self.ask('UPDATE', {'phone_number': '018'}, self.teacher.id).status_code, 400)  # one change at a time
+        self.assertEqual(self.ask('UPDATE', {'phone_number': '011'}, self.teacher.id).status_code, 400)  # unchanged
+        self.assertEqual(Teacher.objects.count(), 1)
+
+    def test_teachers_cannot_be_written_directly(self):
+        body = {'teacher_code': 'X', 'full_name': 'X', 'phone_number': '1'}
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.post('/api/v1/teachers/teachers/', body, format='json').status_code, 403)
+        for role in (SUPERVISOR, MANAGEMENT):
+            self.as_role(role)
+            self.assertEqual(self.client.post('/api/v1/teachers/teachers/', body, format='json').status_code, 405)
+            self.assertEqual(self.client.patch(f'/api/v1/teachers/teachers/{self.teacher.id}/', {'rate_per_session': '1'}, format='json').status_code, 405)
+        self.assertEqual(Teacher.objects.get(pk=self.teacher.id).rate_per_session, 60)

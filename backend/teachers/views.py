@@ -20,7 +20,8 @@ from .serializers import (
     StaffHistorySerializer, StaffRecordSerializer, StaffKPISerializer
 )
 
-class TeacherViewSet(viewsets.ModelViewSet):
+class TeacherViewSet(viewsets.ReadOnlyModelViewSet):
+    """Teachers are added and changed through change requests (Supervisor asks, Management approves), never here."""
     queryset = Teacher.objects.all().prefetch_related('subjects_qualified').order_by('teacher_type', 'teacher_code')
     serializer_class = TeacherSerializer
     write_roles = APPROVER_ROLES

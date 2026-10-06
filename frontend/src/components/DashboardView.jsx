@@ -36,6 +36,7 @@ const REQUEST_PAGES = {
   SUBJECT: { name: 'subjek', tab: 'settings', query: '' },
   VENDOR: { name: 'pembekal', tab: 'expenses', query: '?tab=vendors' },
   EXPENSE_CATEGORY: { name: 'kategori perbelanjaan', tab: 'expenses', query: '?tab=categories' },
+  TEACHER: { name: 'guru', tab: 'teachers', query: '?tab=requests' },
   EXPENSE_SUBCATEGORY: { name: 'subkategori perbelanjaan', tab: 'expenses', query: '?tab=categories' },
 };
 
