@@ -16,9 +16,9 @@ class Vendor(models.Model):
 
 class PaymentVoucher(models.Model):
     TIER_CHOICES = [
-        ('TIER_1', 'Below RM500 (Admin Verification)'),
-        ('TIER_2', 'RM500 - RM3,000 (Supervisor Approval)'),
-        ('TIER_3', 'Above RM3,000 (Management Approval)'),
+        ('TIER_1', 'Tier 1: Admin verification'),
+        ('TIER_2', 'Tier 2: Supervisor approval'),
+        ('TIER_3', 'Tier 3: Management approval'),
     ]
     STATUS_CHOICES = [
         ('DRAFT', 'Draf'),

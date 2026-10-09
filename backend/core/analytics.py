@@ -10,7 +10,7 @@ from students.models import Student, StudentExamResult, StudentEvent, ClassWaitl
 from students.views import attendance_rates
 from teachers.staff import alerts as staff_alerts
 from teachers.models import Teacher, TeacherAttendance, LeaveRequest, TeacherRateIncrement, TeacherPayment
-from . import change_requests, grades
+from . import change_requests, grades, thresholds
 from .models import ChangeRequest
 from .permissions import ADMIN, MANAGEMENT
 
@@ -23,10 +23,6 @@ def form_order(present):
     return order + sorted(set(present) - set(order))
 COUNTED_PV_STATUSES = ('VERIFIED_ADMIN', 'APPROVED_SUPERVISOR', 'APPROVED_MANAGEMENT')
 LOW_GRADES = ('D', 'E', 'F', 'G', 'TH')
-PERMIT_WARNING_DAYS = 60
-NEARLY_FULL_SEATS = 2
-LOW_ATTENDANCE_PCT = 70
-ATTENDANCE_WINDOW_DAYS = 30
 # Registered students (approved); PENDING and REJECTED registrations are not counted as students yet
 REGISTERED_STATUSES = ('ACTIVE', 'ON_HOLD', 'TERMINATED')
 STAY_BUCKETS = [
@@ -116,6 +112,7 @@ def by_kind(qs):
 
 def build_dashboard(role, today=None, user=None):
     today = today or date.today()
+    limits = thresholds.values()  # Management sets these in Settings
     month_start, next_month = month_bounds(today)
     prev_start, _ = month_bounds(month_start - timedelta(days=1))
 
@@ -136,7 +133,7 @@ def build_dashboard(role, today=None, user=None):
     classes = list(ClassTimetable.with_enrolment().select_related('slot', 'subject', 'teacher', 'classroom'))
     over = [class_row(c) for c in classes if c.available_seats < 0]
     full = [class_row(c) for c in classes if c.available_seats == 0]
-    near_full = [class_row(c) for c in classes if 0 < c.available_seats <= NEARLY_FULL_SEATS]
+    near_full = [class_row(c) for c in classes if 0 < c.available_seats <= limits['nearly_full_seats']]
 
     receipts = PaymentReceipt.objects.all()
     collected_today = receipts.filter(payment_date=today).aggregate(t=Sum('amount_paid'))['t']
@@ -155,7 +152,7 @@ def build_dashboard(role, today=None, user=None):
     permits_expiring = []
     for t in teachers.exclude(teaching_permit_expiry=None).order_by('teaching_permit_expiry'):
         days_left = (t.teaching_permit_expiry - today).days
-        if days_left <= PERMIT_WARNING_DAYS:
+        if days_left <= limits['permit_warning_days']:
             permits_expiring.append({
                 'code': t.teacher_code, 'name': t.full_name,
                 'expiry': t.teaching_permit_expiry, 'days_left': days_left,
@@ -200,7 +197,7 @@ def build_dashboard(role, today=None, user=None):
         'lead_followups_due': Lead.objects.exclude(status__in=Lead.CLOSED_STAGES).filter(next_follow_up__lte=today).count(),
     }
 
-    attendance_window = attendance_rates(today - timedelta(days=ATTENDANCE_WINDOW_DAYS), today)
+    attendance_window = attendance_rates(today - timedelta(days=limits['attendance_window_days']), today)
     attendance_present = sum(r['present'] for r in attendance_window)
     attendance_total = sum(r['total'] for r in attendance_window)
 
@@ -245,12 +242,12 @@ def build_dashboard(role, today=None, user=None):
             'period_of_stay': period_of_stay(today),
         },
         'attendance': {
-            'window_days': ATTENDANCE_WINDOW_DAYS,
+            'window_days': limits['attendance_window_days'],
             'rate': round(attendance_present / attendance_total * 100, 1) if attendance_total else None,
             'present': attendance_present,
             'total': attendance_total,
-            'low_classes': [r for r in attendance_window if r['rate'] is not None and r['rate'] < LOW_ATTENDANCE_PCT],
-            'threshold': LOW_ATTENDANCE_PCT,
+            'low_classes': [r for r in attendance_window if r['rate'] is not None and r['rate'] < limits['low_attendance_pct']],
+            'threshold': limits['low_attendance_pct'],
         },
         'finance': {
             'collected_today': money(collected_today),

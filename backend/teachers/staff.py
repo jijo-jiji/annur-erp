@@ -5,8 +5,6 @@ from rest_framework.exceptions import ValidationError
 from .models import LeaveRequest, StaffAttendance, StaffKPI, StaffMember
 
 LEAVE_TYPES = ('AL', 'MC', 'EL', 'UL')
-CONTRACT_ALERT_DAYS = 30  # j-status.doc: alert 1 month before the employment period ends
-BIRTHDAY_ALERT_DAYS = 7
 
 
 def leave_used(staff, year):
@@ -141,15 +139,17 @@ def next_birthday(dob, today):
 
 def alerts(today=None):
     """Contracts ending within a month, and birthdays in the coming week."""
+    from core import thresholds
+    limits = thresholds.values()  # j-status.doc: alert before the employment period ends; Management sets how early
     today = today or date.today()
     active = StaffMember.objects.filter(is_active=True)
     contracts = [{
         'code': s.staff_id, 'name': s.name, 'contract_end': s.contract_end, 'days_left': (s.contract_end - today).days,
     } for s in active.exclude(contract_end=None).order_by('contract_end')
-        if (s.contract_end - today).days <= CONTRACT_ALERT_DAYS]
+        if (s.contract_end - today).days <= limits['contract_alert_days']]
     birthdays = []
     for s in active.exclude(date_of_birth=None):
         upcoming = next_birthday(s.date_of_birth, today)
-        if (upcoming - today).days <= BIRTHDAY_ALERT_DAYS:
+        if (upcoming - today).days <= limits['birthday_alert_days']:
             birthdays.append({'code': s.staff_id, 'name': s.name, 'date': upcoming, 'days_left': (upcoming - today).days})
     return {'contracts_ending': contracts, 'birthdays': sorted(birthdays, key=lambda b: b['days_left'])}

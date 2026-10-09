@@ -8,6 +8,7 @@ import { navigate } from '../lib/nav';
 import { classLabel } from '../lib/domain';
 import { CURRENT_MONTH, date, DAY_LABEL, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
+import { THRESHOLDS } from '../lib/thresholds';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
 import { Avatar, Badge, Button, Card, CardHeader, Checkbox, EmptyState, PageHeader, SearchInput, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon } from './ui';
@@ -50,7 +51,6 @@ const teacherInitial = (t) => ({
 });
 
 const TEACHER_REASON = { name: 'note', label: 'Sebab permohonan', type: 'textarea', required: true, hint: 'Pengurusan akan melihat sebab ini semasa membuat keputusan.' };
-const PERMIT_WARNING_DAYS = 60;
 const SEVERITY = { LOW: { label: 'Rendah', tone: 'blue' }, MEDIUM: { label: 'Sederhana', tone: 'amber' }, HIGH: { label: 'Tinggi', tone: 'red' } };
 const COMPLAINT_STATUS = { OPEN: 'Baru', IN_PROGRESS: 'Dalam tindakan', RESOLVED: 'Selesai' };
 const INCREMENT_STATUS = { PENDING: { label: 'Menunggu Pengurusan', tone: 'amber' }, APPROVED: { label: 'Diluluskan', tone: 'green' }, REJECTED: { label: 'Ditolak', tone: 'red' } };
@@ -59,7 +59,7 @@ function permitInfo(expiry) {
   if (!expiry) return { state: 'MISSING', label: 'Tiada rekod' };
   const days = Math.ceil((new Date(`${expiry}T00:00:00`) - new Date(`${todayISO()}T00:00:00`)) / 86400000);
   if (days < 0) return { state: 'EXPIRED', label: `Luput ${date(expiry)}` };
-  if (days <= PERMIT_WARNING_DAYS) return { state: 'SOON', label: `Luput ${date(expiry)} (${days} hari)` };
+  if (days <= THRESHOLDS.permit_warning_days) return { state: 'SOON', label: `Luput ${date(expiry)} (${days} hari)` };
   return { state: 'VALID', label: `Sah hingga ${date(expiry)}` };
 }
 

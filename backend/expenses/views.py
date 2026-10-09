@@ -17,9 +17,12 @@ PENDING_STATUSES = ('PENDING_SUPERVISOR', 'PENDING_MANAGEMENT')
 
 
 def tier_and_initial_status(amount):
-    if amount < 500:
+    """The limits are Management's to change (Settings); a voucher keeps the tier it was made with."""
+    from core import thresholds
+    limits = thresholds.values()
+    if amount < limits['voucher_tier1']:
         return 'TIER_1', 'VERIFIED_ADMIN'
-    if amount <= 3000:
+    if amount <= limits['voucher_tier2']:
         return 'TIER_2', 'PENDING_SUPERVISOR'
     return 'TIER_3', 'PENDING_MANAGEMENT'
 

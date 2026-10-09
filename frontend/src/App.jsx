@@ -6,6 +6,7 @@ import { ToastProvider, useToast } from './components/ui';
 import Sidebar from './components/Sidebar';
 import { loadCentre, resetCentre, useCentre } from './lib/centre';
 import { loadMessages, resetMessages, useMessages } from './lib/messages';
+import { loadThresholds, useThresholds } from './lib/thresholds';
 import LoginView from './components/LoginView';
 import { ChangePasswordModal, ForcedPasswordChange } from './components/ChangePassword';
 import CommandPalette from './components/CommandPalette';
@@ -66,10 +67,12 @@ function Shell() {
   // The centre's details (shown everywhere) come from the server; staff also get the TIN and bank details
   useCentre();
   useMessages();
+  useThresholds();
   useEffect(() => {
     if (!user) { resetCentre(); resetMessages(); }
     loadCentre();
     loadMessages();
+    if (user && !user.must_change_password) loadThresholds();
   }, [user?.username]); // eslint-disable-line react-hooks/exhaustive-deps
   const [route, setRoute] = useState(readRoute);
   const [menuOpen, setMenuOpen] = useState(false);

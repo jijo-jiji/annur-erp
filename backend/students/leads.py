@@ -4,7 +4,6 @@ from datetime import date, timedelta
 from rest_framework.exceptions import ValidationError
 from .models import Lead, LeadActivity
 
-FOLLOW_UP_DAYS = 7
 STAGE_LABELS = dict(Lead.STATUS_CHOICES)
 # REGISTERED comes from converting the lead to a student, ACTIVE from the Supervisor's approval
 MOVABLE_STAGES = Lead.STAGE_ORDER[:Lead.STAGE_ORDER.index('REGISTERED')]
@@ -15,7 +14,8 @@ def log_activity(lead, by, action, remark='', outcome='DONE', on=None, next_foll
     if lead.status in Lead.CLOSED_STAGES:
         follow_up = None
     else:
-        follow_up = next_follow_up or on + timedelta(days=FOLLOW_UP_DAYS)
+        from core import thresholds
+        follow_up = next_follow_up or on + timedelta(days=thresholds.value('follow_up_days'))
     entry = LeadActivity.objects.create(
         lead=lead, activity_date=on, stage=lead.status, from_stage=from_stage,
         action=action, remark=remark, pic=by, outcome=outcome, next_follow_up=follow_up,

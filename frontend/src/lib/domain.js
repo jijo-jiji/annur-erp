@@ -1,5 +1,6 @@
 import { formShort, todayISO } from './format';
 import { can } from './permissions';
+import { THRESHOLDS } from './thresholds';
 
 export function nextNumber(existing, prefix, width) {
   const max = existing
@@ -60,9 +61,10 @@ export function invoiceStatus(inv) {
   return 'UNPAID';
 }
 
+// The limits are Management's to change in Settings (see lib/thresholds.js)
 export function voucherTier(amount) {
-  if (amount < 500) return 1;
-  if (amount <= 3000) return 2;
+  if (amount < THRESHOLDS.voucher_tier1) return 1;
+  if (amount <= THRESHOLDS.voucher_tier2) return 2;
   return 3;
 }
 

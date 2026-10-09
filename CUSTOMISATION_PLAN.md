@@ -113,7 +113,7 @@ No code reads these by category key (checked by searching backend and frontend).
 | D | Centre profile in one place (item 3) | Small | Changing the phone number updates the login page, receipt PDF and voucher PDF. **Built (2026-10-09): Settings > Pusat**, with a change history. |
 | E | Message templates (item 4) | Medium | Editing the payment reminder changes the WhatsApp text on the next click. **Built (2026-10-09): Settings > Mesej.** |
 | F | Master-data clean-up, mark bands, payment methods, and the teacher changes in section 9 (Part-time label, per-session pay entry, years of experience, drop the unused increment %) | Medium | No list in Data induk is editable without effect; a permanent teacher can be recorded as part-time for one session at a typed amount; the teacher profile shows years of experience. |
-| G | Thresholds and voucher amounts (items 7, 8, 10) | Small | Changing the voucher Tier 1 limit moves a RM600 voucher to the right approver. |
+| G | Thresholds and voucher amounts (items 7, 8, 10) | Small | Changing the voucher Tier 1 limit moves a RM600 voucher to the right approver. **Built (2026-10-09): Settings > Had & amaran.** Not done: a default leave entitlement for new staff. |
 | H | Priority 3 items if requested | Small each | As agreed. |
 
 Every phase ships with backend tests (permission, range check, not-retroactive) and a browser check of the screen, as done for the fee packages.

@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { CENTRE } from '../lib/config';
 import { useStore } from '../store';
 import { voucherTier } from '../lib/domain';
+import { ringgit, THRESHOLDS } from '../lib/thresholds';
 import { can } from '../lib/permissions';
 import { date, rm, todayISO } from '../lib/format';
 import { AttachmentList, SignaturePad } from './Attachments';
@@ -13,11 +14,11 @@ import ExpenseCategories from './ExpenseCategories';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, DescriptionList, EmptyState, Input, Modal, PageHeader, Select, Table, Tabs, Td, Textarea, Th } from './ui';
 
-const TIER_TEXT = {
-  1: 'Bawah RM500: disahkan oleh admin kaunter',
-  2: 'RM500 hingga RM3,000: perlu kelulusan supervisor',
-  3: 'Melebihi RM3,000: perlu kelulusan pengurusan',
-};
+const tierText = () => ({
+  1: `Bawah ${ringgit(THRESHOLDS.voucher_tier1)}: disahkan oleh admin kaunter`,
+  2: `${ringgit(THRESHOLDS.voucher_tier1)} hingga ${ringgit(THRESHOLDS.voucher_tier2)}: perlu kelulusan supervisor`,
+  3: `Melebihi ${ringgit(THRESHOLDS.voucher_tier2)}: perlu kelulusan pengurusan`,
+});
 const STATUS = {
   DRAFT: { label: 'Draf', tone: 'neutral' },
   VERIFIED_ADMIN: { label: 'Disahkan kaunter', tone: 'green' },
@@ -110,7 +111,7 @@ export default function PaymentVoucherView({ role }) {
         {[1, 2, 3].map((t) => (
           <li key={t} className="flex gap-3 rounded-md border border-gray-200 bg-white px-4 py-3">
             <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700">{t}</span>
-            <span className="text-gray-700">{TIER_TEXT[t]}</span>
+            <span className="text-gray-700">{tierText()[t]}</span>
           </li>
         ))}
       </ol>
@@ -345,7 +346,7 @@ function CreateModal({ onClose, onCreated }) {
             onChange={(e) => set({ amount: e.target.value })}
           />
         </div>
-        {amount > 0 && <p className="rounded-md bg-gray-50 px-3 py-2 text-[13px] text-gray-700">{TIER_TEXT[voucherTier(amount)]}</p>}
+        {amount > 0 && <p className="rounded-md bg-gray-50 px-3 py-2 text-[13px] text-gray-700">{tierText()[voucherTier(amount)]}</p>}
         <Textarea label="Perkara / tujuan bayaran" required rows={2} value={f.description} onChange={(e) => set({ description: e.target.value })} />
         <Input label="Catatan" value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} />
       </form>

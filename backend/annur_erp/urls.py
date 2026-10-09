@@ -27,6 +27,7 @@ from core.change_request_views import ChangeRequestViewSet
 from core.accounts import AccountViewSet
 from core.centre import centre_events, centre_profile, centre_public
 from core.messages import message_detail, messages_list, messages_public
+from core.thresholds import thresholds
 from core.views import dashboard_summary, reports_summary, auth_login, auth_me, auth_logout, auth_users, auth_change_password
 
 router = DefaultRouter()
@@ -87,6 +88,7 @@ urlpatterns = [
     path('api/v1/centre/', centre_public),
     path('api/v1/centre/profile/', centre_profile),
     path('api/v1/centre/events/', centre_events),
+    path('api/v1/thresholds/', thresholds),
     path('api/v1/messages/', messages_list),
     path('api/v1/messages/public/', messages_public),
     path('api/v1/messages/<str:key>/', message_detail),

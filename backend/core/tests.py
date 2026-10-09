@@ -1470,3 +1470,65 @@ class MessageTemplateTests(RoleTestBase):
         self.client.put(self.URL + 'registered/', {'text': 'Salam. Ini {parent}, saya daftar {student} ({student_id}).'}, format='json')
         self.client.force_authenticate(None)
         self.assertEqual(self.client.get(self.URL + 'public/').data['registered'], 'Salam. Ini {parent}, saya daftar {student} ({student_id}).')
+
+
+class ThresholdTests(RoleTestBase):
+    """Voucher limits and alert thresholds: defaults apply until Management changes them within a safe range."""
+    URL = '/api/v1/thresholds/'
+
+    def put(self, **changes):
+        return self.client.put(self.URL, changes, format='json')
+
+    def test_everyone_reads_the_defaults_and_only_management_changes_them(self):
+        for role in ALL_ROLES:
+            self.as_role(role)
+            rows = {r['name']: r for r in self.client.get(self.URL).data}
+            self.assertEqual((rows['voucher_tier1']['value'], rows['voucher_tier2']['value']), (500, 3000))
+            self.assertEqual((rows['permit_warning_days']['value'], rows['low_attendance_pct']['value'], rows['follow_up_days']['value']), (60, 70, 7))
+        for role in (ADMIN, SUPERVISOR):
+            self.as_role(role)
+            self.assertEqual(self.put(low_attendance_pct=50).status_code, 403)
+
+    def test_checks_keep_a_typing_mistake_from_switching_things_off(self):
+        self.as_role(MANAGEMENT)
+        for bad in ({'low_attendance_pct': 0}, {'low_attendance_pct': 101}, {'permit_warning_days': 0}, {'permit_warning_days': 9999},
+                    {'permit_warning_days': 30.5}, {'follow_up_days': 'tujuh'}, {'attendance_window_days': 3}, {'nearly_full_seats': 50},
+                    {'voucher_tier1': 0}, {'voucher_tier1': 4000}, {'voucher_tier2': 400}, {'warna': 1}):
+            self.assertEqual(self.put(**bad).status_code, 400, bad)
+        self.assertEqual(self.put(voucher_tier1=1000, voucher_tier2=1000).status_code, 400)  # the lower limit must stay lower
+        self.assertEqual({r['name']: r['value'] for r in self.client.get(self.URL).data}['voucher_tier1'], 500)
+        self.assertEqual(self.client.get('/api/v1/centre/events/').data, [])
+
+    def test_changes_are_recorded_and_unchanged_values_are_not(self):
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.put(low_attendance_pct=60, permit_warning_days=60).status_code, 200)
+        events = self.client.get('/api/v1/centre/events/').data
+        self.assertEqual([(e['old'], e['new'], e['by']) for e in events], [('70', '60', 'management')])
+
+    def test_new_voucher_limits_apply_to_vouchers_made_after_the_change(self):
+        vendor = Vendor.objects.create(vendor_id='V1', vendor_name='Kedai')
+        make = lambda amount: self.client.post('/api/v1/expenses/vouchers/', {
+            'vendor': vendor.id, 'category': 'X', 'amount': amount, 'items_description': 'a', 'date': '2026-09-05'}, format='json')
+        self.as_role(ADMIN)
+        before = make(600)
+        self.assertEqual((before.data['tier_level'], before.data['status']), ('TIER_2', 'PENDING_SUPERVISOR'))
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.put(voucher_tier1=1000, voucher_tier2=5000).status_code, 200)
+        self.as_role(ADMIN)
+        small, middle, large = make(600), make(4000), make(6000)
+        self.assertEqual((small.data['tier_level'], small.data['status']), ('TIER_1', 'VERIFIED_ADMIN'))
+        self.assertEqual(middle.data['tier_level'], 'TIER_2')
+        self.assertEqual(large.data['tier_level'], 'TIER_3')
+        # the voucher made before the change keeps the approver it was given
+        self.assertEqual(PaymentVoucher.objects.get(pk=before.data['id']).tier_level, 'TIER_2')
+
+    def test_alert_thresholds_reach_the_dashboard_and_staff_alerts(self):
+        from datetime import date, timedelta
+        from teachers.staff import alerts
+        StaffMember.objects.create(staff_id='S7', name='Nora', role='Admin', phone='1', contract_end=date.today() + timedelta(days=45))
+        self.assertEqual(alerts()['contracts_ending'], [])  # the default is 30 days
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.put(contract_alert_days=60, low_attendance_pct=50, attendance_window_days=14).status_code, 200)
+        self.assertEqual([c['name'] for c in alerts()['contracts_ending']], ['Nora'])
+        attendance = self.client.get('/api/v1/dashboard/summary/').data['attendance']
+        self.assertEqual((attendance['threshold'], attendance['window_days']), (50, 14))

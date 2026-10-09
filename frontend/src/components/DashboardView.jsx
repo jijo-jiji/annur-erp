@@ -1,3 +1,4 @@
+import { ringgit, THRESHOLDS } from '../lib/thresholds';
 import { useEffect, useState } from 'react';
 import { BarChart3, CalendarClock, Check, ChevronRight, UserPlus, Wallet } from 'lucide-react';
 import { dashboardApi } from '../api/client';
@@ -55,7 +56,7 @@ function buildNotices(data, role) {
   };
 
   add(classes.over.length, 'red', `${classes.over.length} kelas melebihi had kerusi`, 'timetable', 'Lihat jadual', classes.over.map((c) => c.class_code).join(', '));
-  if (management) add(approvals.vouchers_pending_management, 'red', `${approvals.vouchers_pending_management} baucar melebihi RM3,000 menunggu kelulusan anda`, 'expenses', 'Semak');
+  if (management) add(approvals.vouchers_pending_management, 'red', `${approvals.vouchers_pending_management} baucar melebihi ${ringgit(THRESHOLDS.voucher_tier2)} menunggu kelulusan anda`, 'expenses', 'Semak');
   attendance.low_classes.forEach((c) => add(1, 'red', `Kehadiran ${c.class_code} ${c.rate}% dalam ${attendance.window_days} hari lepas`, 'attendance', 'Lihat', `${c.present}/${c.total} kehadiran`));
   add(approvals.registrations_pending, 'amber', `${approvals.registrations_pending} pendaftaran pelajar menunggu kelulusan`, 'students', approver ? 'Luluskan' : 'Lihat');
   add(approvals.monthly_invoices_pending, 'amber', `${approvals.monthly_invoices_pending} pelajar aktif belum ada invois ${monthLabel(CURRENT_MONTH)}`, 'billing', 'Jana invois');
@@ -71,7 +72,7 @@ function buildNotices(data, role) {
   requestNotices(approvals.change_requests_mine_by_kind, 'blue', (n, name) => `${n} permohonan perubahan ${name} anda menunggu kelulusan`, 'Lihat');
   requestNotices(approvals.change_requests_unseen_by_kind, 'blue', (n, name) => `${n} keputusan baharu pada permohonan perubahan ${name} anda`, 'Lihat');
   if (approver) {
-    add(approvals.vouchers_pending_supervisor, 'amber', `${approvals.vouchers_pending_supervisor} baucar RM500 hingga RM3,000 menunggu kelulusan`, 'expenses', 'Semak');
+    add(approvals.vouchers_pending_supervisor, 'amber', `${approvals.vouchers_pending_supervisor} baucar ${ringgit(THRESHOLDS.voucher_tier1)} hingga ${ringgit(THRESHOLDS.voucher_tier2)} menunggu kelulusan`, 'expenses', 'Semak');
     add(approvals.reschedules_pending, 'amber', `${approvals.reschedules_pending} rekod batal / ganti kelas menunggu kelulusan`, 'reschedules', 'Luluskan');
     add(approvals.leave_pending, 'amber', `${approvals.leave_pending} permohonan cuti staf menunggu kelulusan`, 'staff_hr', 'Semak');
     add(approvals.master_data_pending, 'blue', `${approvals.master_data_pending} cadangan data induk menunggu kelulusan`, 'dynamic_master_data', 'Semak');

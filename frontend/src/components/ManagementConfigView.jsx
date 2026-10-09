@@ -8,6 +8,7 @@ import { date, LEVEL_LABEL, rm, STREAM_LABEL, tierGroupLabel } from '../lib/form
 import AccountsPanel from './AccountsPanel';
 import CentrePanel from './CentrePanel';
 import MessagesPanel from './MessagesPanel';
+import ThresholdsPanel from './ThresholdsPanel';
 import ScheduleSettings from './ScheduleSettings';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
@@ -20,7 +21,7 @@ export default function ManagementConfigView({ role }) {
     if (asked === 'accounts' && can(role, 'accounts.manage')) return asked;
     if (asked === 'centre' && can(role, 'centre.manage')) return asked;
     if (asked === 'messages' && can(role, 'messages.manage')) return asked;
-    return ['pricing', 'discounts', 'policies', 'schedule'].includes(asked) && can(role, 'settings.advanced') ? asked : 'subjects';
+    return ['pricing', 'discounts', 'policies', 'schedule', 'thresholds'].includes(asked) && can(role, 'settings.advanced') ? asked : 'subjects';
   });
   return (
     <>
@@ -39,6 +40,7 @@ export default function ManagementConfigView({ role }) {
             { value: 'pricing', label: 'Pakej yuran' },
             { value: 'discounts', label: 'Diskaun' },
             { value: 'policies', label: 'Polisi & elaun' },
+            { value: 'thresholds', label: 'Had & amaran' },
           ] : []),
           ...(can(role, 'centre.manage') ? [{ value: 'centre', label: 'Pusat' }] : []),
           ...(can(role, 'messages.manage') ? [{ value: 'messages', label: 'Mesej' }] : []),
@@ -49,6 +51,7 @@ export default function ManagementConfigView({ role }) {
       {tab === 'pricing' && can(role, 'settings.advanced') && <Pricing role={role} />}
       {tab === 'discounts' && can(role, 'settings.advanced') && <Discounts role={role} />}
       {tab === 'schedule' && can(role, 'settings.advanced') && <ScheduleSettings role={role} />}
+      {tab === 'thresholds' && can(role, 'settings.advanced') && <ThresholdsPanel editable={can(role, 'accounts.manage')} />}
       {tab === 'centre' && can(role, 'centre.manage') && <CentrePanel />}
       {tab === 'messages' && can(role, 'messages.manage') && <MessagesPanel />}
       {tab === 'accounts' && can(role, 'accounts.manage') && <AccountsPanel />}
