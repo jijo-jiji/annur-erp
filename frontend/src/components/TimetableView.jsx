@@ -259,7 +259,7 @@ function ClassFormModal({ cls, onClose, onSaved }) {
         <Select label="Guru" value={f.teacher} onChange={(e) => set({ teacher: e.target.value })}>
           <option value="">Belum ditetapkan</option>
           {teachers.filter((t) => t.active).sort((a, b) => a.name.localeCompare(b.name)).map((t) => (
-            <option key={t.pk} value={t.pk}>Cikgu {t.name}{t.type === 'REPLACEMENT' ? ' (ganti)' : ''}</option>
+            <option key={t.pk} value={t.pk}>Cikgu {t.name}{t.type === 'REPLACEMENT' ? ' (sambilan)' : ''}</option>
           ))}
         </Select>
         <Select label="Bilik" value={f.classroom} onChange={(e) => set({ classroom: e.target.value })}>

@@ -517,11 +517,16 @@ class Command(BaseCommand):
             ("12_academic_sub", "SUB_1249", "Sejarah (1249)", {"paper": "P1, P2"}, "APPROVED"),
 
             # 13. Julat Markah (Mark Band)
-            ("13_mark_band", "BAND_A", "80% - 100% (Tahap Cemerlang)", {"min": 80, "max": 100}, "APPROVED"),
-            ("13_mark_band", "BAND_B", "65% - 79% (Tahap Kepujian)", {"min": 65, "max": 79}, "APPROVED"),
-            ("13_mark_band", "BAND_C", "50% - 64% (Tahap Memuaskan)", {"min": 50, "max": 64}, "APPROVED"),
-            ("13_mark_band", "BAND_D", "40% - 49% (Tahap Lulus)", {"min": 40, "max": 49}, "APPROVED"),
-            ("13_mark_band", "BAND_E", "0% - 39% (Tahap Intervensi Khas)", {"min": 0, "max": 39}, "APPROVED"),
+            ("13_mark_band", "A+", "A+: 90% ke atas", {"min": 90}, "APPROVED"),
+            ("13_mark_band", "A", "A: 80% ke atas", {"min": 80}, "APPROVED"),
+            ("13_mark_band", "A-", "A-: 70% ke atas", {"min": 70}, "APPROVED"),
+            ("13_mark_band", "B+", "B+: 65% ke atas", {"min": 65}, "APPROVED"),
+            ("13_mark_band", "B", "B: 60% ke atas", {"min": 60}, "APPROVED"),
+            ("13_mark_band", "C+", "C+: 55% ke atas", {"min": 55}, "APPROVED"),
+            ("13_mark_band", "C", "C: 50% ke atas", {"min": 50}, "APPROVED"),
+            ("13_mark_band", "D", "D: 45% ke atas", {"min": 45}, "APPROVED"),
+            ("13_mark_band", "E", "E: 40% ke atas", {"min": 40}, "APPROVED"),
+            ("13_mark_band", "G", "G: 0% ke atas", {"min": 0}, "APPROVED"),
 
             # 14. Sebab Berhenti / Drop (Drop Reasons)
             ("14_drop_reason", "ASRAMA", "Tawaran MRSM / SBP / Asrama Penuh", {"category": "Peluang Pendidikan"}, "APPROVED"),

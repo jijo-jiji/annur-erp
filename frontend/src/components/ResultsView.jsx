@@ -3,13 +3,12 @@ import { ArrowDownRight, ArrowLeft, ArrowUpRight, Award, Download, Plus } from '
 import { useApp } from '../context/AppContext';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
-import { classLabel, grade } from '../lib/domain';
+import { classLabel, grade, gradeOrder } from '../lib/domain';
 import { date, FORMS, formLabel, todayISO } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import { HBarList } from './charts';
 import { Badge, Button, Card, CardHeader, cx, EmptyState, Input, inputClass, Modal, PageHeader, Select, Stat, Table, Tabs, Td, Th, useToast } from './ui';
 
-const GRADE_ORDER = ['A+', 'A', 'A-', 'B+', 'B', 'C+', 'C', 'D', 'E', 'G'];
 const PASS = 40;
 
 function stats(values) {
@@ -217,7 +216,7 @@ function ClassResults({ cls, exam, exams, role, onBack }) {
 
   const values = Object.values(marks).filter((v) => v !== '').map(Number);
   const st = stats(values);
-  const dist = GRADE_ORDER.map((g) => ({ label: g, value: values.filter((v) => grade(v) === g).length }));
+  const dist = gradeOrder().map((g) => ({ label: g, value: values.filter((v) => grade(v) === g).length }));
   const label = classLabel(cls, subjects);
 
   const save = async () => {

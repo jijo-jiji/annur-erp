@@ -93,10 +93,16 @@ class TeacherAttendanceViewSet(viewsets.ReadOnlyModelViewSet):
         on = parse_date(str(source.get('date') or ''))
         if not on:
             raise ValidationError({'date': 'Tarikh tidak sah.'})
+        approver = get_role(request.user) in APPROVER_ROLES
         if request.method == 'POST':
-            payroll.save_roster(on, request.data.get('marks') or [], display_name(request.user))
+            payroll.save_roster(on, request.data.get('marks') or [], display_name(request.user), can_set_pay=approver)
         from academic.calendar import closed_reason
-        return Response({'date': on, 'closed': closed_reason(on), 'classes': payroll.roster(on)})
+        classes = payroll.roster(on)
+        if not approver:  # Admin does not see pay
+            for row in classes:
+                if row['record']:
+                    row['record'].pop('amount', None)
+        return Response({'date': on, 'closed': closed_reason(on), 'classes': classes})
 
     @action(detail=False, methods=['get'])
     def summary(self, request):

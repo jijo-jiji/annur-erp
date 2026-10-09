@@ -205,7 +205,7 @@ export default function TeacherPayrollView({ role }) {
                 <tr key={x.id} className="align-top">
                   <Td className="min-w-44">
                     <p className="font-medium text-gray-900">{x.teacher_name} <span className="font-normal text-gray-400">· {x.teacher_code}</span></p>
-                    <p className="text-[13px] text-gray-500">{x.teacher_type === 'REPLACEMENT' ? 'Guru ganti' : 'Guru tetap'}</p>
+                    <p className="text-[13px] text-gray-500">{x.teacher_type === 'REPLACEMENT' ? 'Guru sambilan' : 'Guru tetap'}</p>
                   </Td>
                   <Td className="whitespace-nowrap">{monthOf(x.month)}</Td>
                   <Td className="text-right tnum">{x.sessions}</Td>

@@ -50,6 +50,8 @@ export default function TeacherAttendanceView({ role }) {
           remarks: c.record?.remarks || '',
           replacement_teacher: c.record?.replacement_teacher || '',
           saved: Boolean(c.record),
+          savedAmount: c.record?.amount ?? null,
+          savedPaid: c.record ? (c.record.status === 'REPLACED' ? c.record.replacement_teacher : c.record.status === 'PRESENT' ? c.teacher_id : null) : null,
         })));
       })
       .catch(() => { if (!cancelled) setRows([]); })
@@ -57,6 +59,14 @@ export default function TeacherAttendanceView({ role }) {
     return () => { cancelled = true; };
   }, [day]);
 
+  // The teacher who is paid for a class, and the amount shown: typed, kept from the saved record, or that teacher's own rate
+  const paidId = (r) => (r.status === 'REPLACED' ? Number(r.replacement_teacher) || null : r.status === 'PRESENT' ? r.teacher_id : null);
+  const amountOf = (r) => {
+    if (r.amountEdited) return r.amount;
+    if (r.saved && r.savedAmount !== null && paidId(r) === r.savedPaid) return r.savedAmount;
+    const paid = teachers.find((t) => t.pk === paidId(r));
+    return paid?.rate != null ? String(paid.rate) : '';
+  };
   const update = (classId, patch) => setRows((prev) => prev.map((r) => (r.class_id === classId ? { ...r, ...patch } : r)));
 
   const save = async () => {
@@ -65,11 +75,15 @@ export default function TeacherAttendanceView({ role }) {
       const marks = rows.filter((r) => !r.locked).map((r) => ({
         class_id: r.class_id, teacher_id: r.teacher_id, status: r.status, reason: r.reason,
         remarks: r.remarks, replacement_teacher: r.status === 'REPLACED' ? Number(r.replacement_teacher) || null : null,
+        ...(showPay && r.amountEdited && r.amount !== '' ? { amount: r.amount } : {}),
       }));
       const res = await teacherPayApi.saveRoster(day, marks);
       setRows((prev) => prev.map((r) => {
         const fresh = res.classes.find((c) => c.class_id === r.class_id);
-        return fresh ? { ...r, saved: Boolean(fresh.record), locked: fresh.locked } : r;
+        return fresh ? {
+          ...r, saved: Boolean(fresh.record), locked: fresh.locked, amountEdited: false, savedAmount: fresh.record?.amount ?? null,
+          savedPaid: fresh.record ? (fresh.record.status === 'REPLACED' ? fresh.record.replacement_teacher : fresh.record.status === 'PRESENT' ? fresh.teacher_id : null) : null,
+        } : r;
       }));
       loadSummary();
       notify(`Kehadiran guru ${dateLong(day)} disimpan (${marks.length} kelas).`);
@@ -110,7 +124,7 @@ export default function TeacherAttendanceView({ role }) {
         ) : (
           <Table>
             <thead>
-              <tr><Th>Masa</Th><Th>Kelas</Th><Th>Guru</Th><Th>Status</Th><Th>Sebab cuti</Th><Th>Guru ganti</Th><Th>Catatan</Th></tr>
+              <tr><Th>Masa</Th><Th>Kelas</Th><Th>Guru</Th><Th>Status</Th><Th>Sebab cuti</Th><Th>Guru ganti</Th>{showPay && <Th>Bayaran sesi (RM)</Th>}<Th>Catatan</Th></tr>
             </thead>
             <tbody>
               {rows.map((r) => (
@@ -153,10 +167,20 @@ export default function TeacherAttendanceView({ role }) {
                         <option value="">Pilih guru ganti</option>
                         {active.filter((t) => t.pk !== r.teacher_id)
                           .sort((a, b) => (a.type === 'REPLACEMENT' ? -1 : 1) - (b.type === 'REPLACEMENT' ? -1 : 1))
-                          .map((t) => <option key={t.pk} value={t.pk}>Cikgu {t.name}{t.type === 'REPLACEMENT' ? ' (ganti)' : ''}</option>)}
+                          .map((t) => <option key={t.pk} value={t.pk}>Cikgu {t.name}{t.type === 'REPLACEMENT' ? ' (sambilan)' : ''}</option>)}
                       </select>
                     )}
                   </Td>
+                  {showPay && (
+                    <Td>
+                      {paidId(r) ? (
+                        <input
+                          type="number" min="0" max="5000" step="0.01" aria-label={`Bayaran ${r.class_code}`} disabled={r.locked}
+                          value={amountOf(r)} onChange={(e) => update(r.class_id, { amount: e.target.value, amountEdited: true })} className={`${cell} w-24 text-right tnum`}
+                        />
+                      ) : <span className="text-gray-300">—</span>}
+                    </Td>
+                  )}
                   <Td><input aria-label={`Catatan ${r.class_code}`} disabled={r.locked} value={r.remarks} onChange={(e) => update(r.class_id, { remarks: e.target.value })} className={cell} /></Td>
                 </tr>
               ))}

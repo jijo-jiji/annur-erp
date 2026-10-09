@@ -1,14 +1,14 @@
 """Teacher attendance per class session and monthly pay calculated from it."""
 from collections import defaultdict
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from .models import Teacher, TeacherAttendance, TeacherPayment
 
-WEEKDAY_TO_DAY = {0: 'ISNIN', 1: 'SELASA', 2: 'RABU', 3: 'KHAMIS', 4: 'JUMAAT', 5: 'SABTU'}
+WEEKDAY_TO_DAY = {0: 'ISNIN', 1: 'SELASA', 2: 'RABU', 3: 'KHAMIS', 4: 'JUMAAT', 5: 'SABTU', 6: 'AHAD'}
 # Pay for a month can still change until the Supervisor verifies it (or Management rejects it)
 OPEN_PAY_STATUSES = ('DRAFT', 'REJECTED')
 
@@ -73,7 +73,7 @@ def roster(on):
             'notes': notes.get(c.id, []),
             'record': None if not rec else {
                 'id': rec.id, 'status': rec.status, 'reason': rec.reason, 'remarks': rec.remarks,
-                'replacement_teacher': rec.replacement_teacher_id, 'recorded_by': rec.recorded_by,
+                'replacement_teacher': rec.replacement_teacher_id, 'recorded_by': rec.recorded_by, 'amount': str(rec.allowance_earned),
             },
             'locked': bool(rec and ({rec.teacher_id, rec.replacement_teacher_id} & locked)),
         })
@@ -87,7 +87,7 @@ def rate_of(teacher_id, cache):
 
 
 @transaction.atomic
-def save_roster(on, marks, by):
+def save_roster(on, marks, by, can_set_pay=False):
     from academic.calendar import require_open
     from academic.models import ClassTimetable
 
@@ -124,13 +124,28 @@ def save_roster(on, marks, by):
             raise ValidationError({'detail': f"Gaji bulan ini untuk guru {cls.class_code} sudah disahkan; kehadiran tidak boleh diubah."})
 
         paid = int(teacher_id) if status == 'PRESENT' else int(replacement) if status == 'REPLACED' else None
+        # The centre decides what a session is paid: Supervisor / Management can type the amount (a permanent teacher
+        # covering as part-time, an event, ...). Otherwise the pay is the teacher's own rate, and a session already
+        # recorded keeps the amount it was given.
+        override = None
+        if mark.get('amount') not in (None, ''):
+            if not can_set_pay:
+                raise PermissionDenied('Hanya Supervisor atau Management boleh menaip bayaran sesi.')
+            try:
+                override = Decimal(str(mark['amount'])).quantize(Decimal('0.01'))
+            except InvalidOperation:
+                raise ValidationError({'amount': f"Bayaran sesi {cls.class_code} mesti nombor."})
+            if not Decimal('0') <= override <= Decimal('5000'):
+                raise ValidationError({'amount': f"Bayaran sesi {cls.class_code} mesti antara RM0 dan RM5,000."})
+        kept = existing.allowance_earned if existing and paid and existing.paid_teacher_id == paid else None
+        earned = Decimal('0') if not paid else override if override is not None else kept if kept is not None else rate_of(paid, rates)
         TeacherAttendance.objects.update_or_create(
             timetable_class=cls, date=on,
             defaults={
                 'teacher_id': teacher_id, 'class_label': cls.class_code, 'status': status,
                 'reason': (mark.get('reason') or '').strip() if status in ('ABSENT', 'REPLACED') else '',
                 'replacement_teacher_id': replacement, 'remarks': (mark.get('remarks') or '').strip(),
-                'allowance_earned': rate_of(paid, rates) if paid else Decimal('0'),
+                'allowance_earned': earned,
                 'recorded_by': by,
             },
         )

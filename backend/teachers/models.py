@@ -5,7 +5,7 @@ from business_config.models import SubjectMaster
 class Teacher(models.Model):
     TYPE_CHOICES = [
         ('PERMANENT', 'Cikgu Permanent'),
-        ('REPLACEMENT', 'Cikgu Ganti Aktif'),
+        ('REPLACEMENT', 'Sambilan (Part-time)'),
     ]
     teacher_code = models.CharField(max_length=20, unique=True) # e.g. NAK, SF, AZ, Z
     full_name = models.CharField(max_length=120)

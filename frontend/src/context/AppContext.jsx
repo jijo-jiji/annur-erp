@@ -4,6 +4,8 @@ import {
   academicApi, staffApi, dashboardApi, configApi
 } from '../api/client';
 
+import { setGradeScale } from '../lib/domain';
+
 const AppContext = createContext(null);
 
 // Old screen ids -> routes in the new shell
@@ -80,7 +82,7 @@ export function AppProvider({ children, notify }) {
         configApi.getSubjects(),
       ]);
 
-      if (masterRes.status === 'fulfilled') setMasterData(masterRes.value || []);
+      if (masterRes.status === 'fulfilled') { setMasterData(masterRes.value || []); setGradeScale(masterRes.value || []); }
       if (studentsRes.status === 'fulfilled') setStudents(studentsRes.value || []);
       if (leadsRes.status === 'fulfilled') setLeads(leadsRes.value || []);
       if (invoicesRes.status === 'fulfilled') setInvoices(invoicesRes.value || []);

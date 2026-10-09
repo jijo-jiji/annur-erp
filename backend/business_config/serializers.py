@@ -42,6 +42,27 @@ class TeacherRateSettingSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class DynamicMasterDataSerializer(serializers.ModelSerializer):
+    def _check_mark_band(self, attrs):
+        """A grade of the exam scale: its code is the grade (A+, B, ...) and meta.min the lowest mark that earns it."""
+        meta = attrs.get('meta_info', getattr(self.instance, 'meta_info', {})) or {}
+        code = attrs.get('code', getattr(self.instance, 'code', ''))
+        if not code or len(code) > 4 or ' ' in code:
+            raise serializers.ValidationError({'code': 'Gred 1 hingga 4 aksara tanpa ruang, cth. A+.'})
+        try:
+            floor = float(meta.get('min'))
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({'meta_info': 'Markah minimum diperlukan (0 hingga 100).'})
+        if not 0 <= floor <= 100:
+            raise serializers.ValidationError({'meta_info': 'Markah minimum mesti antara 0 dan 100.'})
+        taken = []
+        for other in DynamicMasterData.objects.filter(category='13_mark_band').exclude(pk=getattr(self.instance, 'pk', None)):
+            try:
+                taken.append(float((other.meta_info or {}).get('min')))
+            except (TypeError, ValueError, AttributeError):
+                continue
+        if floor in taken:
+            raise serializers.ValidationError({'meta_info': 'Sudah ada gred dengan markah minimum yang sama.'})
+
     class Meta:
         model = DynamicMasterData
         fields = '__all__'
@@ -50,6 +71,8 @@ class DynamicMasterDataSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         category = attrs.get('category', getattr(self.instance, 'category', ''))
+        if category == '13_mark_band':
+            self._check_mark_band(attrs)
         if category == '1_form':
             meta = attrs.get('meta_info', getattr(self.instance, 'meta_info', {})) or {}
             code = attrs.get('code', getattr(self.instance, 'code', ''))

@@ -506,10 +506,10 @@ function Policies({ editable }) {
         </Card>
       ))}
       <Card>
-        <CardHeader title="Elaun guru" description="Kadar asas bagi guru baharu. Kadar setiap guru diubah melalui cadangan kenaikan di halaman Guru." />
+        <CardHeader title="Kadar permulaan guru baharu" description="Nilai yang diisi dahulu apabila guru baharu ditambah. Pusat menentukan bayaran sebenar: kadar setiap guru diubah melalui Kenaikan kadar di halaman Guru, dan bayaran satu sesi boleh ditaip pada Kehadiran guru." />
         <div className="divide-y divide-gray-100">
           {rates.flatMap((r) => {
-            const label = r.teacher_type === 'PERMANENT' ? 'guru tetap' : 'guru ganti';
+            const label = r.teacher_type === 'PERMANENT' ? 'guru tetap' : 'guru sambilan';
             const edit = rateEdits[r.id] || {};
             const field = (name, text, unit) => row(`${text} ${label}`, unit, (
               <input
@@ -523,7 +523,7 @@ function Policies({ editable }) {
                 className={`${inputClass} max-w-24 text-right tnum`}
               />
             ));
-            return [field('base_rate_per_session', 'Kadar asas', 'RM / sesi'), field('annual_increment_pct', 'Kenaikan tahunan', '%')];
+            return [field('base_rate_per_session', 'Kadar permulaan', 'RM / sesi')];
           })}
         </div>
       </Card>

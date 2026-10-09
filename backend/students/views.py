@@ -21,14 +21,11 @@ from .serializers import (
     StudentEventSerializer, ClassWaitlistSerializer, StudentFeedbackSerializer,
 )
 from billing.serializers import InvoiceSerializer
+from core import gradescale
 
 
-# SPM grading scale
-GRADE_SCALE = [(90, 'A+'), (80, 'A'), (70, 'A-'), (65, 'B+'), (60, 'B'), (55, 'C+'), (50, 'C'), (45, 'D'), (40, 'E'), (0, 'G')]
-
-
-def grade_for(mark):
-    return next(g for floor, g in GRADE_SCALE if mark >= floor)
+# The grading scale is Management's to edit (Data induk > Gred & jalur markah); see core.gradescale
+grade_for = gradescale.grade_for
 
 
 def get_class(value, field='class_id'):

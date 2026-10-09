@@ -148,10 +148,21 @@ export function attendanceSummary(studentId, attendance, studentClasses) {
   return { sessions, absent, late, rate: sessions ? Math.round(((sessions - absent) / sessions) * 100) : null, absences };
 }
 
-// SPM grading scale
-const GRADES = [
+// The exam grade scale is edited by Management in Data induk > Gred & jalur markah (see setGradeScale).
+// This built-in scale shows until the list has loaded, and if it ever has no grade starting at 0.
+let GRADES = [
   [90, 'A+'], [80, 'A'], [70, 'A-'], [65, 'B+'], [60, 'B'], [55, 'C+'], [50, 'C'], [45, 'D'], [40, 'E'], [0, 'G'],
 ];
+export function setGradeScale(items) {
+  const pairs = items
+    .filter((i) => i.category === '13_mark_band' && i.status === 'APPROVED')
+    .map((i) => [Number(i.meta_info?.min), i.code])
+    .filter(([min]) => Number.isFinite(min) && min >= 0 && min <= 100)
+    .sort((a, b) => b[0] - a[0]);
+  if (pairs.length && pairs[pairs.length - 1][0] === 0) GRADES = pairs;
+}
+// The grades, best first
+export const gradeOrder = () => GRADES.map(([, g]) => g);
 export function grade(mark) {
   if (mark == null || mark === '') return '';
   return GRADES.find(([min]) => mark >= min)[1];

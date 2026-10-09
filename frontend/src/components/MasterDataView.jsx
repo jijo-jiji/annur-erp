@@ -40,8 +40,15 @@ const STATUS = {
   REJECTED: { label: 'Ditolak', tone: 'red' },
 };
 
+// Lists nothing in the program reads: they are kept in the database but not shown, so nobody edits a list that has no effect
+const UNUSED = ['2_interested_sub', '4_student_type', '5_grade', '8_active_sub', '9_walkin_sub', '11_academic_grade', '12_academic_sub',
+  '15_teacher_type', '16_teacher_sub', '17_teacher_grade', '20_vendor', '21_payment_method'];
+const BAND_CATEGORY = '13_mark_band';
+
 // Lists changed only through change requests, in Baucar bayaran (Supervisor asks, Management approves)
 const REQUEST_ONLY = ['18_expense_cat', '19_expense_subcat'];
+
+const BAND_FIELD = { name: 'min', label: 'Markah minimum', type: 'number', min: '0', max: '100', step: '0.5', required: true, hint: 'Markah terendah yang mendapat gred ini. Kod ialah gred itu sendiri, cth. A+. Markah yang disimpan selepas ini menggunakan skala baharu; keputusan lama kekal.' };
 
 // Grade entries keep structured details; other lists keep one free-text detail
 const gradeMeta = (v) => ({ level: v.level || 'UPPER', order: Number(v.order) || 0, next: v.next || '', fee_group: v.fee_group || '', description: v.description || '' });
@@ -52,6 +59,7 @@ function metaText(item, pricingTiers) {
   if (item.category === GRADE_CATEGORY) {
     return [LEVEL_LABELS[m.level] || m.level, `susunan ${m.order ?? '—'}`, `seterusnya: ${m.next || 'tamat'}`, m.fee_group ? `pakej: ${tierGroupLabel(m.fee_group, pricingTiers)}` : '', m.description].filter(Boolean).join(' · ');
   }
+  if (item.category === BAND_CATEGORY) return `markah ${m.min ?? '—'}% ke atas`;
   return Object.entries(m).map(([k, v]) => (k === 'detail' ? v : `${k}: ${v}`)).join(' · ');
 }
 
@@ -65,6 +73,7 @@ export default function MasterDataView({ role }) {
   const [dialog, setDialog] = useState(null); // { type: 'add' | 'edit' | 'reject', item }
 
   const isGrade = category === GRADE_CATEGORY;
+  const isBand = category === BAND_CATEGORY;
   const current = CATEGORIES.find((c) => c.id === category);
   const rows = masterData.filter((i) => i.category === category && (status === 'ALL' || i.status === status));
   const pendingIn = (id) => masterData.filter((i) => i.category === id && i.status === 'PENDING').length;
@@ -107,7 +116,7 @@ export default function MasterDataView({ role }) {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[16rem_1fr]">
         <Card className="self-start">
           <nav aria-label="Senarai data induk" className="max-h-[70vh] overflow-y-auto p-2">
-            {CATEGORIES.map((c, i) => {
+            {CATEGORIES.filter((c) => !UNUSED.includes(c.id)).map((c, i) => {
               const pending = pendingIn(c.id);
               return (
                 <button
@@ -120,7 +129,7 @@ export default function MasterDataView({ role }) {
                     c.id === category ? 'bg-brand-50 font-medium text-brand-900' : 'text-gray-700 hover:bg-gray-50',
                   )}
                 >
-                  <span className="truncate"><span className="text-gray-400 tnum">{i + 1}.</span> {c.name}</span>
+                  <span className="truncate"><span className="text-gray-400 tnum">{CATEGORIES.indexOf(c) + 1}.</span> {c.name}</span>
                   {pending > 0 && <Badge tone="amber">{pending}</Badge>}
                 </button>
               );
@@ -209,17 +218,17 @@ export default function MasterDataView({ role }) {
           title={canApprove ? 'Tambah nilai' : 'Cadang nilai baharu'}
           description={`${current.name}. ${canApprove ? 'Nilai ini aktif serta-merta.' : 'Nilai ini dihantar untuk kelulusan Supervisor atau Pengurusan sebelum aktif.'}`}
           submitLabel={canApprove ? 'Simpan' : 'Hantar cadangan'}
-          initial={{ code: '', label: '', meta: '', comment: '', level: 'UPPER', order: '', next: '', fee_group: '', description: '' }}
+          initial={{ code: '', label: '', meta: '', min: '', comment: '', level: 'UPPER', order: '', next: '', fee_group: '', description: '' }}
           fields={[
             { name: 'code', label: 'Kod', required: true, hint: 'Singkatan tanpa ruang, cth. SRC-IG' },
             { name: 'label', label: 'Nama paparan', required: true },
-            ...(isGrade ? gradeFields() : [{ name: 'meta', label: 'Maklumat tambahan', hint: 'cth. kategori sekolah, bajet bulanan' }]),
+            ...(isGrade ? gradeFields() : isBand ? [BAND_FIELD] : [{ name: 'meta', label: 'Maklumat tambahan', hint: 'cth. kategori sekolah, bajet bulanan' }]),
             { name: 'comment', label: 'Sebab cadangan', type: 'textarea', required: true },
           ]}
           onSubmit={async (v) => {
             await proposeMasterData({
               category, code: v.code.trim().toUpperCase(), label: v.label.trim(),
-              meta_info: isGrade ? gradeMeta(v) : (v.meta ? { detail: v.meta } : {}),
+              meta_info: isGrade ? gradeMeta(v) : isBand ? { min: Number(v.min) } : (v.meta ? { detail: v.meta } : {}),
               proposal_note: v.comment,
             });
             if (isGrade) gradesChanged();
@@ -232,17 +241,17 @@ export default function MasterDataView({ role }) {
           title={`Ubah ${edit.code}`}
           description="Kod tidak boleh diubah kerana ia digunakan dalam rekod sedia ada."
           initial={{
-            label: edit.label, meta: edit.meta_info?.detail || '', level: edit.meta_info?.level || 'UPPER', order: edit.meta_info?.order ?? '',
+            label: edit.label, meta: edit.meta_info?.detail || '', min: edit.meta_info?.min ?? '', level: edit.meta_info?.level || 'UPPER', order: edit.meta_info?.order ?? '',
             next: edit.meta_info?.next || '', fee_group: gradeRows.find((g) => g.code === edit.code)?.fee_group || edit.meta_info?.fee_group || '', description: edit.meta_info?.description || '',
           }}
           fields={[
             { name: 'label', label: 'Nama paparan', required: true },
-            ...(edit.category === GRADE_CATEGORY ? gradeFields(edit.code) : [{ name: 'meta', label: 'Maklumat tambahan' }]),
+            ...(edit.category === GRADE_CATEGORY ? gradeFields(edit.code) : edit.category === BAND_CATEGORY ? [BAND_FIELD] : [{ name: 'meta', label: 'Maklumat tambahan' }]),
           ]}
           onSubmit={async (v) => {
             await updateMasterData(edit.id, {
               label: v.label,
-              meta_info: edit.category === GRADE_CATEGORY ? gradeMeta(v) : (v.meta ? { ...(edit.meta_info || {}), detail: v.meta } : edit.meta_info),
+              meta_info: edit.category === GRADE_CATEGORY ? gradeMeta(v) : edit.category === BAND_CATEGORY ? { min: Number(v.min) } : (v.meta ? { ...(edit.meta_info || {}), detail: v.meta } : edit.meta_info),
             });
             if (edit.category === GRADE_CATEGORY) gradesChanged();
           }}

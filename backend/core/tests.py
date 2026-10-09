@@ -1532,3 +1532,127 @@ class ThresholdTests(RoleTestBase):
         self.assertEqual([c['name'] for c in alerts()['contracts_ending']], ['Nora'])
         attendance = self.client.get('/api/v1/dashboard/summary/').data['attendance']
         self.assertEqual((attendance['threshold'], attendance['window_days']), (50, 14))
+
+
+class SessionPayEntryTests(RoleTestBase):
+    """The centre decides what a session is paid: Supervisor / Management can type it; Admin never sees pay."""
+    URL = '/api/v1/teachers/attendance/roster/'
+    MONDAY = '2026-10-05'
+
+    def setUp(self):
+        super().setUp()
+        from academic.models import ClassTimetable, TimeSlot
+        from business_config.models import SubjectMaster
+        self.slot = TimeSlot.objects.create(day='ISNIN', start_time='20:30', end_time='22:00', period_label='Malam 8.30 - 10.00')
+        self.sunday = TimeSlot.objects.create(day='AHAD', start_time='10:00', end_time='11:30', period_label='Pagi 10.00 - 11.30')
+        math = SubjectMaster.objects.create(code='MT', name='Matematik', level_category='UPPER_SEC')
+        self.permanent = Teacher.objects.create(teacher_code='NAK', full_name='Nur Aini', phone_number='1', rate_per_session=60)
+        self.partime = Teacher.objects.create(teacher_code='AZ', full_name='Azman', phone_number='2', teacher_type='REPLACEMENT', rate_per_session=55)
+        self.cls = ClassTimetable.objects.create(slot=self.slot, subject=math, form_level='F5', section='A', max_seats=10, teacher=self.permanent)
+        self.sunday_cls = ClassTimetable.objects.create(slot=self.sunday, subject=math, form_level='F4', section='A', max_seats=10, teacher=self.permanent)
+
+    def mark(self, **extra):
+        return {'date': self.MONDAY, 'marks': [{'class_id': self.cls.id, 'teacher_id': self.permanent.id, 'status': 'PRESENT', **extra}]}
+
+    def earned(self):
+        from teachers.models import TeacherAttendance
+        return float(TeacherAttendance.objects.get(timetable_class=self.cls, date=self.MONDAY).allowance_earned)
+
+    def test_the_label_is_sambilan(self):
+        self.assertEqual(Teacher.objects.get(pk=self.partime.id).get_teacher_type_display(), 'Sambilan (Part-time)')
+
+    def test_supervisor_types_the_pay_and_it_is_kept_when_admin_saves_again(self):
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post(self.URL, self.mark(), format='json').status_code, 200)
+        self.assertEqual(self.earned(), 60.0)  # the teacher's own rate by default
+        res = self.client.post(self.URL, self.mark(amount='95.50'), format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(self.earned(), 95.5)
+        self.assertEqual(res.data['classes'][0]['record']['amount'], '95.50')
+
+        self.as_role(ADMIN)  # Admin cannot see or change pay, and saving the day again leaves it alone
+        seen = self.client.get(self.URL + '?date=' + self.MONDAY).data['classes'][0]['record']
+        self.assertNotIn('amount', seen)
+        self.assertEqual(self.client.post(self.URL, self.mark(remarks='ok'), format='json').status_code, 200)
+        self.assertEqual(self.earned(), 95.5)
+        self.assertEqual(self.client.post(self.URL, self.mark(amount='10'), format='json').status_code, 403)
+        self.assertEqual(self.earned(), 95.5)
+
+    def test_a_part_time_cover_can_be_paid_at_a_typed_amount(self):
+        self.as_role(SUPERVISOR)
+        body = {'date': self.MONDAY, 'marks': [{'class_id': self.cls.id, 'teacher_id': self.permanent.id, 'status': 'REPLACED',
+                                                'reason': 'MC', 'replacement_teacher': self.partime.id}]}
+        self.client.post(self.URL, body, format='json')
+        self.assertEqual(self.earned(), 55.0)
+        body['marks'][0]['amount'] = '70'
+        self.client.post(self.URL, body, format='json')
+        self.assertEqual(self.earned(), 70.0)
+
+    def test_checks_and_other_rules_still_hold(self):
+        self.as_role(SUPERVISOR)
+        for bad in ('abc', '-1', '5001'):
+            self.assertEqual(self.client.post(self.URL, self.mark(amount=bad), format='json').status_code, 400, bad)
+        absent = {'date': self.MONDAY, 'marks': [{'class_id': self.cls.id, 'teacher_id': self.permanent.id, 'status': 'ABSENT', 'reason': 'MC', 'amount': '50'}]}
+        self.client.post(self.URL, absent, format='json')
+        self.assertEqual(self.earned(), 0.0)  # nobody is paid for a class nobody taught
+
+    def test_a_sunday_slot_shows_on_the_sunday_roster(self):
+        self.as_role(ADMIN)
+        rows = self.client.get(self.URL + '?date=2026-10-04').data['classes']  # a Sunday
+        self.assertEqual([r['class_id'] for r in rows], [self.sunday_cls.id])
+
+
+class GradeScaleTests(RoleTestBase):
+    """The exam grade scale is Management's to edit: marks saved afterwards get their grade from it."""
+    URL = '/api/v1/business-config/master-data/'
+
+    def setUp(self):
+        super().setUp()
+        from business_config.models import DynamicMasterData
+        self.Item = DynamicMasterData
+        for floor, grade in [(90, 'A+'), (80, 'A'), (70, 'A-'), (65, 'B+'), (60, 'B'), (55, 'C+'), (50, 'C'), (45, 'D'), (40, 'E'), (0, 'G')]:
+            DynamicMasterData.objects.create(category='13_mark_band', code=grade, label=grade, meta_info={'min': floor},
+                                             status='APPROVED', is_locked=True)
+
+    def test_the_scale_comes_from_the_list_and_falls_back_if_it_is_broken(self):
+        from core import gradescale
+        self.assertEqual([gradescale.grade_for(m) for m in (100, 90, 89.9, 72, 0)], ['A+', 'A+', 'A', 'A-', 'G'])
+        self.Item.objects.filter(category='13_mark_band', code='G').delete()  # nothing starts at 0 any more
+        self.assertEqual(gradescale.grade_for(10), 'G')  # the built-in scale applies, so every mark has a grade
+
+    def test_an_edited_scale_decides_the_grade_of_new_marks(self):
+        from core import gradescale
+        self.as_role(MANAGEMENT)
+        res = self.client.post(self.URL, {'category': '13_mark_band', 'code': 'A++', 'label': 'A++: 95% ke atas', 'meta_info': {'min': 95}}, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['status'], 'APPROVED')
+        self.assertEqual((gradescale.grade_for(96), gradescale.grade_for(92)), ('A++', 'A+'))
+        row = self.Item.objects.get(category='13_mark_band', code='C')  # raise the pass mark of C: no, move C+ from 55 to 58
+        plus = self.Item.objects.get(category='13_mark_band', code='C+')
+        res = self.client.patch(f'{self.URL}{plus.id}/', {'meta_info': {'min': 58}}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual((gradescale.grade_for(57), gradescale.grade_for(58)), ('C', 'C+'))
+
+    def test_admin_only_proposes_and_nothing_changes_until_approved(self):
+        from core import gradescale
+        self.as_role(ADMIN)
+        res = self.client.post(self.URL, {'category': '13_mark_band', 'code': 'A++', 'label': 'x', 'meta_info': {'min': 95}}, format='json')
+        self.assertEqual((res.status_code, res.data['status']), (201, 'PENDING'))
+        self.assertEqual(gradescale.grade_for(96), 'A+')
+
+    def test_checks(self):
+        self.as_role(MANAGEMENT)
+        post = lambda code, meta: self.client.post(self.URL, {'category': '13_mark_band', 'code': code, 'label': 'x', 'meta_info': meta}, format='json')
+        self.assertEqual(post('F', {}).status_code, 400)  # no minimum mark
+        self.assertEqual(post('F', {'min': 'abc'}).status_code, 400)
+        self.assertEqual(post('F', {'min': 101}).status_code, 400)
+        self.assertEqual(post('F', {'min': -1}).status_code, 400)
+        self.assertEqual(post('F', {'min': 80}).status_code, 400)  # A already starts at 80
+        self.assertEqual(post('TERLALU', {'min': 33}).status_code, 400)  # grade too long
+        self.assertEqual(post('F', {'min': 33}).status_code, 201)
+
+    def test_marks_are_graded_by_the_scale_when_exam_results_are_saved(self):
+        from students.views import grade_for
+        self.assertEqual(grade_for(72), 'A-')
+        self.Item.objects.filter(category='13_mark_band', code='A-').update(meta_info={'min': 75})
+        self.assertEqual(grade_for(72), 'B+')

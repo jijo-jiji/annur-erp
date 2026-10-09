@@ -243,7 +243,7 @@ export default function ReportsView({ role }) {
                 {data.teacher_payments.map((t) => (
                   <tr key={t.code}>
                     <Td className="font-medium text-gray-900">{t.name} <span className="font-normal text-gray-400">· {t.code}</span></Td>
-                    <Td>{t.type === 'PERMANENT' ? 'Tetap' : 'Ganti'}</Td>
+                    <Td>{t.type === 'PERMANENT' ? 'Tetap' : 'Sambilan'}</Td>
                     <Td className="text-right tnum">{t.sessions}</Td>
                     <Td className="text-right tnum">{rm(t.rate)}</Td>
                     <Td className="text-right font-medium tnum">{rm(t.allowance)}</Td>
