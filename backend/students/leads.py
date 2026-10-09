@@ -4,7 +4,13 @@ from datetime import date, timedelta
 from rest_framework.exceptions import ValidationError
 from .models import Lead, LeadActivity
 
-STAGE_LABELS = dict(Lead.STATUS_CHOICES)
+
+
+def stage_labels():
+    """Stage names as the centre has set them (Settings); the order and the rules of the stages are fixed."""
+    from core import thresholds
+    return {**dict(Lead.STATUS_CHOICES), **thresholds.stage_labels()}
+
 # REGISTERED comes from converting the lead to a student, ACTIVE from the Supervisor's approval
 MOVABLE_STAGES = Lead.STAGE_ORDER[:Lead.STAGE_ORDER.index('REGISTERED')]
 
@@ -45,7 +51,8 @@ def move(lead, stage, by, remark='', on=None, next_follow_up=None):
     lead.lost_at_stage = ''
     lead.lost_reason = ''
     previous = _set_stage(lead, stage, on)
-    return log_activity(lead, by, f"{action}: {STAGE_LABELS[previous]} → {STAGE_LABELS[stage]}",
+    labels = stage_labels()
+    return log_activity(lead, by, f"{action}: {labels[previous]} → {labels[stage]}",
                         remark, on=on, next_follow_up=next_follow_up, from_stage=previous)
 
 
@@ -87,13 +94,14 @@ def stats(leads, today=None):
     order = Lead.STAGE_ORDER
     reached_index = [order.index(l.reached_stage) if l.reached_stage in order else 0 for l in leads]
 
+    labels = stage_labels()
     funnel = []
     previous = None
     for i, code in enumerate(order):
         reached = sum(1 for r in reached_index if r >= i)
         funnel.append({
             'stage': code,
-            'label': STAGE_LABELS[code],
+            'label': labels[code],
             'current': sum(1 for l in leads if l.status == code),
             'reached': reached,
             'rate_from_previous': round(reached / previous * 100, 1) if previous else None,

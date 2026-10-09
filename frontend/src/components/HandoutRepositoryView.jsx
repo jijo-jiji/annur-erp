@@ -1,3 +1,4 @@
+import { THRESHOLDS } from '../lib/thresholds';
 import { useState } from 'react';
 import { Download, FileText, Plus, Printer, Trash2, UploadCloud } from 'lucide-react';
 import { academicApi, filesApi } from '../api/client';
@@ -214,7 +215,7 @@ function AddModal({ onClose }) {
         <Textarea label="Penerangan / topik" rows={2} value={f.description} onChange={(e) => set({ description: e.target.value })} />
         <Input
           label="Fail handout"
-          hint="PDF, Word, PowerPoint atau gambar; maksimum 25 MB. Boleh dimuat naik kemudian."
+          hint={`PDF, Word, PowerPoint atau gambar; maksimum ${THRESHOLDS.upload_handout_mb} MB. Boleh dimuat naik kemudian.`}
           type="file"
           accept={ACCEPT.HANDOUT}
           onChange={(e) => set({ file: e.target.files?.[0] || null })}

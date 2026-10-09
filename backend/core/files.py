@@ -15,15 +15,28 @@ OFFICE = {
 }
 VIDEO = {'.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm'}
 
-RULES = {
-    'STUDENT_PHOTO': {'types': IMAGE, 'max': 5 * MB, 'single': True},
-    'STAFF_PHOTO': {'types': IMAGE, 'max': 5 * MB, 'single': True},
-    'FEEDBACK': {'types': {**IMAGE, **VIDEO}, 'max': 50 * MB},
-    'STAFF_DOC': {'types': {**PDF, **IMAGE, **OFFICE}, 'max': 10 * MB},
-    'VOUCHER': {'types': {**PDF, **IMAGE}, 'max': 10 * MB},
-    'VOUCHER_SIGNATURE': {'types': {'.png': 'image/png'}, 'max': 1 * MB, 'single': True},
-    'HANDOUT': {'types': {**PDF, **IMAGE, **OFFICE}, 'max': 25 * MB, 'single': True},
+# The size limits are Management's to change (Settings), within a safe maximum; the signature is fixed.
+# The file types themselves are a security rule and never change here.
+SIZE_SETTING = {
+    'STUDENT_PHOTO': 'upload_photo_mb', 'STAFF_PHOTO': 'upload_photo_mb', 'FEEDBACK': 'upload_feedback_mb',
+    'STAFF_DOC': 'upload_document_mb', 'VOUCHER': 'upload_document_mb', 'HANDOUT': 'upload_handout_mb',
 }
+RULES = {
+    'STUDENT_PHOTO': {'types': IMAGE, 'single': True},
+    'STAFF_PHOTO': {'types': IMAGE, 'single': True},
+    'FEEDBACK': {'types': {**IMAGE, **VIDEO}},
+    'STAFF_DOC': {'types': {**PDF, **IMAGE, **OFFICE}},
+    'VOUCHER': {'types': {**PDF, **IMAGE}},
+    'VOUCHER_SIGNATURE': {'types': {'.png': 'image/png'}, 'max': 1 * MB, 'single': True},
+    'HANDOUT': {'types': {**PDF, **IMAGE, **OFFICE}, 'single': True},
+}
+
+
+def max_bytes(kind):
+    if kind in SIZE_SETTING:
+        from . import thresholds
+        return int(thresholds.value(SIZE_SETTING[kind])) * MB
+    return RULES[kind]['max']
 # Files shown in the browser; everything else downloads
 INLINE_TYPES = set(IMAGE.values()) | set(PDF.values()) | set(VIDEO.values())
 VOUCHER_OPEN = ('DRAFT', 'VERIFIED_ADMIN', 'PENDING_SUPERVISOR', 'PENDING_MANAGEMENT')
@@ -43,8 +56,9 @@ def validate_upload(kind, upload):
     if ext not in rule['types']:
         allowed = ', '.join(sorted(rule['types']))
         raise ValidationError({'file': f"Jenis fail tidak dibenarkan. Dibenarkan: {allowed}."})
-    if upload.size > rule['max']:
-        raise ValidationError({'file': f"Fail terlalu besar (maksimum {rule['max'] // MB} MB)."})
+    limit = max_bytes(kind)
+    if upload.size > limit:
+        raise ValidationError({'file': f"Fail terlalu besar (maksimum {limit // MB} MB)."})
     if upload.size == 0:
         raise ValidationError({'file': 'Fail kosong.'})
     head = _head(upload)

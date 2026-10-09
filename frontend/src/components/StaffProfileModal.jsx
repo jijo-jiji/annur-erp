@@ -1,3 +1,4 @@
+import { THRESHOLDS } from '../lib/thresholds';
 import { useCallback, useEffect, useState } from 'react';
 import { Pencil, Plus } from 'lucide-react';
 import { authApi, hrApi } from '../api/client';
@@ -288,7 +289,7 @@ export default function StaffProfileModal({ staffId, role, onClose }) {
               locked
               canUpload={isApprover || isOwn}
               emptyText="Belum ada dokumen dihantar."
-              hint="IC, resume, surat tawaran dan lain-lain: PDF, gambar atau Word, maksimum 10 MB. Hanya staf berkenaan, Supervisor dan Pengurusan boleh melihatnya."
+              hint={`IC, resume, surat tawaran dan lain-lain: PDF, gambar atau Word, maksimum ${THRESHOLDS.upload_document_mb} MB. Hanya staf berkenaan, Supervisor dan Pengurusan boleh melihatnya.`}
             />
           </div>
         )}

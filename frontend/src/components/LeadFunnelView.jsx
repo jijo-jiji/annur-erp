@@ -3,6 +3,7 @@ import { AlertCircle, ChevronRight, Clock, Download, Plus } from 'lucide-react';
 import { leadsApi } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { CENTRE } from '../lib/config';
+import { THRESHOLDS } from '../lib/thresholds';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
 import { date, FORMS, formLabel, formShort, todayISO, waLink } from '../lib/format';
@@ -12,17 +13,10 @@ import { HBarList } from './charts';
 import { Badge, Button, Card, CardHeader, Checkbox, cx, DescriptionList, EmptyState, filterClass, Input, Modal, PageHeader, Segmented, Select, Stat, Table, Td, Textarea, Th, WhatsAppIcon } from './ui';
 
 // The 8 conversion stages, in order
-export const LEAD_STAGES = [
-  { id: 'ENQUIRY', label: 'Enquiry' },
-  { id: 'CONTACTED', label: 'Contacted' },
-  { id: 'CONTENT_1', label: 'Content 1' },
-  { id: 'CONTENT_2', label: 'Content 2' },
-  { id: 'TRIAL', label: 'Free Trial' },
-  { id: 'WAITING_PAYMENT', label: 'Waiting Payment' },
-  { id: 'REGISTERED', label: 'Registered' },
-  { id: 'ACTIVE', label: 'Active' },
-];
-const STAGE_LABEL = { ...Object.fromEntries(LEAD_STAGES.map((s) => [s.id, s.label])), LOST: 'Tidak berminat' };
+// The order and the rules of the stages are fixed; their names are the centre's (Settings > Had & amaran)
+export const LEAD_STAGES = ['ENQUIRY', 'CONTACTED', 'CONTENT_1', 'CONTENT_2', 'TRIAL', 'WAITING_PAYMENT', 'REGISTERED', 'ACTIVE']
+  .map((id) => ({ id, get label() { return THRESHOLDS[`lead_label_${id}`]; } }));
+const STAGE_LABEL = new Proxy({}, { get: (_, id) => (id === 'LOST' ? 'Tidak berminat' : THRESHOLDS[`lead_label_${String(id)}`]) });
 // Registered comes from converting the lead; Active from the Supervisor approving that registration
 const MOVABLE = LEAD_STAGES.slice(0, 6).map((s) => s.id);
 const CLOSED = ['REGISTERED', 'ACTIVE', 'LOST'];

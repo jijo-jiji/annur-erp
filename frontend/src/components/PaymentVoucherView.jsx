@@ -443,7 +443,7 @@ function VoucherModal({ v, onClose }) {
             canUpload={editable}
             canDelete={editable}
             emptyText="Tiada lampiran."
-            hint={editable ? 'PDF atau gambar, maksimum 10 MB setiap fail. Lampiran dikunci selepas baucar diluluskan atau ditolak.' : 'Baucar telah diputuskan; lampiran dikunci.'}
+            hint={editable ? `PDF atau gambar, maksimum ${THRESHOLDS.upload_document_mb} MB setiap fail. Lampiran dikunci selepas baucar diluluskan atau ditolak.` : 'Baucar telah diputuskan; lampiran dikunci.'}
           />
           <SignaturePad objectId={v.pk} canSign={v.rawStatus !== 'REJECTED'} />
         </div>

@@ -234,7 +234,17 @@ class StaffMemberViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         require_role(self.request, MANAGEMENT)
-        staff = serializer.save(staff_id=numbering.next_number(StaffMember, 'staff_id', 'STF-', 3))
+        # Leave and working time start from the centre's defaults (Settings) unless the form gave them
+        from datetime import time
+        from core import thresholds
+        limits = thresholds.values()
+        given = serializer.validated_data
+        defaults = {
+            'al_entitlement': limits['default_al_days'], 'mc_entitlement': limits['default_mc_days'], 'el_entitlement': limits['default_el_days'],
+            'work_start': time.fromisoformat(limits['default_work_start']), 'work_end': time.fromisoformat(limits['default_work_end']),
+            'work_days': limits['default_work_days'],
+        }
+        staff = serializer.save(staff_id=numbering.next_number(StaffMember, 'staff_id', 'STF-', 3), **{k: v for k, v in defaults.items() if k not in given})
         StaffHistory.objects.create(staff=staff, date=staff.join_date or date.today(),
                                     change=f"Mula bekerja: {staff.role}, {staff.department} ({staff.get_employment_type_display()})",
                                     recorded_by=display_name(self.request.user))

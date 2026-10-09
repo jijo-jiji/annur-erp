@@ -1656,3 +1656,81 @@ class GradeScaleTests(RoleTestBase):
         self.assertEqual(grade_for(72), 'A-')
         self.Item.objects.filter(category='13_mark_band', code='A-').update(meta_info={'min': 75})
         self.assertEqual(grade_for(72), 'B+')
+
+
+class SettingDefaultsTests(RoleTestBase):
+    """Staff defaults, upload limits, document number prefixes and lead stage names are Management's to change."""
+    URL = '/api/v1/thresholds/'
+
+    def put(self, **changes):
+        return self.client.put(self.URL, changes, format='json')
+
+    def new_staff(self, **extra):
+        return self.client.post('/api/v1/teachers/staff/', {'name': 'Aina', 'role': 'Kerani', 'department': 'Pejabat', 'phone': '011', **extra}, format='json')
+
+    def test_new_staff_start_from_the_centre_defaults(self):
+        self.as_role(MANAGEMENT)
+        first = self.new_staff()
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual((first.data['al_entitlement'], first.data['mc_entitlement'], first.data['el_entitlement']), (12, 14, 3))
+        self.assertEqual((first.data['work_start'], first.data['work_end'], first.data['work_days']), ('08:30:00', '17:30:00', '0,1,2,3,4,5'))
+        res = self.put(default_al_days=20, default_work_start='09:00', default_work_end='18:00', default_work_days='0,1,2,3,4')
+        self.assertEqual(res.status_code, 200, res.data)
+        second = self.new_staff(name='Budi')
+        self.assertEqual((second.data['al_entitlement'], second.data['work_start'], second.data['work_end'], second.data['work_days']),
+                         (20, '09:00:00', '18:00:00', '0,1,2,3,4'))
+        explicit = self.new_staff(name='Cik Dewi', al_entitlement=5, work_days='5,6')
+        self.assertEqual((explicit.data['al_entitlement'], explicit.data['work_days']), (5, '5,6'))  # what the form gave wins
+        self.assertEqual(StaffMember.objects.get(pk=first.data['id']).al_entitlement, 12)  # staff already added are untouched
+
+    def test_checks(self):
+        self.as_role(MANAGEMENT)
+        for bad in ({'default_work_start': '9:00'}, {'default_work_start': '25:00'}, {'default_work_days': ''}, {'default_work_days': '0,9'},
+                    {'default_work_days': 'isnin'}, {'default_al_days': -1}, {'default_al_days': 61}, {'upload_photo_mb': 0}, {'upload_photo_mb': 11},
+                    {'upload_feedback_mb': 500}, {'upload_handout_mb': 101}, {'prefix_receipt': 'R1'}, {'prefix_receipt': 'TERLALUPANJANG'},
+                    {'prefix_receipt': ''}, {'lead_label_TRIAL': ''}, {'lead_label_TRIAL': 'x' * 31}, {'default_work_start': '18:00'}):
+            self.assertEqual(self.put(**bad).status_code, 400, bad)
+        self.assertEqual(self.put(default_work_start='08:00', default_work_end='08:00').status_code, 400)  # the end must be later
+        self.assertEqual(self.client.get('/api/v1/centre/events/').data, [])
+
+    def test_upload_limits_move_within_a_safe_maximum(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from rest_framework.exceptions import ValidationError
+        from core import files
+        self.assertEqual((files.max_bytes('STUDENT_PHOTO'), files.max_bytes('HANDOUT'), files.max_bytes('VOUCHER_SIGNATURE')), (5 * files.MB, 25 * files.MB, files.MB))
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.put(upload_photo_mb=1, upload_document_mb=20).status_code, 200)
+        self.assertEqual((files.max_bytes('STAFF_PHOTO'), files.max_bytes('VOUCHER'), files.max_bytes('STAFF_DOC')), (files.MB, 20 * files.MB, 20 * files.MB))
+        big = SimpleUploadedFile('a.png', b'x' * (files.MB + 1), content_type='image/png')
+        with self.assertRaises(ValidationError) as caught:
+            files.validate_upload('STUDENT_PHOTO', big)
+        self.assertIn('maksimum 1 MB', str(caught.exception.detail))
+        # the file types stay a security rule: a limit can never let a script through
+        script = SimpleUploadedFile('a.exe', b'x', content_type='application/octet-stream')
+        with self.assertRaises(ValidationError):
+            files.validate_upload('STUDENT_PHOTO', script)
+
+    def test_document_numbers_start_with_the_chosen_prefix_and_old_ones_stay(self):
+        from datetime import date
+        from billing.models import Invoice, PaymentReceipt
+        from core import numbering
+        on = date(2026, 10, 9)
+        self.assertEqual((numbering.receipt_number(PaymentReceipt, on), numbering.invoice_number(Invoice, on)), ('REC-2026-0001', 'INV-2026-0001'))
+        self.as_role(MANAGEMENT)
+        res = self.put(prefix_receipt='rsit', prefix_invoice='BIL', prefix_student='TN', prefix_voucher='BYR')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual((numbering.receipt_number(PaymentReceipt, on), numbering.invoice_number(Invoice, on)), ('RSIT-2026-0001', 'BIL-2026-0001'))
+        self.assertEqual(numbering.voucher_number(PaymentVoucher, on), 'BYR26-1001')
+        from students.models import Student
+        self.assertEqual(numbering.student_id(Student, on), 'TN-2026-001')
+
+    def test_lead_stage_names_follow_the_centre(self):
+        self.as_role(MANAGEMENT)
+        before = {s['stage']: s['label'] for s in self.client.get('/api/v1/students/leads/stats/').data['funnel']}
+        self.assertEqual(before['TRIAL'], 'Free Trial')
+        self.assertEqual(self.put(lead_label_TRIAL='Kelas percubaan').status_code, 200)
+        after = {s['stage']: s['label'] for s in self.client.get('/api/v1/students/leads/stats/').data['funnel']}
+        self.assertEqual((after['TRIAL'], after['ENQUIRY']), ('Kelas percubaan', 'Enquiry'))
+        self.as_role(ADMIN)  # everyone reads the new names
+        names = {r['name']: r['value'] for r in self.client.get(self.URL).data}
+        self.assertEqual(names['lead_label_TRIAL'], 'Kelas percubaan')

@@ -13,6 +13,20 @@ export const THRESHOLDS = {
   attendance_window_days: 30,
   nearly_full_seats: 2,
   follow_up_days: 7,
+  // Upload size limits (MB)
+  upload_photo_mb: 5,
+  upload_document_mb: 10,
+  upload_feedback_mb: 50,
+  upload_handout_mb: 25,
+  // Names of the lead stages
+  lead_label_ENQUIRY: 'Enquiry',
+  lead_label_CONTACTED: 'Contacted',
+  lead_label_CONTENT_1: 'Content 1',
+  lead_label_CONTENT_2: 'Content 2',
+  lead_label_TRIAL: 'Free Trial',
+  lead_label_WAITING_PAYMENT: 'Waiting Payment',
+  lead_label_REGISTERED: 'Registered',
+  lead_label_ACTIVE: 'Active',
 };
 
 const listeners = new Set();

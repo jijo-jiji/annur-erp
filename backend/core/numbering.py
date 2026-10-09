@@ -13,18 +13,23 @@ def next_number(model, field, prefix, width):
     return f"{prefix}{highest + 1:0{width}d}"
 
 
+def _prefix(name):
+    from . import thresholds  # the start of each number is Management's to change (Settings)
+    return thresholds.value(name)
+
+
 def student_id(model, on_date):
-    return next_number(model, 'student_id', f"AN-{on_date.year}-", 3)
+    return next_number(model, 'student_id', f"{_prefix('prefix_student')}-{on_date.year}-", 3)
 
 
 def invoice_number(model, on_date):
-    return next_number(model, 'invoice_number', f"INV-{on_date.year}-", 4)
+    return next_number(model, 'invoice_number', f"{_prefix('prefix_invoice')}-{on_date.year}-", 4)
 
 
 def receipt_number(model, on_date):
-    return next_number(model, 'receipt_number', f"REC-{on_date.year}-", 4)
+    return next_number(model, 'receipt_number', f"{_prefix('prefix_receipt')}-{on_date.year}-", 4)
 
 
 def voucher_number(model, on_date):
     # j-status.doc format PVYY-MM01: year, month, then a running number within the month
-    return next_number(model, 'pv_number', f"PV{on_date:%y}-{on_date:%m}", 2)
+    return next_number(model, 'pv_number', f"{_prefix('prefix_voucher')}{on_date:%y}-{on_date:%m}", 2)

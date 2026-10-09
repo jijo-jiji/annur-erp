@@ -1,3 +1,4 @@
+import { THRESHOLDS } from '../lib/thresholds';
 import { useCallback, useEffect, useState } from 'react';
 import { MessageSquareQuote, Plus, Trash2 } from 'lucide-react';
 import { filesApi, studentsApi } from '../api/client';
@@ -96,7 +97,7 @@ export function StudentFeedbackPanel({ studentId, canDelete, onChanged }) {
             <Input label="Tarikh" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
           </div>
           <Textarea label="Maklum balas" required rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          <Input label="Gambar / video" hint="Pilihan. Video maksimum 50 MB." type="file" multiple accept={ACCEPT.FEEDBACK} onChange={(e) => setForm({ ...form, files: [...e.target.files] })} />
+          <Input label="Gambar / video" hint={`Pilihan. Maksimum ${THRESHOLDS.upload_feedback_mb} MB setiap fail.`} type="file" multiple accept={ACCEPT.FEEDBACK} onChange={(e) => setForm({ ...form, files: [...e.target.files] })} />
           <div className="flex justify-end gap-2">
             <Button size="sm" onClick={() => setForm(null)}>Batal</Button>
             <Button size="sm" type="submit" variant="primary" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>

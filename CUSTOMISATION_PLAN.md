@@ -54,10 +54,10 @@ A value stays **locked in code** when it is a security rule, an approval or audi
 
 | # | Item | Plan |
 |---|---|---|
-| 13 | Invoice / receipt / voucher number prefix (`INV-2026-0001`) | Prefix editable, numbering sequence untouched. |
-| 14 | Upload size limits (photo 5 MB, video 50 MB, handout 25 MB) | Editable inside a safe maximum set in code. |
-| 15 | Lead stage names | Allow renaming the label only. The 8 stages and their order stay locked. |
-| 16 | Dashboard targets (for example target monthly students) | Add only if the centre asks for targets. |
+| 13 | Invoice / receipt / voucher number prefix (`INV-2026-0001`) | Prefix editable, numbering sequence untouched. **Built (2026-10-09), also for student IDs.** |
+| 14 | Upload size limits (photo 5 MB, video 50 MB, handout 25 MB) | Editable inside a safe maximum set in code. **Built (2026-10-09).** |
+| 15 | Lead stage names | Allow renaming the label only. The 8 stages and their order stay locked. **Built (2026-10-09).** |
+| 16 | Dashboard targets (for example target monthly students) | Not built: the centre has not asked for targets. |
 
 ## 4. Must NOT be editable (and why)
 
@@ -109,11 +109,11 @@ No code reads these by category key (checked by searching backend and frontend).
 | A | Settings audit log and a typed, range-checked settings table (foundation for all below) | Small | Every setting change appears in the history with who and when. |
 | A2 | Change-request mechanism (propose, approve with comment, notify) for subjects, vendors, categories, new teacher, fee packages, discounts. | Medium | An Admin proposes a subject, a Supervisor approves it, and it becomes usable only then. **Built for subjects, vendors, expense categories / subcategories / monthly budget, teachers (add, change details, active / inactive), fee packages and discounts (2026-10-05 and 2026-10-06). Every item listed for this phase is now done.** |
 | B | Login accounts screen (item 1) | Medium | Management creates a Supervisor, that person logs in and sees only Supervisor screens; last Management account cannot be removed. **Built (2026-10-06): Settings > Pengguna.** |
-| C | Slots, days, classrooms (item 2) | Medium | A new Saturday 20:30 slot and a new room can be used in the timetable form with no developer. **Built (2026-10-06): Settings > Slot & bilik, with closed dates.** Not done: a centre-wide default working time and days for new staff (still set per staff member). |
+| C | Slots, days, classrooms (item 2) | Medium | A new Saturday 20:30 slot and a new room can be used in the timetable form with no developer. **Built (2026-10-06): Settings > Slot & bilik, with closed dates.** Default working time and days for new staff built in Settings > Had & amaran (2026-10-09). |
 | D | Centre profile in one place (item 3) | Small | Changing the phone number updates the login page, receipt PDF and voucher PDF. **Built (2026-10-09): Settings > Pusat**, with a change history. |
 | E | Message templates (item 4) | Medium | Editing the payment reminder changes the WhatsApp text on the next click. **Built (2026-10-09): Settings > Mesej.** |
 | F | Master-data clean-up, mark bands, payment methods, and the teacher changes in section 9 (Part-time label, per-session pay entry, years of experience, drop the unused increment %) | Medium | No list in Data induk is editable without effect; a permanent teacher can be recorded as part-time for one session at a typed amount; the teacher profile shows years of experience. **Built (2026-10-09).** Payment methods stay fixed (cash, DuitNow, FPX, card) because receipts and reports depend on their codes, so list 21 is hidden instead of connected. |
-| G | Thresholds and voucher amounts (items 7, 8, 10) | Small | Changing the voucher Tier 1 limit moves a RM600 voucher to the right approver. **Built (2026-10-09): Settings > Had & amaran.** Not done: a default leave entitlement for new staff. |
+| G | Thresholds and voucher amounts (items 7, 8, 10) | Small | Changing the voucher Tier 1 limit moves a RM600 voucher to the right approver. **Built (2026-10-09): Settings > Had & amaran.** Default leave for new staff built (2026-10-09). |
 | H | Priority 3 items if requested | Small each | As agreed. |
 
 Every phase ships with backend tests (permission, range check, not-retroactive) and a browser check of the screen, as done for the fee packages.
