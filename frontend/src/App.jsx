@@ -4,6 +4,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import { StoreProvider } from './store';
 import { ToastProvider, useToast } from './components/ui';
 import Sidebar from './components/Sidebar';
+import { loadCentre, resetCentre, useCentre } from './lib/centre';
 import LoginView from './components/LoginView';
 import { ChangePasswordModal, ForcedPasswordChange } from './components/ChangePassword';
 import CommandPalette from './components/CommandPalette';
@@ -60,6 +61,13 @@ const VIEWS = {
 function Shell() {
   const { user, currentRole: role, authChecked, login, logout, changePassword } = useApp();
   const [passwordOpen, setPasswordOpen] = useState(false);
+
+  // The centre's details (shown everywhere) come from the server; staff also get the TIN and bank details
+  useCentre();
+  useEffect(() => {
+    if (!user) resetCentre();
+    loadCentre();
+  }, [user?.username]); // eslint-disable-line react-hooks/exhaustive-deps
   const [route, setRoute] = useState(readRoute);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);

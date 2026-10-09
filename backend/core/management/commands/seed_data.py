@@ -22,9 +22,11 @@ class Command(BaseCommand):
             ("MONTHLY_DUE_DAY", "7", "Tarikh akhir pembayaran yuran bulanan setiap awal bulan"),
             ("UNPAID_TERMINATION_MONTHS", "2", "Tempoh tunggakan maksimum sebelum diberhentikan tanpa makluman"),
             ("WITHDRAWAL_NOTICE_WEEKS", "2", "Tempoh notis pemberitahuan sebelum berhenti tuisyen"),
-            ("CENTER_NAME", "Pusat Tuisyen An Nur Telipot", "Nama rasmi pusat tuisyen"),
-            ("CENTER_PHONE", "013-9838085", "Nombor telefon hotline tuisyen"),
-            ("CENTER_ADDRESS", "Tingkat 1, PT 105, Seksyen 23, Jalan Telipot, 15150 Kota Bharu, Kelantan", "Alamat pusat"),
+            ("CENTER_NAME", "Pusat Tuisyen An Nur", "Nama pusat tuisyen"),
+            ("CENTER_BRANCH", "Telipot", "Cawangan"),
+            ("CENTER_PHONE", "013-983 8085", "Nombor telefon pusat"),
+            ("CENTER_WHATSAPP", "60139838085", "Nombor WhatsApp pusat"),
+            ("CENTER_ADDRESS", "Tingkat 1 & 2, PT 105, Seksyen 23, Jalan Telipot, 15150 Kota Bharu, Kelantan", "Alamat pusat"),
         ]
         for key, val, desc in settings_data:
             BusinessSetting.objects.update_or_create(key=key, defaults={"value": val, "description": desc})

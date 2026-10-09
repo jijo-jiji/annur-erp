@@ -6,10 +6,8 @@ from reportlab.lib.pagesizes import A4, A5
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from . import centre
 
-CENTRE = 'PUSAT TUISYEN AN NUR'
-ADDRESS = 'Tingkat 1&2, PT 105 Seksyen 23, Jalan Telipot, 15150 Kota Bharu, Kelantan'
-PHONE = '013-983 8085'
 
 INK = colors.HexColor('#0f172a')
 MUTED = colors.HexColor('#64748b')
@@ -33,7 +31,12 @@ def _esc(text):
 
 
 def _header(doc_title):
-    return [Paragraph(CENTRE, TITLE), Paragraph(_esc(ADDRESS), SUB), Paragraph(f"Tel: {PHONE}", SUB), Paragraph(doc_title, DOC), Spacer(1, 4 * mm)]
+    """The centre's name, address, phone and TIN come from Settings, so a change shows on the next document."""
+    c = centre.profile()
+    lines = [Paragraph(_esc(c['name']).upper(), TITLE), Paragraph(_esc(c['address']), SUB), Paragraph(f"Tel: {_esc(c['phone'])}", SUB)]
+    if c['tin']:
+        lines.append(Paragraph(f"No. TIN: {_esc(c['tin'])}", SUB))
+    return [*lines, Paragraph(doc_title, DOC), Spacer(1, 4 * mm)]
 
 
 def _details(rows, width):
@@ -60,7 +63,7 @@ def _total(label, amount, width):
 def _build(story, pagesize, title):
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=pagesize, leftMargin=14 * mm, rightMargin=14 * mm,
-                            topMargin=12 * mm, bottomMargin=12 * mm, title=title, author=CENTRE)
+                            topMargin=12 * mm, bottomMargin=12 * mm, title=title, author=centre.profile()['name'])
     doc.build(story)
     return buf.getvalue(), doc.width
 

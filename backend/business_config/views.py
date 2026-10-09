@@ -29,6 +29,19 @@ class BusinessSettingViewSet(viewsets.ModelViewSet):
     serializer_class = BusinessSettingSerializer
     write_roles = (MANAGEMENT,)
 
+    # The centre's own details are checked and recorded by Tetapan > Pusat, not edited here
+    def _not_centre(self, key):
+        if str(key).startswith('CENTER_'):
+            raise PermissionDenied('Maklumat pusat diubah di Tetapan > Pusat.')
+
+    def perform_create(self, serializer):
+        self._not_centre(serializer.validated_data.get('key'))
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._not_centre(serializer.instance.key)
+        serializer.save()
+
 class TeacherRateSettingViewSet(viewsets.ModelViewSet):
     queryset = TeacherRateSetting.objects.all()
     serializer_class = TeacherRateSettingSerializer

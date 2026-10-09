@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Calculator, Download, FilePlus2, Plus, Printer, Receipt, Search, Tag } from 'lucide-react';
 import { CENTRE } from '../lib/config';
+import { bankLine } from '../lib/centre';
 import { downloadPdf } from '../api/client';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
@@ -31,6 +32,10 @@ const followUpLabel = (inv) => (inv.followUpWeek ? `Minggu ${inv.followUpWeek}` 
 
 // The wording firms up with the week, and only says "overdue" once the due date has passed
 function reminderMessage(inv, contact, studentName) {
+  return `${reminderBody(inv, contact, studentName)}${bankLine()}`;
+}
+
+function reminderBody(inv, contact, studentName) {
   const what = `yuran ${CENTRE.name} bagi ${studentName}: baki ${rm(invoiceBalance(inv))} (invois ${inv.no}, ${invoiceTitle(inv)})`;
   if (inv.status !== 'OVERDUE') {
     return inv.followUpWeek && inv.followUpWeek <= 2
@@ -360,7 +365,7 @@ function ArrearsPanel({ cases, role, openInvoices, onPay }) {
               {cases.map(({ student: s, overdue, amount }) => {
                 const contact = preferredContact(s);
                 const warned = overdue.map((i) => i.lastReminder).filter(Boolean).sort().pop();
-                const msg = `Assalamualaikum ${contact.name}. Yuran ${s.name} bagi ${overdue.map((i) => monthLabel(i.month)).join(' dan ')} berjumlah ${rm(amount)} masih belum dijelaskan. Mengikut syarat pendaftaran, pelajar boleh diberhentikan jika yuran tertunggak ${settings.unpaidMonthsLimit} bulan. Sila jelaskan bayaran atau hubungi kaunter.`;
+                const msg = `Assalamualaikum ${contact.name}. Yuran ${s.name} bagi ${overdue.map((i) => monthLabel(i.month)).join(' dan ')} berjumlah ${rm(amount)} masih belum dijelaskan. Mengikut syarat pendaftaran, pelajar boleh diberhentikan jika yuran tertunggak ${settings.unpaidMonthsLimit} bulan. Sila jelaskan bayaran atau hubungi kaunter.${bankLine()}`;
                 return (
                   <tr key={s.id}>
                     <Td>
@@ -887,6 +892,7 @@ export function ReceiptDocument({ receipt: r }) {
           <p className="text-base font-semibold text-gray-900">{CENTRE.name}</p>
           <p className="max-w-xs text-[13px] text-gray-500">{CENTRE.address}</p>
           <p className="text-[13px] text-gray-500">Tel: {CENTRE.phone}</p>
+          {CENTRE.tin && <p className="text-[13px] text-gray-500">No. TIN: {CENTRE.tin}</p>}
         </div>
         <div className="text-right">
           <p className="text-xs font-semibold tracking-wide text-gray-500">RESIT RASMI</p>

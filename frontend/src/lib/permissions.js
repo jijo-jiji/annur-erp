@@ -93,6 +93,7 @@ export const PERMISSIONS = {
     'settings.pricing',
     'settings.policies',
     'accounts.manage', // login accounts: create, role, switch off, reset password
+    'centre.manage', // the centre's name, address, phone, WhatsApp, TIN and bank details
     'settings.discounts',
   ],
 };

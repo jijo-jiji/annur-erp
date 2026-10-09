@@ -5,6 +5,19 @@ from django.db import models
 from django.utils import timezone
 
 
+class SettingEvent(models.Model):
+    """A change to the centre's own details: which one, the old and new value, who and when."""
+    key = models.CharField(max_length=60)
+    label = models.CharField(max_length=60)
+    old_value = models.CharField(max_length=300, blank=True)
+    new_value = models.CharField(max_length=300, blank=True)
+    by_name = models.CharField(max_length=150, blank=True)
+    at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-at', '-id']
+
+
 class AccountSecurity(models.Model):
     """Per login account: a password set by Management is temporary and must be changed at first login."""
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='security')

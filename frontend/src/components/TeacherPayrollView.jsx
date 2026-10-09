@@ -60,6 +60,7 @@ function Payslip({ payment: p, onClose }) {
           <div>
             <p className="font-semibold text-gray-900">{CENTRE.name}</p>
             <p className="text-[13px] text-gray-500">{CENTRE.address}</p>
+            {CENTRE.tin && <p className="text-[13px] text-gray-500">No. TIN: {CENTRE.tin}</p>}
           </div>
           <div className="text-right">
             <p className="text-xs font-medium text-gray-500">Slip gaji</p>

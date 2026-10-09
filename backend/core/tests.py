@@ -1321,3 +1321,81 @@ class ScheduleRequestTests(RoleTestBase):
         self.assertFalse(ClosedDate.objects.exists())
         self.as_role(ADMIN)
         self.assertIsNone(self.client.get('/api/v1/teachers/attendance/roster/?date=2026-12-25').data['closed'])
+
+
+class CentreProfileTests(RoleTestBase):
+    """The centre's details live in one place; Management edits them and every document reads them."""
+    PUBLIC = '/api/v1/centre/'
+    PROFILE = '/api/v1/centre/profile/'
+
+    def test_the_login_page_can_read_the_public_details_but_not_the_tin_or_bank(self):
+        self.client.force_authenticate(None)
+        res = self.client.get(self.PUBLIC)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['name'], 'Pusat Tuisyen An Nur')
+        for private in ('tin', 'bank_name', 'bank_account', 'bank_holder'):
+            self.assertNotIn(private, res.data)
+        self.assertIn(self.client.get(self.PROFILE).status_code, (401, 403))  # the full profile needs a login
+
+    def test_staff_read_the_full_profile_and_only_management_changes_it(self):
+        for role in ALL_ROLES:
+            self.as_role(role)
+            self.assertIn('tin', self.client.get(self.PROFILE).data)
+        for role in (ADMIN, SUPERVISOR):
+            self.as_role(role)
+            self.assertEqual(self.client.put(self.PROFILE, {'phone': '012-3456789'}, format='json').status_code, 403)
+            self.assertEqual(self.client.get('/api/v1/centre/events/').status_code, 403)
+
+    def test_management_saves_the_details_and_changes_are_recorded(self):
+        self.as_role(MANAGEMENT)
+        res = self.client.put(self.PROFILE, {
+            'name': '  Pusat  Tuisyen An Nur ', 'phone': '09-747 1234', 'whatsapp': '+60 13-983 8085',
+            'tin': 'c 1234567-89', 'bank_name': 'Maybank', 'bank_account': '5140 1234 5678', 'bank_holder': 'Pusat Tuisyen An Nur',
+            'email': 'admin@annur.example',
+        }, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual((res.data['name'], res.data['whatsapp'], res.data['tin']), ('Pusat Tuisyen An Nur', '60139838085', 'C 1234567-89'))
+
+        self.client.force_authenticate(None)
+        public = self.client.get(self.PUBLIC).data
+        self.assertEqual((public['phone'], public['email']), ('09-747 1234', 'admin@annur.example'))
+        self.assertNotIn('tin', public)
+
+        self.as_role(MANAGEMENT)
+        events = self.client.get('/api/v1/centre/events/').data
+        changed = {e['label']: (e['old'], e['new']) for e in events}
+        self.assertEqual(changed['Telefon'], ('013-983 8085', '09-747 1234'))
+        self.assertEqual(changed['No. TIN'], ('', 'C 1234567-89'))
+        self.assertNotIn('Nama pusat', changed)  # the name only had extra spaces, so nothing changed
+        self.assertEqual(events[0]['by'], 'management')
+        n = len(events)
+        self.client.put(self.PROFILE, {'phone': '09-747 1234'}, format='json')  # nothing new to record
+        self.assertEqual(len(self.client.get('/api/v1/centre/events/').data), n)
+
+    def test_checks(self):
+        self.as_role(MANAGEMENT)
+        for bad in ({'name': '   '}, {'address': ''}, {'phone': 'telefon'}, {'phone': '12'}, {'whatsapp': 'abc'}, {'whatsapp': '123'},
+                    {'email': 'bukan-emel'}, {'tin': '!!!'}, {'tin': 'A' * 40}, {'bank_account': 'abc'}, {'name': 'x' * 101}, {'warna': 'biru'}):
+            res = self.client.put(self.PROFILE, bad, format='json')
+            self.assertEqual(res.status_code, 400, bad)
+        self.assertEqual(self.client.get(self.PROFILE).data['name'], 'Pusat Tuisyen An Nur')
+        self.assertEqual(self.client.get('/api/v1/centre/events/').data, [])
+        self.assertEqual(self.client.put(self.PROFILE, {'tin': '', 'email': ''}, format='json').status_code, 200)  # optional ones can be cleared
+
+    def test_documents_read_the_saved_details(self):
+        from core import pdf
+        self.as_role(MANAGEMENT)
+        self.client.put(self.PROFILE, {'name': 'Pusat Ilmu Baharu', 'phone': '09-111 2222', 'tin': 'C 99887766-01'}, format='json')
+        header = ' '.join(p.text for p in pdf._header('RESIT RASMI') if hasattr(p, 'text'))
+        self.assertIn('PUSAT ILMU BAHARU', header)
+        self.assertIn('09-111 2222', header)
+        self.assertIn('C 99887766-01', header)
+
+    def test_the_general_settings_endpoint_does_not_bypass_the_checks(self):
+        from business_config.models import BusinessSetting
+        row = BusinessSetting.objects.create(key='CENTER_PHONE', value='x')
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.patch(f'/api/v1/business-config/settings/{row.id}/', {'value': 'bukan telefon'}, format='json').status_code, 403)
+        self.assertEqual(self.client.post('/api/v1/business-config/settings/', {'key': 'CENTER_TIN', 'value': '!!'}, format='json').status_code, 403)
+        other = BusinessSetting.objects.create(key='MONTHLY_DUE_DAY', value='7')
+        self.assertEqual(self.client.patch(f'/api/v1/business-config/settings/{other.id}/', {'value': '10'}, format='json').status_code, 200)
