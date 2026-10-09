@@ -5,6 +5,8 @@ import { useApp } from '../context/AppContext';
 import { studentsApi } from '../api/client';
 import { invoiceBalance, minSubjects, monthlyFee, preferredContact, subjectsForForm } from '../lib/domain';
 import { date, DAY_LABEL, FORMS, formLabel, formShort, initials, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink } from '../lib/format';
+import { CENTRE } from '../lib/config';
+import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
 import { can } from '../lib/permissions';
 import { downloadCsv } from '../lib/csv';
@@ -197,7 +199,7 @@ function StudentList() {
                   <Td className={cx('hidden text-right tnum sm:table-cell', bal ? 'font-medium text-red-700' : 'text-gray-400')}>{bal ? rm(bal) : '—'}</Td>
                   <Td onClick={(e) => e.stopPropagation()}>
                     <a
-                      href={waLink(contact.phone, `Assalamualaikum ${contact.name}, makluman daripada Pusat Tuisyen An Nur berkenaan ${s.name}.`)}
+                      href={waLink(contact.phone, fillMessage('parent_general', { parent: contact.name, centre: CENTRE.name, student: s.name }))}
                       target="_blank"
                       rel="noreferrer"
                       title="WhatsApp penjaga"

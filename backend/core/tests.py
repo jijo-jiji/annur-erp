@@ -1399,3 +1399,74 @@ class CentreProfileTests(RoleTestBase):
         self.assertEqual(self.client.post('/api/v1/business-config/settings/', {'key': 'CENTER_TIN', 'value': '!!'}, format='json').status_code, 403)
         other = BusinessSetting.objects.create(key='MONTHLY_DUE_DAY', value='7')
         self.assertEqual(self.client.patch(f'/api/v1/business-config/settings/{other.id}/', {'value': '10'}, format='json').status_code, 200)
+
+
+class MessageTemplateTests(RoleTestBase):
+    """The wording of the WhatsApp messages: Management edits it; the screens fill in the placeholders."""
+    URL = '/api/v1/messages/'
+
+    def test_every_original_message_is_consistent(self):
+        from core.messages import PLACEHOLDER, TEMPLATES
+        self.assertEqual(len(TEMPLATES), 13)
+        for key, spec in TEMPLATES.items():
+            names = {n for n, _, _ in spec['placeholders']}
+            used = set(PLACEHOLDER.findall(spec['text']))
+            self.assertTrue(used <= names, f'{key}: {used - names}')
+            self.assertTrue(set(spec['required']) <= used, key)
+            sample = {n: s for n, _, s in spec['placeholders']}
+            self.assertNotIn('{', spec['text'].format(**sample), key)  # a sample fills every placeholder
+
+    def test_staff_read_the_messages_and_the_login_page_reads_only_the_public_one(self):
+        self.client.force_authenticate(None)
+        self.assertIn(self.client.get(self.URL).status_code, (401, 403))
+        self.assertEqual(list(self.client.get(self.URL + 'public/').data), ['registered'])
+        for role in ALL_ROLES:
+            self.as_role(role)
+            rows = self.client.get(self.URL).data
+            self.assertEqual(len(rows), 13)
+            self.assertTrue(all(not r['customised'] and r['text'] == r['default'] for r in rows))
+
+    def test_only_management_edits_and_every_change_is_recorded(self):
+        text = 'Assalamualaikum {parent}, peringatan yuran {student}: baki {balance}, tarikh akhir {due_date}.{bank}'
+        for role in (ADMIN, SUPERVISOR):
+            self.as_role(role)
+            self.assertEqual(self.client.put(self.URL + 'reminder_due/', {'text': text}, format='json').status_code, 403)
+            self.assertEqual(self.client.delete(self.URL + 'reminder_due/').status_code, 403)
+        self.as_role(MANAGEMENT)
+        res = self.client.put(self.URL + 'reminder_due/', {'text': text}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertTrue(res.data['customised'])
+        self.assertEqual(res.data['text'], text)
+        self.as_role(ADMIN)  # every role now sees the new wording
+        mine = {r['key']: r for r in self.client.get(self.URL).data}
+        self.assertEqual(mine['reminder_due']['text'], text)
+        self.assertEqual(mine['reminder_gentle']['text'], mine['reminder_gentle']['default'])
+
+        self.as_role(MANAGEMENT)
+        events = self.client.get('/api/v1/centre/events/').data
+        self.assertEqual((events[0]['label'], events[0]['by']), ('Mesej: Peringatan yuran: sebelum tarikh akhir', 'management'))
+        again = self.client.put(self.URL + 'reminder_due/', {'text': text}, format='json')  # nothing new
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(len(self.client.get('/api/v1/centre/events/').data), len(events))
+
+        back = self.client.delete(self.URL + 'reminder_due/')
+        self.assertFalse(back.data['customised'])
+        self.assertEqual(back.data['text'], back.data['default'])
+
+    def test_checks(self):
+        self.as_role(MANAGEMENT)
+        put = lambda key, text: self.client.put(self.URL + key + '/', {'text': text}, format='json')
+        self.assertEqual(put('reminder_due', '').status_code, 400)
+        self.assertEqual(put('reminder_due', 'x' * 1501).status_code, 400)
+        self.assertEqual(put('reminder_due', 'Baki {balance} dan {nama_lain}').status_code, 400)  # unknown placeholder
+        self.assertEqual(put('reminder_due', 'Sila bayar yuran anda.').status_code, 400)  # the balance is required
+        self.assertEqual(put('receipt', 'Terima kasih {parent}.').status_code, 400)  # the receipt number and amount are required
+        self.assertEqual(put('tiada_mesej', 'x').status_code, 404)
+        self.assertEqual(self.client.delete(self.URL + 'tiada_mesej/').status_code, 404)
+        self.assertTrue(all(not r['customised'] for r in self.client.get(self.URL).data))
+
+    def test_the_parents_page_gets_the_edited_wording(self):
+        self.as_role(MANAGEMENT)
+        self.client.put(self.URL + 'registered/', {'text': 'Salam. Ini {parent}, saya daftar {student} ({student_id}).'}, format='json')
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(self.URL + 'public/').data['registered'], 'Salam. Ini {parent}, saya daftar {student} ({student_id}).')

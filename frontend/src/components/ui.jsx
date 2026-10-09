@@ -273,9 +273,9 @@ export function Select({ label, hint, className, required, children, ...props })
   );
 }
 
-export function Textarea({ label, hint, className, required, ...props }) {
+export function Textarea({ label, hint, error, className, required, ...props }) {
   return (
-    <Field label={label} hint={hint} required={required} className={className}>
+    <Field label={label} hint={hint} error={error} required={required} className={className}>
       {(id) => <textarea id={id} required={required} rows={3} className={inputClass} {...props} />}
     </Field>
   );

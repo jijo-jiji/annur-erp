@@ -7,6 +7,7 @@ import { can, isApprover } from '../lib/permissions';
 import { date, LEVEL_LABEL, rm, STREAM_LABEL, tierGroupLabel } from '../lib/format';
 import AccountsPanel from './AccountsPanel';
 import CentrePanel from './CentrePanel';
+import MessagesPanel from './MessagesPanel';
 import ScheduleSettings from './ScheduleSettings';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
@@ -18,6 +19,7 @@ export default function ManagementConfigView({ role }) {
     const asked = new URLSearchParams(window.location.hash.split('?')[1]).get('tab');
     if (asked === 'accounts' && can(role, 'accounts.manage')) return asked;
     if (asked === 'centre' && can(role, 'centre.manage')) return asked;
+    if (asked === 'messages' && can(role, 'messages.manage')) return asked;
     return ['pricing', 'discounts', 'policies', 'schedule'].includes(asked) && can(role, 'settings.advanced') ? asked : 'subjects';
   });
   return (
@@ -39,6 +41,7 @@ export default function ManagementConfigView({ role }) {
             { value: 'policies', label: 'Polisi & elaun' },
           ] : []),
           ...(can(role, 'centre.manage') ? [{ value: 'centre', label: 'Pusat' }] : []),
+          ...(can(role, 'messages.manage') ? [{ value: 'messages', label: 'Mesej' }] : []),
           ...(can(role, 'accounts.manage') ? [{ value: 'accounts', label: 'Pengguna' }] : []),
         ]}
       />
@@ -47,6 +50,7 @@ export default function ManagementConfigView({ role }) {
       {tab === 'discounts' && can(role, 'settings.advanced') && <Discounts role={role} />}
       {tab === 'schedule' && can(role, 'settings.advanced') && <ScheduleSettings role={role} />}
       {tab === 'centre' && can(role, 'centre.manage') && <CentrePanel />}
+      {tab === 'messages' && can(role, 'messages.manage') && <MessagesPanel />}
       {tab === 'accounts' && can(role, 'accounts.manage') && <AccountsPanel />}
       {tab === 'policies' && can(role, 'settings.advanced') && <Policies editable={can(role, 'settings.policies')} />}
     </>

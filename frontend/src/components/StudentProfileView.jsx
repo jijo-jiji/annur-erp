@@ -8,6 +8,8 @@ import {
   arrearsCases, attendanceSummary, classLabel, grade, invoiceBalance, invoiceStatus, preferredContact, siblingsOf,
 } from '../lib/domain';
 import { date, DAY_LABEL, formLabel, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink } from '../lib/format';
+import { CENTRE } from '../lib/config';
+import { fillMessage } from '../lib/messages';
 import { PhotoBox } from './Attachments';
 import { StudentFeedbackPanel } from './FeedbackViews';
 import { invoiceTitle, PaymentModal, ReceiptModal } from './BillingView';
@@ -109,7 +111,7 @@ export default function StudentProfileView({ role, param }) {
               <>
                 {contact?.phone && (
                   <>
-                    <Button as="a" href={waLink(contact.phone, `Assalamualaikum ${contact.name}, makluman daripada Pusat Tuisyen An Nur berkenaan ${s.name}.`)} target="_blank" rel="noreferrer">
+                    <Button as="a" href={waLink(contact.phone, fillMessage('parent_general', { parent: contact.name, centre: CENTRE.name, student: s.name }))} target="_blank" rel="noreferrer">
                       <WhatsAppIcon /> WhatsApp {(contact.relation || 'penjaga').toLowerCase()}
                     </Button>
                     <Button as="a" href={`tel:${contact.phone}`} icon={Phone}>

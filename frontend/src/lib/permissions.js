@@ -94,6 +94,7 @@ export const PERMISSIONS = {
     'settings.policies',
     'accounts.manage', // login accounts: create, role, switch off, reset password
     'centre.manage', // the centre's name, address, phone, WhatsApp, TIN and bank details
+    'messages.manage', // the wording of the WhatsApp messages
     'settings.discounts',
   ],
 };

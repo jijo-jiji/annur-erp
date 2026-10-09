@@ -5,6 +5,7 @@ import { StoreProvider } from './store';
 import { ToastProvider, useToast } from './components/ui';
 import Sidebar from './components/Sidebar';
 import { loadCentre, resetCentre, useCentre } from './lib/centre';
+import { loadMessages, resetMessages, useMessages } from './lib/messages';
 import LoginView from './components/LoginView';
 import { ChangePasswordModal, ForcedPasswordChange } from './components/ChangePassword';
 import CommandPalette from './components/CommandPalette';
@@ -64,9 +65,11 @@ function Shell() {
 
   // The centre's details (shown everywhere) come from the server; staff also get the TIN and bank details
   useCentre();
+  useMessages();
   useEffect(() => {
-    if (!user) resetCentre();
+    if (!user) { resetCentre(); resetMessages(); }
     loadCentre();
+    loadMessages();
   }, [user?.username]); // eslint-disable-line react-hooks/exhaustive-deps
   const [route, setRoute] = useState(readRoute);
   const [menuOpen, setMenuOpen] = useState(false);

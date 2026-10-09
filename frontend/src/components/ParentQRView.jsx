@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { CheckCircle2, Copy, ExternalLink, Printer } from 'lucide-react';
 import { studentsApi } from '../api/client';
 import { CENTRE } from '../lib/config';
+import { fillMessage } from '../lib/messages';
 import { useStore } from '../store';
 import { date, formLabel, STUDENT_STATUS, waLink } from '../lib/format';
 import { useGrades } from '../lib/grades';
@@ -192,7 +193,7 @@ export function ParentRegistrationForm() {
             variant="primary"
             size="lg"
             className="mt-5 w-full"
-            href={waLink(CENTRE.whatsapp, `Assalamualaikum. Saya ${f.parent1_name} telah mendaftar ${f.full_name} (${done.student_id}) melalui borang QR.`)}
+            href={waLink(CENTRE.whatsapp, fillMessage('registered', { parent: f.parent1_name, student: f.full_name, student_id: done.student_id }))}
             target="_blank"
             rel="noreferrer"
           >

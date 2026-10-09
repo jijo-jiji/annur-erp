@@ -5,6 +5,13 @@ from django.db import models
 from django.utils import timezone
 
 
+class MessageTemplate(models.Model):
+    """The edited wording of one WhatsApp message (see core.messages); a message with no row uses its original wording."""
+    key = models.CharField(max_length=40, unique=True)
+    text = models.TextField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class SettingEvent(models.Model):
     """A change to the centre's own details: which one, the old and new value, who and when."""
     key = models.CharField(max_length=60)

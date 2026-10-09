@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Calculator, Download, Wallet } from 'lucide-react';
 import { downloadPdf, teacherPayApi } from '../api/client';
 import { CENTRE } from '../lib/config';
+import { fillMessage } from '../lib/messages';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
 import { date, monthLabel, rm, todayISO, waLink } from '../lib/format';
@@ -17,16 +18,13 @@ const METHODS = [
 ];
 const monthOf = (iso) => monthLabel(iso.slice(0, 7));
 
-const payslipText = (p, sessions) => [
-  `Assalamualaikum ${p.teacher_name}, slip gaji ${CENTRE.name} bagi ${monthOf(p.month)}:`,
-  `Sesi mengajar: ${p.sessions}`,
-  `Jumlah dikira: ${rm(p.calculated_amount)}`,
-  Number(p.adjustment) ? `Pelarasan: ${rm(p.adjustment)} (${p.adjustment_note})` : '',
-  `Jumlah bayaran: ${rm(p.amount_payable)}`,
-  p.status === 'PAID' ? `Dibayar ${date(p.paid_date)} melalui ${p.payment_method_label}${p.payment_reference ? ` (rujukan ${p.payment_reference})` : ''}.` : 'Status: diluluskan, bayaran akan dibuat.',
-  sessions.length ? `Butiran: ${sessions.map((s) => `${s.date} ${s.class_code}`).join(', ')}` : '',
-  'Terima kasih.',
-].filter(Boolean).join('\n');
+const payslipText = (p, sessions) => fillMessage('payslip', {
+  teacher: p.teacher_name, centre: CENTRE.name, month: monthOf(p.month), sessions: p.sessions, calculated: rm(p.calculated_amount),
+  adjustment_line: Number(p.adjustment) ? `\nPelarasan: ${rm(p.adjustment)} (${p.adjustment_note})` : '',
+  payable: rm(p.amount_payable),
+  status_line: p.status === 'PAID' ? `Dibayar ${date(p.paid_date)} melalui ${p.payment_method_label}${p.payment_reference ? ` (rujukan ${p.payment_reference})` : ''}.` : 'Status: diluluskan, bayaran akan dibuat.',
+  details_line: sessions.length ? `\nButiran: ${sessions.map((x) => `${x.date} ${x.class_code}`).join(', ')}` : '',
+});
 
 function Payslip({ payment: p, onClose }) {
   const notify = useToast();

@@ -3,6 +3,7 @@ import { AlertCircle, ChevronRight, Clock, Download, Plus } from 'lucide-react';
 import { leadsApi } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { CENTRE } from '../lib/config';
+import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
 import { date, FORMS, formLabel, formShort, todayISO, waLink } from '../lib/format';
 import { Donut } from './Donut';
@@ -209,7 +210,7 @@ function LeadDetailModal({ lead, onClose, sources, sourceLabel, subjects, subjec
               ]}
             />
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button as="a" size="sm" href={waLink(lead.phone, `Assalamualaikum ${lead.parent_name}, kami dari ${CENTRE.name} ${CENTRE.branch}.`)} target="_blank" rel="noreferrer">
+              <Button as="a" size="sm" href={waLink(lead.phone, fillMessage('lead_followup', { parent: lead.parent_name, centre: CENTRE.name, branch: CENTRE.branch }))} target="_blank" rel="noreferrer">
                 <WhatsAppIcon className="size-3.5" /> WhatsApp
               </Button>
               <Button

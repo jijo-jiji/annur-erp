@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, CalendarDays, CheckCheck, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { attendanceApi } from '../api/client';
 import { CENTRE } from '../lib/config';
+import { fillMessage } from '../lib/messages';
 import { useStore } from '../store';
 import { classLabel, preferredContact, timetableDay } from '../lib/domain';
 import { dateLong, initials, timeRange, todayISO, waLink } from '../lib/format';
@@ -277,7 +278,7 @@ function Roster({ cls, day, teacher, onBack }) {
                 {absent.map((s) => {
                   const p = preferredContact(students.find((x) => x.id === s.id));
                   const phone = p?.phone || s.phone;
-                  const msg = `Assalamualaikum ${p?.name || ''}. Dimaklumkan ${s.name} tidak hadir ke kelas ${label} pada ${dateLong(day)}, ${timeRange(cls.start, cls.end)}. Sila hubungi kami jika ada sebarang pertanyaan.\n— ${CENTRE.name}`;
+                  const msg = fillMessage('absence', { parent: p?.name || '', student: s.name, class: label, date: dateLong(day), time: timeRange(cls.start, cls.end), centre: CENTRE.name });
                   return (
                     <li key={s.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
                       <div className="min-w-0">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Calculator, Download, FilePlus2, Plus, Printer, Receipt, Search, Tag } from 'lucide-react';
 import { CENTRE } from '../lib/config';
 import { bankLine } from '../lib/centre';
+import { fillMessage } from '../lib/messages';
 import { downloadPdf } from '../api/client';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
@@ -32,19 +33,13 @@ const followUpLabel = (inv) => (inv.followUpWeek ? `Minggu ${inv.followUpWeek}` 
 
 // The wording firms up with the week, and only says "overdue" once the due date has passed
 function reminderMessage(inv, contact, studentName) {
-  return `${reminderBody(inv, contact, studentName)}${bankLine()}`;
-}
-
-function reminderBody(inv, contact, studentName) {
-  const what = `yuran ${CENTRE.name} bagi ${studentName}: baki ${rm(invoiceBalance(inv))} (invois ${inv.no}, ${invoiceTitle(inv)})`;
-  if (inv.status !== 'OVERDUE') {
-    return inv.followUpWeek && inv.followUpWeek <= 2
-      ? `Assalamualaikum ${contact?.name}, sekadar peringatan mesra ${what}, tarikh akhir ${date(inv.dueDate)}. Abaikan mesej ini jika sudah membuat bayaran. Terima kasih.`
-      : `Assalamualaikum ${contact?.name}, peringatan ${what}, tarikh akhir ${date(inv.dueDate)}. Mohon jelaskan bayaran sebelum tarikh akhir. Terima kasih.`;
-  }
-  return inv.followUpWeek
-    ? `Assalamualaikum ${contact?.name}, ${what} masih belum dijelaskan selepas tarikh akhir ${date(inv.dueDate)}. Mohon jelaskan minggu ini atau hubungi kaunter. Terima kasih.`
-    : `Assalamualaikum ${contact?.name}, notis tunggakan ${what}. Mohon hubungi kaunter untuk penyelesaian. Terima kasih.`;
+  const key = inv.status !== 'OVERDUE'
+    ? (inv.followUpWeek && inv.followUpWeek <= 2 ? 'reminder_gentle' : 'reminder_due')
+    : (inv.followUpWeek ? 'reminder_overdue' : 'reminder_arrears');
+  return fillMessage(key, {
+    parent: contact?.name, centre: CENTRE.name, student: studentName, balance: rm(invoiceBalance(inv)), invoice: inv.no,
+    title: invoiceTitle(inv), due_date: date(inv.dueDate), bank: bankLine(),
+  });
 }
 
 const PAGE = 50;
@@ -365,7 +360,7 @@ function ArrearsPanel({ cases, role, openInvoices, onPay }) {
               {cases.map(({ student: s, overdue, amount }) => {
                 const contact = preferredContact(s);
                 const warned = overdue.map((i) => i.lastReminder).filter(Boolean).sort().pop();
-                const msg = `Assalamualaikum ${contact.name}. Yuran ${s.name} bagi ${overdue.map((i) => monthLabel(i.month)).join(' dan ')} berjumlah ${rm(amount)} masih belum dijelaskan. Mengikut syarat pendaftaran, pelajar boleh diberhentikan jika yuran tertunggak ${settings.unpaidMonthsLimit} bulan. Sila jelaskan bayaran atau hubungi kaunter.${bankLine()}`;
+                const msg = fillMessage('arrears_warning', { parent: contact.name, student: s.name, months: overdue.map((i) => monthLabel(i.month)).join(' dan '), amount: rm(amount), limit: settings.unpaidMonthsLimit, bank: bankLine() });
                 return (
                   <tr key={s.id}>
                     <Td>
@@ -862,7 +857,11 @@ function ReceiptActions({ receipt: r, hideActions }) {
   const s = students.find((x) => x.id === inv?.studentId);
   const contact = preferredContact(s);
   const notify = useToast();
-  const message = `Assalamualaikum ${contact?.name}. Terima kasih atas bayaran yuran ${CENTRE.name} bagi ${s?.name}.\n\nNo. resit: ${r.no}\nTarikh: ${date(r.date)}\nAmaun: ${rm(r.amount)} (${PAYMENT_TYPE_LABEL[r.type] ?? ''}${r.month ? ` ${monthLabel(r.month)}` : ''})\nKaedah: ${PAYMENT_METHOD_LABEL[r.method]}${r.overpaid > 0 ? `\nLebihan ${rm(r.overpaid)} disimpan sebagai kredit.` : ''}\n\nSila simpan mesej ini sebagai rekod.`;
+  const message = fillMessage('receipt', {
+    parent: contact?.name, centre: CENTRE.name, student: s?.name, receipt_no: r.no, date: date(r.date), amount: rm(r.amount),
+    type: `${PAYMENT_TYPE_LABEL[r.type] ?? ''}${r.month ? ` ${monthLabel(r.month)}` : ''}`, method: PAYMENT_METHOD_LABEL[r.method],
+    overpaid_line: r.overpaid > 0 ? `\nLebihan ${rm(r.overpaid)} disimpan sebagai kredit.` : '',
+  });
   return (
     <>
       {!hideActions && contact?.phone && (

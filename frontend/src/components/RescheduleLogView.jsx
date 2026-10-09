@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CalendarClock, Check, Copy, Download, Plus } from 'lucide-react';
 import { CENTRE } from '../lib/config';
+import { fillMessage } from '../lib/messages';
 import { downloadCsv } from '../lib/csv';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
@@ -294,9 +295,15 @@ function NoticeModal({ record: r, cls, onClose }) {
   if (!r || !cls) return null;
 
   const label = classLabel(cls, subjects);
+  const when = timeRange(cls.start, cls.end);
+  const remarks = r.remarks ? `\n\n${r.remarks}` : '';
   const message = r.extra
-    ? `Assalamualaikum ibu bapa dan pelajar.\n\nMakluman kelas tambahan ${label} pada ${date(r.replacement)}, ${timeRange(cls.start, cls.end)}.${r.remarks ? `\n\n${r.remarks}` : ''}\n\nTerima kasih.\n— ${CENTRE.name} ${CENTRE.branch}`
-    : `Assalamualaikum ibu bapa dan pelajar.\n\nKelas ${label} pada ${date(r.cancelled)} dibatalkan (${(RESCHEDULE_REASON_LABEL[r.reason] || 'lain-lain').toLowerCase()}). ${r.replacement ? `Kelas ganti pada ${date(r.replacement)}, ${timeRange(cls.start, cls.end)}.` : 'Tarikh kelas ganti akan dimaklumkan kemudian.'}${r.remarks ? `\n\n${r.remarks}` : ''}\n\nHarap maklum. Terima kasih.\n— ${CENTRE.name} ${CENTRE.branch}`;
+    ? fillMessage('class_extra', { class: label, date: date(r.replacement), time: when, remarks_block: remarks, centre: CENTRE.name, branch: CENTRE.branch })
+    : fillMessage('class_cancelled', {
+      class: label, date: date(r.cancelled), reason: (RESCHEDULE_REASON_LABEL[r.reason] || 'lain-lain').toLowerCase(),
+      replacement_text: r.replacement ? `Kelas ganti pada ${date(r.replacement)}, ${when}.` : 'Tarikh kelas ganti akan dimaklumkan kemudian.',
+      remarks_block: remarks, centre: CENTRE.name, branch: CENTRE.branch,
+    });
 
   const markSent = () => markRescheduleNotified(r.id).catch(() => {});
 
