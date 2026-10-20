@@ -5,6 +5,7 @@ import {
 } from './api/client';
 import { setForms, todayISO } from './lib/format';
 import { DAYS } from './lib/config';
+import { describeError as errorText } from './lib/apiErrors';
 
 // Adapter between the server and the screens. Screens read data in one consistent shape
 // (student.name, student.form, class.enrolled, invoice.paid, ...) and call actions here;
@@ -14,7 +15,6 @@ import { DAYS } from './lib/config';
 const StoreContext = createContext(null);
 
 const num = (v) => Number(v) || 0;
-const errorText = (err) => (err?.data && typeof err.data === 'object' ? Object.values(err.data).flat().join(' ') : '') || err?.message || 'Ralat.';
 
 // ---- Server -> screen shapes ---------------------------------------------------
 

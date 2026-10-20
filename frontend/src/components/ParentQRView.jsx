@@ -9,6 +9,7 @@ import { date, formLabel, STUDENT_STATUS, waLink } from '../lib/format';
 import { useGrades } from '../lib/grades';
 import { Badge, Button, Card, CardHeader, Checkbox, cx, EmptyState, Input, PageHeader, Select, Table, Td, Th, useToast, WhatsAppIcon } from './ui';
 import { BrandMark } from './Sidebar';
+import { describeError } from '../lib/apiErrors';
 
 function registrationUrl() {
   return `${window.location.origin}${window.location.pathname}#/daftar`;
@@ -156,7 +157,7 @@ export function ParentRegistrationForm() {
       }));
       window.scrollTo(0, 0);
     } catch (err) {
-      const fieldErrors = err.data?.errors ? Object.values(err.data.errors).flat().join(' ') : '';
+      const fieldErrors = err.data?.errors ? describeError(err) : '';
       setError(err.status === 429
         ? 'Terlalu banyak pendaftaran dari peranti ini. Sila cuba sebentar lagi atau hubungi kaunter.'
         : fieldErrors || 'Pendaftaran gagal. Sila semak maklumat dan cuba lagi.');
@@ -222,7 +223,7 @@ export function ParentRegistrationForm() {
               ))}
             </Select>
             <Input label="Sekolah" required value={f.school_name} onChange={(e) => set({ school_name: e.target.value })} />
-            <Input label="No. telefon pelajar" required type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} placeholder="012-345 6789" />
+            <Input label="No. telefon pelajar" type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} placeholder="Jika ada" />
           </div>
         </Card>
 

@@ -30,7 +30,7 @@ class Student(models.Model):
     school_code = models.CharField(max_length=30, blank=True)
     school_category = models.CharField(max_length=50, blank=True)
     
-    phone_number = models.CharField(max_length=30)
+    phone_number = models.CharField(max_length=30, blank=True)  # the student's own number, if they have one; the parents' numbers are what matter
     home_phone = models.CharField(max_length=30, blank=True)
     email = models.EmailField(blank=True)
     address = models.TextField(blank=True)

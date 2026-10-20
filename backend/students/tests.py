@@ -60,6 +60,16 @@ class RegistrationTests(Phase2Base):
         self.assertIn('REGISTERED', types)
         self.assertIn('APPROVED', types)
 
+    def test_a_student_without_their_own_phone_can_be_registered(self):
+        """The form marks the student's own number as optional ("if any"); a young child has none."""
+        self.as_role(ADMIN)
+        for extra in ({'phone_number': ''}, {}):
+            payload = {'full_name': 'Adik Kecil', 'ic_number': '150101-03-1111', 'form_level': 'F5', 'parent1_name': 'Bapa',
+                       'parent1_phone': '012-3456789', 'class_ids': [self.kim.id], **extra}
+            res = self.client.post('/api/v1/students/students/', payload, format='json')
+            self.assertEqual(res.status_code, 201, res.data)
+            self.assertEqual(res.data['phone_number'], '')
+
     def test_reject_needs_comment_and_frees_seats(self):
         data = self.register(class_ids=[self.fz.id])
         self.as_role(SUPERVISOR)
