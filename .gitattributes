@@ -1,0 +1,7 @@
+# Files that run on the Linux server keep Linux line endings, whatever machine they are committed from.
+# A script saved with Windows line endings fails on the server with "bad interpreter".
+*.sh text eol=lf
+deploy/*.service text eol=lf
+deploy/*.timer text eol=lf
+deploy/nginx-annur.conf text eol=lf
+deploy/annur.env.example text eol=lf
