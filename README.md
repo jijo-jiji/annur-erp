@@ -62,6 +62,23 @@ npm run dev
 ```
 Aplikasi Frontend akan beroperasi di: `http://localhost:5273/`
 
+### 4. Ujian Hujung ke Hujung (Playwright)
+Menjalankan skrin sebenar pada pelayan sebenar dengan pangkalan data sementara (folder temp), pada port 8181 dan 5373.
+Data pembangunan anda dan pelayan 8180 / 5273 tidak disentuh, jadi ia boleh dijalankan semasa pelayan biasa dibuka.
+```bash
+cd frontend
+npx playwright install chromium   # sekali sahaja
+npm run e2e                       # semua ujian
+npm run e2e:ui                    # mod interaktif
+npm run e2e:report                # laporan HTML selepas larian
+```
+Ujian meliputi log masuk dan peranan, pendaftaran hingga resit, baucar mengikut amaun, permohonan kelulusan, tetapan Pengurusan, akaun pengguna dan borang pendaftaran QR ibu bapa.
+
+### Pemasangan di pelayan sebenar
+Panduan lengkap (pelayan Linux, domain, HTTPS, sandaran harian, kemas kini) ada dalam [`deploy/DEPLOYMENT.md`](deploy/DEPLOYMENT.md).
+Pelayan sebenar bermula **kosong**: `seed_data --reference-only` memuatkan subjek, pakej yuran, slot masa dan senarai induk sahaja;
+tiada pelajar, guru atau akaun demo. Log masuk Management pertama dibuat dengan `create_management`.
+
 ### 3. Ujian Automatik
 ```bash
 cd backend

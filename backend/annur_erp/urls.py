@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -80,7 +81,6 @@ router.register(r'expenses/vendors', VendorViewSet)
 router.register(r'expenses/vouchers', PaymentVoucherViewSet)
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
     path('api/v1/auth/login/', auth_login),
     path('api/v1/auth/me/', auth_me),
     path('api/v1/auth/logout/', auth_logout),
@@ -104,3 +104,6 @@ urlpatterns = [
     path('api/v1/billing/calculate-fees/', calculate_fees),
 ]
 
+if not settings.PRODUCTION:
+    # Django's own admin bypasses the approval rules, so it is not reachable on the live server
+    urlpatterns.insert(0, path('admin/', admin.site.urls))

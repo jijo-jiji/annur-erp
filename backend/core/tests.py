@@ -1,5 +1,6 @@
 from django.contrib.auth.models import Group, User
 from django.core.cache import cache
+from django.test import TransactionTestCase
 from rest_framework.test import APITestCase
 from core.permissions import ADMIN, SUPERVISOR, MANAGEMENT, ALL_ROLES
 from business_config.models import DynamicMasterData
@@ -1734,3 +1735,140 @@ class SettingDefaultsTests(RoleTestBase):
         self.as_role(ADMIN)  # everyone reads the new names
         names = {r['name']: r['value'] for r in self.client.get(self.URL).data}
         self.assertEqual(names['lead_label_TRIAL'], 'Kelas percubaan')
+
+
+class DeploymentCommandTests(RoleTestBase):
+    """The commands used to set up and look after the live server."""
+
+    def run_command(self, *args, **kwargs):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command(*args, stdout=out, **kwargs)
+        return out.getvalue()
+
+    def test_first_management_login_is_created_with_the_role_and_a_chosen_password(self):
+        import os
+        from unittest import mock
+        from core import accounts
+        from core.permissions import get_role
+        with mock.patch.dict(os.environ, {'ANNUR_MANAGEMENT_PASSWORD': 'Pengurusan-An-Nur-26'}):
+            self.run_command('create_management', username='Pengarah.AnNur', name='Pn  Siti   Aminah')
+        user = User.objects.get(username='pengarah.annur')
+        self.assertEqual((get_role(user), user.get_full_name(), user.is_superuser), (MANAGEMENT, 'Pn Siti Aminah', False))
+        self.assertTrue(user.check_password('Pengurusan-An-Nur-26'))
+        self.assertFalse(accounts.must_change_password(user))  # they chose it themselves
+        res = self.client.post('/api/v1/auth/login/', {'username': 'pengarah.annur', 'password': 'Pengurusan-An-Nur-26'})
+        self.assertEqual((res.status_code, res.data['user']['role']), (200, MANAGEMENT))
+
+    def test_management_login_refuses_a_weak_password_and_a_taken_name(self):
+        import os
+        from unittest import mock
+        from django.core.management.base import CommandError
+        with mock.patch.dict(os.environ, {'ANNUR_MANAGEMENT_PASSWORD': 'password123'}):
+            with self.assertRaises(CommandError):
+                self.run_command('create_management', username='pengarah', name='Pengarah')
+        self.assertFalse(User.objects.filter(username='pengarah').exists())
+        with mock.patch.dict(os.environ, {'ANNUR_MANAGEMENT_PASSWORD': 'Pengurusan-An-Nur-26'}):
+            with self.assertRaises(CommandError):
+                self.run_command('create_management', username='management', name='Lain')  # the test user exists
+
+    def test_demo_data_and_default_logins_are_refused_on_the_live_server(self):
+        from django.core.management.base import CommandError
+        from django.test import override_settings
+        with override_settings(PRODUCTION=True):
+            with self.assertRaises(CommandError):
+                self.run_command('seed_data')
+            with self.assertRaises(CommandError):
+                self.run_command('seed_users')
+        self.assertFalse(User.objects.filter(username='admin1').exists())
+
+    def test_reference_load_adds_settings_but_no_people_or_money_and_will_not_run_twice(self):
+        from django.core.management.base import CommandError
+        from django.test import override_settings
+        from academic.models import TimeSlot
+        from billing.models import Invoice
+        from business_config.models import BusinessSetting, DynamicMasterData, PricingTier, SubjectMaster
+        from students.models import Lead, Student
+        users_before = User.objects.count()
+        with override_settings(PRODUCTION=True):
+            DynamicMasterData.objects.all().delete()
+            self.run_command('seed_data', reference_only=True)
+            self.assertTrue(SubjectMaster.objects.exists() and PricingTier.objects.exists())
+            self.assertTrue(TimeSlot.objects.exists() and DynamicMasterData.objects.exists())
+            self.assertEqual(BusinessSetting.objects.get(key='CENTER_NAME').value, 'Pusat Tuisyen An Nur')
+            self.assertEqual((Student.objects.count(), Lead.objects.count(), Invoice.objects.count(), Teacher.objects.count(), StaffMember.objects.count()), (0, 0, 0, 0, 0))
+            self.assertEqual(User.objects.count(), users_before)
+            # the centre changes a fee package; a second load must not put the original back
+            PricingTier.objects.filter(subject_count=4, level_category='SECONDARY').update(total_price=250)
+            with self.assertRaises(CommandError):
+                self.run_command('seed_data', reference_only=True)
+            self.assertEqual(float(PricingTier.objects.get(subject_count=4, level_category='SECONDARY').total_price), 250.0)
+
+    def test_the_live_server_refuses_to_start_without_its_own_secret_and_host(self):
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+        manage = Path(__file__).resolve().parent.parent / 'manage.py'
+
+        def start(**env):
+            base = {k: v for k, v in os.environ.items() if not k.startswith(('ANNUR_', 'DJANGO_'))}
+            return subprocess.run([sys.executable, str(manage), 'check'], env={**base, **env}, capture_output=True, text=True, cwd=manage.parent)
+        no_secret = start(ANNUR_ENV='production', ANNUR_HOSTS='erp.example.com')
+        self.assertNotEqual(no_secret.returncode, 0)
+        self.assertIn('DJANGO_SECRET_KEY', no_secret.stderr)
+        weak = start(ANNUR_ENV='production', ANNUR_HOSTS='erp.example.com', DJANGO_SECRET_KEY='django-insecure-' + 'x' * 60)
+        self.assertNotEqual(weak.returncode, 0)
+        no_host = start(ANNUR_ENV='production', DJANGO_SECRET_KEY='k' * 60)
+        self.assertNotEqual(no_host.returncode, 0)
+        self.assertIn('ANNUR_HOSTS', no_host.stderr)
+        ok = start(ANNUR_ENV='production', ANNUR_HOSTS='erp.example.com', DJANGO_SECRET_KEY='k' * 60)
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+
+
+class BackupCommandTests(TransactionTestCase):
+    """Outside the usual test transaction, as on the live server (a backup never runs inside a transaction)."""
+
+    def run_backup(self, **options):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command('backup_data', stdout=out, **options)
+        return out.getvalue()
+
+    def test_backup_holds_the_database_and_the_uploads_and_prunes_old_archives(self):
+        import os
+        import sqlite3
+        import tarfile
+        import tempfile
+        import time
+        from pathlib import Path
+        from django.test import override_settings
+        User.objects.create_user(username='sebelum_sandar', password='test-pass-123')
+        with tempfile.TemporaryDirectory() as tmp:
+            media, dest = Path(tmp) / 'uploads', Path(tmp) / 'backups'
+            (media / 'staff').mkdir(parents=True)
+            (media / 'staff' / 'ic.pdf').write_bytes(b'%PDF-1.4 test')
+            dest.mkdir()
+            old = dest / 'annur-20200101-000000.tar.gz'
+            old.write_bytes(b'old')
+            long_ago = time.time() - 90 * 86400
+            os.utime(old, (long_ago, long_ago))
+            with override_settings(MEDIA_ROOT=media):
+                out = self.run_backup(dest=str(dest), keep_days=30)
+            archives = list(dest.glob('annur-*.tar.gz'))
+            self.assertEqual(len(archives), 1, out)  # the new one; the 90-day-old one is gone
+            self.assertFalse(old.exists())
+            self.assertFalse(list(dest.glob('*.partial')))
+            with tarfile.open(archives[0]) as tar:
+                names = tar.getnames()
+                self.assertIn('db.sqlite3', names)
+                self.assertIn('uploads/staff/ic.pdf', names)
+                tar.extract('db.sqlite3', tmp)
+            copy = sqlite3.connect(Path(tmp) / 'db.sqlite3')
+            try:
+                users = copy.execute('SELECT COUNT(*) FROM auth_user').fetchone()[0]
+            finally:
+                copy.close()
+            self.assertEqual(users, User.objects.count())  # the copy holds this database's rows

@@ -2,7 +2,7 @@ import secrets
 from pathlib import Path
 from django.conf import settings
 from django.contrib.auth.models import Group, User
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from core.permissions import ALL_ROLES, ADMIN, SUPERVISOR, MANAGEMENT
 
 # Users listed in j-status.doc: Admin 1, Admin 2, Supervisor, Management
@@ -13,7 +13,7 @@ DEFAULT_USERS = [
     ('management', 'Management', '', MANAGEMENT),
 ]
 
-CREDENTIALS_FILE = Path(settings.BASE_DIR) / 'dev_credentials.txt'
+CREDENTIALS_FILE = Path(settings.DATA_DIR) / 'dev_credentials.txt'  # beside the database that was seeded
 
 
 class Command(BaseCommand):
@@ -23,6 +23,9 @@ class Command(BaseCommand):
         parser.add_argument('--reset', action='store_true', help='Generate new passwords for the default users too')
 
     def handle(self, *args, **options):
+        if settings.PRODUCTION:
+            raise CommandError("These are development logins with generated passwords and are refused on the live server. "
+                               "Use create_management for the first login; Management creates the others in the app.")
         for role in ALL_ROLES:
             Group.objects.get_or_create(name=role)
 

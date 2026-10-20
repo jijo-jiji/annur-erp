@@ -1,0 +1,11 @@
+# One backup of the database and uploaded files. Started every night by annur-backup.timer and by update.sh.
+[Unit]
+Description=Pusat Tuisyen An Nur ERP backup
+
+[Service]
+Type=oneshot
+User=annur
+Group=annur
+WorkingDirectory=/opt/annur/backend
+EnvironmentFile=/etc/annur/annur.env
+ExecStart=/opt/annur/venv/bin/python manage.py backup_data

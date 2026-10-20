@@ -10,22 +10,55 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# The live server sets ANNUR_ENV=production (see deploy/annur.env.example). Anything else is a developer machine.
+# Production refuses to start without its own secret key and host name, so a forgotten setting fails loudly
+# instead of running with development defaults.
+PRODUCTION = os.environ.get('ANNUR_ENV', '').strip().lower() == 'production'
+
+
+def _env_list(name):
+    return [part.strip() for part in os.environ.get(name, '').split(',') if part.strip()]
+
+
+# Database, uploaded files and backups live here. Keeping them outside the code folder means an update
+# (git pull) can never touch the centre's data.
+DATA_DIR = Path(os.environ.get('ANNUR_DATA_DIR') or BASE_DIR)
+BACKUP_DIR = Path(os.environ.get('ANNUR_BACKUP_DIR') or DATA_DIR / 'backups')
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-#-9qaqbtmu&gb3*=hty&$l40g&-3w601*gs2e12qkl2el(nl%w'
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = ['*']
+if PRODUCTION:
+    SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '')
+    if len(SECRET_KEY) < 50 or SECRET_KEY.startswith('django-insecure'):
+        raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set to a long random value (50+ characters) in production.')
+    DEBUG = False
+    ALLOWED_HOSTS = _env_list('ANNUR_HOSTS')
+    if not ALLOWED_HOSTS:
+        raise ImproperlyConfigured('ANNUR_HOSTS must list the domain name(s) the system is served on, e.g. erp.example.com')
+    CSRF_TRUSTED_ORIGINS = [f'https://{host}' for host in ALLOWED_HOSTS if not host.startswith('.')]
+    # The proxy in front (nginx) terminates HTTPS; browsers only ever use the site over HTTPS
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # Raise this once HTTPS is confirmed working (a year is 31536000); browsers remember it
+    SECURE_HSTS_SECONDS = int(os.environ.get('ANNUR_HSTS_SECONDS', '86400'))
+    SILENCED_SYSTEM_CHECKS = ['security.W005', 'security.W021']  # subdomain and preload HSTS options are the owner's call
+else:
+    # Development only; production never uses this key
+    SECRET_KEY = 'django-insecure-#-9qaqbtmu&gb3*=hty&$l40g&-3w601*gs2e12qkl2el(nl%w'
+    DEBUG = True
+    ALLOWED_HOSTS = ['*']
 
 
 
@@ -63,7 +96,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+# Production serves the app and the API from one address, so no other origin needs access
+CORS_ALLOW_ALL_ORIGINS = not PRODUCTION
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -73,11 +107,16 @@ REST_FRAMEWORK = {
         'core.permissions.RolePermission',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'login': '10/min',
+        'login': os.environ.get('ANNUR_LOGIN_RATE', '10/min'),  # raised only by the end-to-end tests
         'public_register': '20/hour',
     },
     'DEFAULT_PAGINATION_CLASS': None,
 }
+if PRODUCTION:
+    # JSON only (no browsable HTML forms on a public address), and the visitor's address is read from the
+    # one proxy in front so the login limit counts each visitor separately
+    REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'] = ['rest_framework.renderers.JSONRenderer']
+    REST_FRAMEWORK['NUM_PROXIES'] = 1
 
 ROOT_URLCONF = 'annur_erp.urls'
 
@@ -105,9 +144,15 @@ WSGI_APPLICATION = 'annur_erp.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': DATA_DIR / 'db.sqlite3',
     }
 }
+if PRODUCTION:
+    DATABASES['default']['OPTIONS'] = {
+        'timeout': 20,  # wait for a concurrent write instead of failing
+        'transaction_mode': 'IMMEDIATE',
+        'init_command': 'PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;',
+    }
 
 
 # Password validation
@@ -135,7 +180,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# The centre's own clock. Document dates (invoices, receipts, attendance) use the server's "today", and on a
+# Linux server that follows this setting, so UTC would date work done before 8 am as the day before.
+TIME_ZONE = 'Asia/Kuala_Lumpur'
 
 USE_I18N = True
 
@@ -148,7 +195,7 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 # Uploaded files: kept outside any public URL; served only through /api/v1/files/<id>/download/
-MEDIA_ROOT = BASE_DIR / 'uploads'
+MEDIA_ROOT = DATA_DIR / 'uploads'
 FILE_UPLOAD_PERMISSIONS = 0o640
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # non-file form data
 
@@ -156,8 +203,21 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # non-file form data
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
+# Nothing in the system sends e-mail (WhatsApp messages are sent by staff). Production still names a real
+# backend so that if e-mail is ever added it fails visibly instead of printing to a console nobody reads.
 MAILERS = {
     'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+        'BACKEND': 'django.core.mail.backends.smtp.EmailBackend' if PRODUCTION else 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+
+# Logging: errors must reach the service log (journald) so a fault on the live server can be traced
+if PRODUCTION:
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {'plain': {'format': '%(asctime)s %(levelname)s %(name)s: %(message)s'}},
+        'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'plain'}},
+        'root': {'handlers': ['console'], 'level': 'WARNING'},
+    }

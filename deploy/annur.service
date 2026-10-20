@@ -1,0 +1,23 @@
+# The API of the An Nur system. Install to /etc/systemd/system/annur.service (see DEPLOYMENT.md).
+# One worker with several threads: the database is a single SQLite file and the login limit is counted
+# in the worker's memory, so one worker keeps both exact.
+[Unit]
+Description=Pusat Tuisyen An Nur ERP (API)
+After=network.target
+
+[Service]
+Type=simple
+User=annur
+Group=annur
+WorkingDirectory=/opt/annur/backend
+EnvironmentFile=/etc/annur/annur.env
+ExecStart=/opt/annur/venv/bin/gunicorn annur_erp.wsgi:application --bind 127.0.0.1:8180 --workers 1 --threads 4 --timeout 120
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
