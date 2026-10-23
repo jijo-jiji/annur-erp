@@ -26,7 +26,7 @@ mkdirSync(dataDir, { recursive: true });
 console.log(`[e2e] building a fresh database in ${dataDir}`);
 manage('migrate', '--noinput', '-v', '0');
 manage('seed_data');
-manage('shell', '-c', `exec(open(r'${path.join(here, 'set_passwords.py')}', encoding='utf-8').read())`);
+manage('shell', '-c', `exec(open(r'${path.join(here, 'prepare.py')}', encoding='utf-8').read())`);
 
 const server = spawn(python, ['manage.py', 'runserver', `127.0.0.1:${port}`, '--noreload'], { cwd: backend, env, stdio: 'inherit' });
 const stop = () => { server.kill(); process.exit(0); };

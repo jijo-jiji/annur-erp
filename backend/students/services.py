@@ -155,10 +155,40 @@ def register(student, by, classes, on=None):
     return results
 
 
+def registration_gaps(student):
+    """What a registration still needs before it can be approved: everything the counter's registration form asks for.
+    A lead, a QR form or a half-filled record can be saved, but only a complete one can become an active student."""
+    gaps = []
+    if not (student.full_name or '').strip():
+        gaps.append('Nama pelajar')
+    if not (student.ic_number or '').strip():
+        gaps.append('No. kad pengenalan')
+    if not student.form_level:
+        gaps.append('Tingkatan / darjah')
+    if not (student.school_name or '').strip():
+        gaps.append('Sekolah')
+    if not (student.parent1_name or '').strip():
+        gaps.append('Nama penjaga')
+    if not (student.parent1_phone or '').strip():
+        gaps.append('No. telefon penjaga')
+    if student.student_type == 'WALK_IN':
+        if not (student.walk_in_description or '').strip():
+            gaps.append('Keterangan walk-in')
+    else:
+        has_class = any(True for _ in student.enrolled_classes.all()) or any(w.status == 'WAITING' for w in student.waitlist_entries.all())
+        if not has_class:
+            gaps.append('Pilihan kelas')
+    return gaps
+
+
 @transaction.atomic
 def decide_registration(student, by, approve, comment=''):
     if student.status != 'PENDING':
         raise ValidationError({'detail': 'Pendaftaran ini telah diproses.'})
+    if approve:
+        gaps = registration_gaps(student)
+        if gaps:
+            raise ValidationError({'detail': f"Pendaftaran belum lengkap: {', '.join(gaps)}. Admin perlu melengkapkannya sebelum diluluskan."})
     if not approve and not comment:
         raise ValidationError({'comment': 'Sila nyatakan sebab penolakan.'})
     student.registration_comment = comment

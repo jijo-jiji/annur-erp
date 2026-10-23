@@ -12,7 +12,7 @@ const GROUPS = [
   ['Staf baharu', 'Nilai awal untuk staf baharu', 'Cuti setahun dan waktu bekerja yang diberikan kepada staf yang ditambah selepas ini. Staf sedia ada tidak berubah, dan nilai setiap staf boleh diubah pada profil mereka.'],
   ['Muat naik fail', 'Had saiz muat naik', 'Saiz fail terbesar yang diterima. Jenis fail yang dibenarkan tidak boleh diubah di sini kerana ia peraturan keselamatan.'],
   ['Nombor dokumen', 'Awalan nombor dokumen', 'Huruf di permulaan nombor baharu. Tahun dan nombor turutan diteruskan, dan nombor yang telah dikeluarkan tidak berubah. Awalan baharu memulakan turutan di 1.'],
-  ['Peringkat prospek', 'Nama peringkat prospek', 'Nama sahaja. Susunan lapan peringkat dan peraturannya tetap.'],
+  ['Peringkat prospek', 'Papan prospek', 'Berapa lama prospek yang sudah selesai kekal di papan, dan nama lapan peringkat. Susunan peringkat dan peraturannya tetap. Prospek yang selesai kekal dalam tab Arkib dan senarai pelajar.'],
 ];
 
 // Voucher approval amounts, alerts, starting values for new staff, upload limits, document number prefixes and

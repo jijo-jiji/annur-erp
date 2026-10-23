@@ -10,6 +10,8 @@ class StudentSerializer(serializers.ModelSerializer):
     join_date = serializers.DateField(required=False)
     enrolled_classes_details = ClassTimetableSerializer(source='enrolled_classes', many=True, read_only=True)
     waiting_for = serializers.SerializerMethodField()
+    # Only meaningful while waiting for approval: what the Supervisor cannot approve without
+    registration_gaps = serializers.SerializerMethodField()
 
     class Meta:
         model = Student
@@ -22,6 +24,10 @@ class StudentSerializer(serializers.ModelSerializer):
 
     def validate_form_level(self, value):
         return grades.validate(value)
+
+    def get_registration_gaps(self, obj):
+        from .services import registration_gaps
+        return registration_gaps(obj) if obj.status == 'PENDING' else []
 
     def get_standing_discount_name(self, obj):
         return str(obj.standing_discount) if obj.standing_discount_id else None
@@ -98,19 +104,50 @@ class LeadSerializer(serializers.ModelSerializer):
     reached_stage = serializers.CharField(read_only=True)
     activity_count = serializers.SerializerMethodField()
     converted_student_code = serializers.CharField(source='converted_student.student_id', read_only=True, default=None)
+    # What staff still have to fill in, and who last moved the lead between stages and when
+    missing_fields = serializers.SerializerMethodField()
+    last_move_by = serializers.SerializerMethodField()
+    last_move_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Lead
         fields = '__all__'
-        # Stage changes go through the move / lost / convert actions so each one is logged
+        # Stage changes go through the move / lost actions so each one is logged
         read_only_fields = ['stage_changed_at', 'lost_at_stage', 'lost_reason', 'next_follow_up', 'converted_student']
+        # A lead only needs a phone number and a source to be saved; the rest can follow
+        extra_kwargs = {
+            'phone': {'allow_blank': False},
+            'lead_source': {'required': True, 'allow_blank': False},
+        }
 
     def validate_form_level(self, value):
-        return grades.validate(value)
+        return grades.validate(value) if value else ''
+
+    def validate_phone(self, value):
+        value = ' '.join(str(value).split())
+        if not any(ch.isdigit() for ch in value):
+            raise serializers.ValidationError('Masukkan no. telefon yang sah.')
+        return value
+
+    def get_missing_fields(self, obj):
+        return obj.missing_fields
 
     def get_activity_count(self, obj):
         annotated = getattr(obj, 'activity_total', None)
         return annotated if annotated is not None else obj.activities.count()
+
+    def _last_move(self, obj):
+        entry = obj.activities.exclude(from_stage='').order_by('-id').first()
+        return (entry.pic, entry.created_at) if entry else ('', None)
+
+    def get_last_move_by(self, obj):
+        annotated = getattr(obj, 'moved_by', None)
+        return annotated if annotated is not None else self._last_move(obj)[0]
+
+    def get_last_move_at(self, obj):
+        if getattr(obj, 'moved_by', None) is not None:
+            return obj.moved_at
+        return self._last_move(obj)[1]
 
     def validate_status(self, value):
         from .leads import MOVABLE_STAGES

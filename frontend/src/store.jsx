@@ -343,8 +343,9 @@ export function StoreProvider({ children }) {
       reload,
 
       // New registrations wait for Supervisor approval; the first invoice is raised on approval.
+      // From a prospect (leadId), the server also closes the prospect as Registered.
       // Full classes chosen as waiting-list are sent with the rest: the server queues them.
-      async registerStudent(form, { waitlist = [] } = {}) {
+      async registerStudent(form, { waitlist = [], leadId = null } = {}) {
         const created = await act(() => studentsApi.create({
           full_name: form.name, ic_number: form.ic, form_level: form.form, stream: form.stream || 'GENERAL',
           student_type: form.type || 'MONTHLY', school_name: form.school, school_category: form.schoolCategory || '', school_code: form.schoolCode || '',
@@ -358,7 +359,9 @@ export function StoreProvider({ children }) {
           saps_consent: form.saps ?? true,
           agree_terms_7th_payment: true, agree_terms_2months_auto_drop: true, agree_terms_2weeks_notice: true,
           class_ids: [...(form.classes || []), ...waitlist],
-        }), { refresh: refreshStudents, reloads: ['waitlist'] });
+          // a prospect is closed as Registered by the server once this record exists
+          ...(leadId ? { lead_id: leadId } : {}),
+        }), { refresh: () => Promise.all([refreshStudents(), leadId ? app.refreshLeads() : null]), reloads: ['waitlist'] });
         return { student: { id: created.student_id, pk: created.id, name: created.full_name }, enrolment: created.enrolment || {} };
       },
 

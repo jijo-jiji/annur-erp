@@ -20,7 +20,7 @@ def _spec(key, label, group, default, kind='number', unit='', low=None, high=Non
             'min': low, 'max': high, 'pattern': pattern}
 
 
-LEAD_STAGES = [('ENQUIRY', 'Enquiry'), ('CONTACTED', 'Contacted'), ('CONTENT_1', 'Content 1'), ('CONTENT_2', 'Content 2'),
+LEAD_STAGES = [('ENQUIRY', 'Enquiry'), ('CONTENT_1', 'Content 1'), ('CONTENT_2', 'Content 2'), ('CONTENT_3', 'Content 3'),
                ('TRIAL', 'Free Trial'), ('WAITING_PAYMENT', 'Waiting Payment'), ('REGISTERED', 'Registered'), ('ACTIVE', 'Active')]
 
 SPECS = {
@@ -52,6 +52,9 @@ SPECS = {
     'prefix_invoice': _spec('PREFIX_INVOICE', 'Nombor invois (cth. INV-2026-0001)', 'Nombor dokumen', 'INV', kind='text', pattern=r'[A-Z]{1,6}'),
     'prefix_receipt': _spec('PREFIX_RECEIPT', 'Nombor resit (cth. REC-2026-0001)', 'Nombor dokumen', 'REC', kind='text', pattern=r'[A-Z]{1,6}'),
     'prefix_voucher': _spec('PREFIX_VOUCHER', 'Nombor baucar (cth. PV26-0901)', 'Nombor dokumen', 'PV', kind='text', pattern=r'[A-Z]{1,6}'),
+    # Leads that finished (registered, active or not interested) leave the board after this many days;
+    # they stay in the Arkib tab and on the student list
+    'lead_board_days': _spec('LEAD_BOARD_DAYS', 'Prospek yang selesai kekal di papan selama', 'Peringkat prospek', 30, unit='hari', low=7, high=365),
     # Names of the lead stages (the order and the rules of the stages stay as they are)
     **{f'lead_label_{code}': _spec(f'LEAD_LABEL_{code}', f'Peringkat {i + 1}', 'Peringkat prospek', label, kind='text', pattern=r'.{1,30}')
        for i, (code, label) in enumerate(LEAD_STAGES)},

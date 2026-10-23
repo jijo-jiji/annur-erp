@@ -48,8 +48,8 @@ export function AppProvider({ children, notify }) {
 
   // Stable identity so screens can use it in effect dependencies
   // Messages are shown by the shell's toast system
-  const showToast = useCallback((message, type = 'success') => {
-    notify?.(message, type);
+  const showToast = useCallback((message, type = 'success', options) => {
+    notify?.(message, type, options);
   }, [notify]);
 
   // Initial Load from Django REST backend
@@ -304,26 +304,9 @@ export function AppProvider({ children, notify }) {
     }
   };
 
-  const convertLeadToStudent = async (leadId, extraData = {}) => {
-    try {
-      const result = await leadsApi.convertToStudent(leadId, extraData);
-      // Refetch leads, students, invoices, summary
-      const [allLeads, allStuds, allInvs, summary] = await Promise.all([
-        leadsApi.getAll(),
-        studentsApi.getAll(),
-        billingApi.getInvoices(),
-        dashboardApi.getSummary(),
-      ]);
-      setLeads(allLeads);
-      setStudents(allStuds);
-      setInvoices(allInvs);
-      setDashboardSummary(summary);
-      showToast(result.message || 'Lead berjaya ditukar menjadi pelajar rasmi!');
-      return result;
-    } catch (err) {
-      showToast(err.message || 'Ralat semasa mendaftarkan lead.', 'error');
-      throw err;
-    }
+  // Leads change when a prospect is registered as a student (through the registration form)
+  const refreshLeads = async () => {
+    try { setLeads(await leadsApi.getAll()); } catch { /* the board keeps what it has */ }
   };
 
   // Billing Actions
@@ -609,7 +592,7 @@ export function AppProvider({ children, notify }) {
     createLead,
     leadAction,
     updateLead,
-    convertLeadToStudent,
+    refreshLeads,
     payInvoice,
     billingAction,
     refreshBilling,

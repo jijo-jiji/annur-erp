@@ -7,7 +7,7 @@ from billing.models import Invoice, PaymentReceipt
 from business_config.models import SubjectMaster, PricingTier, BusinessSetting
 from core.permissions import ADMIN, SUPERVISOR, MANAGEMENT, ALL_ROLES
 from expenses.models import Vendor
-from students.models import Student, StudentEvent
+from students.models import Lead, Student, StudentEvent
 
 
 class Phase2Base(APITestCase):
@@ -34,7 +34,7 @@ class Phase2Base(APITestCase):
     def register(self, name='Ali', class_ids=None):
         self.as_role(ADMIN)
         res = self.client.post('/api/v1/students/students/', {
-            'full_name': name, 'ic_number': '0', 'form_level': 'F5', 'phone_number': '011',
+            'full_name': name, 'ic_number': '0', 'form_level': 'F5', 'school_name': 'SK Telipot', 'phone_number': '011',
             'parent1_name': 'Bapa', 'parent1_phone': '012', 'parent1_age': 'AGE_36_45',
             'class_ids': class_ids or [], 'status': 'ACTIVE',
         }, format='json')
@@ -241,12 +241,12 @@ class LeadFunnelTests(Phase2Base):
         url = f"/api/v1/students/leads/{lead['id']}/"
         self.assertEqual(self.client.patch(url, {'status': 'TRIAL'}, format='json').status_code, 400)
         self.assertEqual(self.client.post(url + 'move/', {'stage': 'REGISTERED'}).status_code, 400)
-        res = self.client.post(url + 'move/', {'stage': 'CONTACTED', 'remark': 'Hubungi via WhatsApp', 'next_follow_up': '2026-12-01'})
-        self.assertEqual(res.data['status'], 'CONTACTED')
+        res = self.client.post(url + 'move/', {'stage': 'CONTENT_1', 'remark': 'Hantar content pertama', 'next_follow_up': '2026-12-01'})
+        self.assertEqual(res.data['status'], 'CONTENT_1')
         self.assertEqual(res.data['next_follow_up'], '2026-12-01')
         log = self.client.get(url + 'activities/').data
         self.assertEqual(log[0]['from_stage'], 'ENQUIRY')
-        self.assertEqual(log[0]['stage'], 'CONTACTED')
+        self.assertEqual(log[0]['stage'], 'CONTENT_1')
         self.assertEqual(log[0]['pic'], 'admin')
 
     def test_lost_needs_reason_and_keeps_its_stage_for_conversion_rates(self):
@@ -265,28 +265,47 @@ class LeadFunnelTests(Phase2Base):
         # Reopening clears the loss
         self.assertEqual(self.client.post(url + 'move/', {'stage': 'CONTENT_1'}).data['lost_at_stage'], '')
 
-    def test_convert_then_approval_makes_lead_active(self):
+    def register_from(self, lead, **extra):
+        """A prospect becomes a student through the full registration form (the lead's id travels with it)."""
+        self.as_role(ADMIN)
+        res = self.client.post('/api/v1/students/students/', {
+            'full_name': 'Danish', 'ic_number': '090101-03-1234', 'form_level': 'F5', 'school_name': 'SMK Telipot',
+            'parent1_name': 'Faizal', 'parent1_phone': '019-1234567', 'class_ids': [self.kim.id], 'lead_id': lead['id'], **extra,
+        }, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        return res.data
+
+    def test_registration_from_a_lead_then_approval_makes_lead_active(self):
         lead = self.new_lead(interested_subjects=['KIM'])
         url = f"/api/v1/students/leads/{lead['id']}/"
-        res = self.client.post(url + 'convert_to_student/', {'class_ids': [self.kim.id]}, format='json')
-        self.assertEqual(res.data['status'], 'REGISTERED')
-        self.assertEqual(self.client.post(url + 'convert_to_student/').status_code, 400)
+        student = self.register_from(lead)
+        after = self.client.get(url).data
+        self.assertEqual((after['status'], after['converted_student_code']), ('REGISTERED', student['student_id']))
+        # the same prospect cannot be registered twice
+        again = self.client.post('/api/v1/students/students/', {
+            'full_name': 'Lagi', 'ic_number': '1', 'form_level': 'F5', 'school_name': 'X', 'parent1_name': 'P', 'parent1_phone': '1',
+            'class_ids': [self.kim.id], 'lead_id': lead['id']}, format='json')
+        self.assertEqual(again.status_code, 400)
         self.as_role(SUPERVISOR)
-        self.client.post(f"/api/v1/students/students/{res.data['student']['id']}/approve/")
-        lead = self.client.get(url).data
-        self.assertEqual(lead['status'], 'ACTIVE')
+        self.client.post(f"/api/v1/students/students/{student['id']}/approve/")
+        self.assertEqual(self.client.get(url).data['status'], 'ACTIVE')
         stats = self.client.get('/api/v1/students/leads/stats/').data
         self.assertEqual((stats['registered'], stats['conversion_pct']), (1, 100.0))
 
     def test_rejected_registration_sends_lead_back_to_waiting_payment(self):
         lead = self.new_lead()
         url = f"/api/v1/students/leads/{lead['id']}/"
-        student = self.client.post(url + 'convert_to_student/').data['student']
+        student = self.register_from(lead)
         self.as_role(SUPERVISOR)
         self.client.post(f"/api/v1/students/students/{student['id']}/reject/", {'comment': 'Kelas penuh'})
         lead = self.client.get(url).data
         self.assertEqual((lead['status'], lead['converted_student']), ('WAITING_PAYMENT', None))
         self.assertIsNotNone(lead['next_follow_up'])
+
+    def test_the_old_quick_convert_shortcut_is_gone(self):
+        lead = self.new_lead()
+        res = self.client.post(f"/api/v1/students/leads/{lead['id']}/convert_to_student/")
+        self.assertEqual(res.status_code, 404)
 
 
 class MonthlyInvoicingTests(Phase2Base):
@@ -459,3 +478,274 @@ class CustomFeeGroupTests(Phase2Base):
                                          meta_info={'order': 2, 'level': 'PRIMARY', 'next': ''})
         student.form_level = 'S2'
         self.assertEqual(services.monthly_fee(student), 0)
+
+
+class LeadPartialInfoTests(Phase2Base):
+    """A lead is saved with whatever is known; completeness is enforced when it becomes a student."""
+
+    def post_lead(self, **fields):
+        self.as_role(ADMIN)
+        return self.client.post('/api/v1/students/leads/', fields, format='json')
+
+    def test_only_a_phone_and_a_source_are_needed_and_the_rest_is_listed_as_missing(self):
+        res = self.post_lead(phone='012-345 6789', lead_source='TIKTOK')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual((res.data['student_name'], res.data['parent_name'], res.data['form_level']), ('', '', ''))
+        self.assertEqual(res.data['missing_fields'], ['Nama pelajar', 'Nama ibu bapa', 'Tingkatan', 'Sekolah', 'Subjek diminati'])
+
+    def test_missing_list_shrinks_as_details_are_added(self):
+        lead = self.post_lead(phone='012-3456789', lead_source='TIKTOK').data
+        res = self.client.patch(f"/api/v1/students/leads/{lead['id']}/", {
+            'student_name': 'Danish', 'parent_name': 'Faizal', 'form_level': 'F5', 'school_name': 'SMK Telipot',
+            'interested_subjects': ['KIM']}, format='json')
+        self.assertEqual((res.status_code, res.data['missing_fields']), (200, []))
+
+    def test_phone_and_source_are_still_required(self):
+        self.assertEqual(self.post_lead(lead_source='TIKTOK').status_code, 400)
+        self.assertEqual(self.post_lead(phone='   ', lead_source='TIKTOK').status_code, 400)
+        self.assertEqual(self.post_lead(phone='abc', lead_source='TIKTOK').status_code, 400)
+        no_source = self.post_lead(phone='012-3456789')
+        self.assertEqual(no_source.status_code, 400)
+        self.assertIn('lead_source', no_source.data)
+
+    def test_an_unknown_grade_is_still_refused_but_a_blank_one_is_not(self):
+        self.assertEqual(self.post_lead(phone='012-3456789', lead_source='TIKTOK', form_level='X9').status_code, 400)
+        self.assertEqual(self.post_lead(phone='012-3456789', lead_source='TIKTOK', form_level='').status_code, 201)
+
+
+class LeadStageTrailTests(Phase2Base):
+    """Who moved a lead, going back, and the eight default stages."""
+
+    def lead(self):
+        self.as_role(ADMIN)
+        return self.client.post('/api/v1/students/leads/', {'phone': '012-3456789', 'lead_source': 'TIKTOK', 'student_name': 'Danish'}, format='json').data
+
+    def test_the_eight_stages_in_order(self):
+        self.assertEqual(Lead.STAGE_ORDER, ['ENQUIRY', 'CONTENT_1', 'CONTENT_2', 'CONTENT_3', 'TRIAL', 'WAITING_PAYMENT', 'REGISTERED', 'ACTIVE'])
+        self.as_role(ADMIN)
+        stats = self.client.get('/api/v1/students/leads/stats/').data
+        self.assertEqual([f['label'] for f in stats['funnel']],
+                         ['Enquiry', 'Content 1', 'Content 2', 'Content 3', 'Free Trial', 'Waiting Payment', 'Registered', 'Active'])
+
+    def test_a_move_records_the_signed_in_user_and_the_card_shows_them(self):
+        lead = self.lead()
+        self.assertEqual(lead['last_move_by'], '')  # nothing has moved yet
+        url = f"/api/v1/students/leads/{lead['id']}/"
+        self.as_role(SUPERVISOR)
+        moved = self.client.post(url + 'move/', {'stage': 'CONTENT_1'}).data
+        self.assertEqual(moved['last_move_by'], 'supervisor')  # who really did it, not the lead's PIC
+        self.assertEqual(moved['assigned_to'], 'admin')
+        self.assertIsNotNone(moved['last_move_at'])
+        listed = next(l for l in self.client.get('/api/v1/students/leads/').data if l['id'] == lead['id'])
+        self.assertEqual(listed['last_move_by'], 'supervisor')
+        log = self.client.get(url + 'activities/').data
+        self.assertEqual((log[0]['pic'], log[0]['from_stage'], log[0]['stage']), ('supervisor', 'ENQUIRY', 'CONTENT_1'))
+        self.assertTrue(log[0]['created_at'])  # the exact time is stored
+
+    def test_going_back_is_allowed_and_worded_as_going_back(self):
+        lead = self.lead()
+        url = f"/api/v1/students/leads/{lead['id']}/"
+        self.client.post(url + 'move/', {'stage': 'CONTENT_2'})
+        self.client.post(url + 'move/', {'stage': 'CONTENT_1'})
+        log = self.client.get(url + 'activities/').data
+        self.assertEqual(log[0]['action'], 'Kembali ke peringkat sebelumnya: Content 2 → Content 1')
+        self.assertEqual(log[1]['action'], 'Tukar peringkat: Enquiry → Content 2')
+        self.assertEqual(self.client.get(url).data['status'], 'CONTENT_1')
+
+    def test_content_3_sits_between_content_2_and_the_free_trial(self):
+        lead = self.lead()
+        url = f"/api/v1/students/leads/{lead['id']}/"
+        self.assertEqual(self.client.post(url + 'move/', {'stage': 'CONTENT_3'}).data['status'], 'CONTENT_3')
+        self.assertEqual(self.client.post(url + 'move/', {'stage': 'CONTACTED'}).status_code, 400)  # retired
+
+    def test_retiring_contacted_moves_those_leads_to_enquiry_and_says_so(self):
+        import importlib
+        from django.apps import apps
+        from business_config.models import BusinessSetting
+        from students.models import LeadActivity
+        migration = importlib.import_module('students.migrations.0012_lead_stages_and_partial_info')
+        old = Lead.objects.create(lead_id='LD-OLD-1', student_name='Lama', phone='012', form_level='F5', status='CONTACTED')
+        lost = Lead.objects.create(lead_id='LD-OLD-2', student_name='Hilang', phone='013', form_level='F5', status='LOST', lost_at_stage='CONTACTED')
+        LeadActivity.objects.create(lead=old, stage='CONTACTED', from_stage='ENQUIRY', action='Tukar peringkat', pic='Admin')
+        BusinessSetting.objects.create(key='LEAD_LABEL_CONTACTED', value='Dihubungi')
+        migration.retire_contacted_stage(apps, None)
+        old.refresh_from_db()
+        lost.refresh_from_db()
+        self.assertEqual((old.status, lost.lost_at_stage), ('ENQUIRY', 'ENQUIRY'))
+        self.assertFalse(LeadActivity.objects.filter(stage='CONTACTED').exists())
+        self.assertFalse(BusinessSetting.objects.filter(key='LEAD_LABEL_CONTACTED').exists())
+        self.assertTrue(LeadActivity.objects.filter(lead=old, action='Peringkat Contacted dimansuhkan', pic='Sistem').exists())
+
+
+class RegistrationCompletenessTests(Phase2Base):
+    """Only a complete registration can become an active student."""
+
+    def qr_student(self, **extra):
+        self.client.force_authenticate(None)
+        payload = {'full_name': 'Anak QR', 'ic_number': '150101-03-1111', 'form_level': 'F5', 'school_name': 'SMK Telipot',
+                   'parent1_name': 'Ibu QR', 'parent1_phone': '013-9876543', **extra}
+        res = self.client.post('/api/v1/students/parent-self-register/', payload, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        return Student.objects.get(student_id=res.data['student_id'])
+
+    def approve(self, student):
+        self.as_role(SUPERVISOR)
+        return self.client.post(f'/api/v1/students/students/{student.id}/approve/')
+
+    def test_a_qr_registration_without_classes_cannot_be_approved_until_a_class_is_chosen(self):
+        student = self.qr_student()
+        self.as_role(SUPERVISOR)
+        listed = next(s for s in self.client.get('/api/v1/students/students/').data if s['id'] == student.id)
+        self.assertEqual(listed['registration_gaps'], ['Pilihan kelas'])
+        refused = self.approve(student)
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn('Pilihan kelas', refused.data['detail'])
+        self.assertEqual(Invoice.objects.count(), 0)  # no invoice for an incomplete record
+        # the counter completes it
+        self.as_role(ADMIN)
+        self.client.post(f'/api/v1/students/students/{student.id}/enroll/', {'class_id': self.kim.id})
+        self.assertEqual(self.approve(student).status_code, 200)
+
+    def test_every_missing_item_is_named(self):
+        student = self.qr_student()
+        Student.objects.filter(pk=student.pk).update(ic_number='', school_name='', parent1_name='', parent1_phone='')
+        refused = self.approve(Student.objects.get(pk=student.pk))
+        for label in ('No. kad pengenalan', 'Sekolah', 'Nama penjaga', 'No. telefon penjaga', 'Pilihan kelas'):
+            self.assertIn(label, refused.data['detail'])
+
+    def test_a_waiting_list_place_counts_as_a_class_choice(self):
+        self.register(class_ids=[self.fz.id])                        # takes the only seat of Fizik
+        second = self.register(name='Aina', class_ids=[self.fz.id])  # waits for a seat
+        self.assertEqual(second['registration_gaps'], [])
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post(f"/api/v1/students/students/{second['id']}/approve/").status_code, 200)
+
+    def test_a_walk_in_needs_a_description_instead_of_classes(self):
+        self.as_role(ADMIN)
+        res = self.client.post('/api/v1/students/students/', {
+            'full_name': 'Walk In', 'ic_number': '1', 'form_level': 'F5', 'school_name': 'SMK', 'student_type': 'WALK_IN',
+            'parent1_name': 'P', 'parent1_phone': '1'}, format='json')
+        self.assertEqual(res.data['registration_gaps'], ['Keterangan walk-in'])
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post(f"/api/v1/students/students/{res.data['id']}/approve/").status_code, 400)
+        self.client.patch(f"/api/v1/students/students/{res.data['id']}/", {'walk_in_description': 'Kelas intensif Sabtu'}, format='json')
+        self.assertEqual(self.client.post(f"/api/v1/students/students/{res.data['id']}/approve/").status_code, 200)
+
+    def test_rejecting_an_incomplete_registration_is_still_possible(self):
+        student = self.qr_student()
+        self.as_role(SUPERVISOR)
+        res = self.client.post(f'/api/v1/students/students/{student.id}/reject/', {'comment': 'Tidak lengkap'})
+        self.assertEqual(res.status_code, 200)
+
+
+class LeadImportTests(Phase2Base):
+    """CSV import: every row is checked against the centre's own lists, and nothing is created by a preview."""
+
+    URL = '/api/v1/students/leads/import/'
+
+    def setUp(self):
+        super().setUp()
+        from business_config.models import DynamicMasterData
+        for category, code, label in (('3_lead_source', 'TIKTOK', 'TikTok Ads / Live'), ('3_lead_source', 'FB', 'Facebook Ads & Page'),
+                                      ('22_lead_campaign', 'SPM27', 'SPM 2027'), ('6_school', 'SMKT', 'SMK Telipot')):
+            DynamicMasterData.objects.create(category=category, code=code, label=label, status='APPROVED')
+        self.as_role(ADMIN)
+
+    def send(self, rows, commit=False, **defaults):
+        return self.client.post(self.URL, {'rows': rows, 'defaults': defaults, 'commit': commit, 'filename': 'okt.csv'}, format='json')
+
+    GOOD = {'student_name': 'Aina', 'parent_name': 'Puan Sarah', 'phone': '012 345 6789', 'lead_source': 'tiktok ads / live',
+            'form_level': 'Tingkatan 5', 'school_name': 'smk telipot', 'subjects': 'Fizik; kimia', 'campaign': 'spm 2027'}
+
+    def test_a_preview_checks_and_cleans_but_creates_nothing(self):
+        res = self.send([self.GOOD])
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual((res.data['committed'], res.data['counts']), (False, {'ok': 1, 'duplicate': 0, 'error': 0}))
+        self.assertEqual(res.data['rows'][0]['phone'], '012-3456789')
+        self.assertEqual(Lead.objects.count(), 0)
+
+    def test_importing_creates_leads_with_codes_from_the_lists_and_logs_who_did_it(self):
+        res = self.send([self.GOOD, {'phone': '019-8881122', 'lead_source': 'FB'}], commit=True, status='CONTENT_1')
+        self.assertEqual((res.data['counts'], len(res.data['created'])), ({'ok': 2, 'duplicate': 0, 'error': 0}, 2))
+        lead = Lead.objects.get(phone='012-3456789')
+        self.assertEqual((lead.lead_source, lead.form_level, lead.school_name, lead.campaign), ('TIKTOK', 'F5', 'SMK Telipot', 'SPM 2027'))
+        self.assertEqual((lead.interested_subjects, lead.status, lead.assigned_to), (['FZ', 'KIM'], 'CONTENT_1', 'admin'))
+        self.assertEqual(lead.missing_fields, [])
+        partial = Lead.objects.get(phone='019-8881122')
+        self.assertEqual(partial.missing_fields[:3], ['Nama pelajar', 'Nama ibu bapa', 'Tingkatan'])
+        entry = lead.activities.get()
+        self.assertEqual((entry.action, entry.pic, entry.remark), ('Diimport dari CSV', 'admin', 'okt.csv'))
+
+    def test_the_zero_that_excel_drops_is_put_back_and_country_codes_are_understood(self):
+        rows = [{'phone': '123456789', 'lead_source': 'FB'}, {'phone': '+60 11-2345 6789', 'lead_source': 'FB'}, {'phone': '60198881122', 'lead_source': 'FB'}]
+        res = self.send(rows)
+        self.assertEqual([r['phone'] for r in res.data['rows']], ['012-3456789', '011-23456789', '019-8881122'])
+
+    def test_rows_that_cannot_be_imported_say_why(self):
+        rows = [
+            {'lead_source': 'FB'},                                                         # no phone
+            {'phone': '012-3456789', 'lead_source': 'Radio'},                              # unknown source
+            {'phone': '012-3456780', 'lead_source': 'FB', 'form_level': 'Tingkatan 9'},    # unknown grade
+            {'phone': '012-3456781', 'lead_source': 'FB', 'subjects': 'Fizik; Silat'},     # unknown subject
+            {'phone': '012-3456782', 'lead_source': 'FB', 'email': 'bukan-emel'},          # bad e-mail
+            {'phone': '012-3456783', 'lead_source': 'FB', 'campaign': 'Tiada Kempen Ini'}, # campaign not in Data induk
+            {'phone': '012-3456784'},                                                      # no source anywhere
+        ]
+        res = self.send(rows)
+        self.assertEqual(res.data['counts'], {'ok': 0, 'duplicate': 0, 'error': 7})
+        said = [' '.join(r['messages']) for r in res.data['rows']]
+        for part, text in zip(('telefon', 'Radio', 'Tingkatan 9', 'Silat', 'E-mel', 'Tiada Kempen Ini', 'Sumber diperlukan'), said):
+            self.assertIn(part, text)
+
+    def test_a_default_source_fills_rows_that_have_none(self):
+        res = self.send([{'phone': '012-3456784'}], commit=True, lead_source='FB', campaign='SPM 2027', assigned_to='Cikgu Aina')
+        self.assertEqual(res.data['counts']['ok'], 1)
+        lead = Lead.objects.get()
+        self.assertEqual((lead.lead_source, lead.campaign, lead.assigned_to), ('FB', 'SPM 2027', 'Cikgu Aina'))
+
+    def test_numbers_the_centre_already_has_are_duplicates_not_new_leads(self):
+        self.client.post('/api/v1/students/leads/', {'phone': '019-9881122', 'lead_source': 'FB'}, format='json')
+        student = self.register(class_ids=[self.kim.id])  # parent 1 phone is 012
+        Student.objects.filter(pk=student['id']).update(parent1_phone='013-5550000', phone_number='')
+        rows = [
+            {'phone': '0199881122', 'lead_source': 'FB'},     # same as an existing lead
+            {'phone': '+6013 555 0000', 'lead_source': 'FB'}, # same as a student's parent
+            {'phone': '017-1112222', 'lead_source': 'FB'},    # new
+            {'phone': '017 111 2222', 'lead_source': 'FB'},   # the same number again, later in the file
+        ]
+        res = self.send(rows, commit=True)
+        self.assertEqual(res.data['counts'], {'ok': 1, 'duplicate': 3, 'error': 0})
+        self.assertIn('prospek LD-', res.data['rows'][0]['messages'][0])
+        self.assertIn('pelajar AN-', res.data['rows'][1]['messages'][0])
+        self.assertIn('baris 3', res.data['rows'][3]['messages'][0])
+        self.assertEqual(Lead.objects.count(), 2)
+
+    def test_importing_the_same_file_twice_adds_nothing_the_second_time(self):
+        first = self.send([self.GOOD], commit=True)
+        second = self.send([self.GOOD], commit=True)
+        self.assertEqual((first.data['counts']['ok'], second.data['counts']), (1, {'ok': 0, 'duplicate': 1, 'error': 0}))
+        self.assertEqual(Lead.objects.count(), 1)
+
+    def test_bad_rows_do_not_stop_the_good_ones(self):
+        res = self.send([self.GOOD, {'lead_source': 'FB'}], commit=True)
+        self.assertEqual(res.data['counts'], {'ok': 1, 'duplicate': 0, 'error': 1})
+        self.assertEqual(Lead.objects.count(), 1)
+
+    def test_an_unknown_default_or_an_empty_or_huge_file_is_refused(self):
+        self.assertEqual(self.send([self.GOOD], lead_source='Radio').status_code, 400)
+        self.assertEqual(self.send([self.GOOD], status='REGISTERED').status_code, 400)
+        self.assertEqual(self.send([]).status_code, 400)
+        self.assertEqual(self.send([{'phone': '012-3456789', 'lead_source': 'FB'}] * 1001).status_code, 400)
+
+    def test_a_date_column_sets_the_enquiry_date(self):
+        res = self.send([{'phone': '012-3456789', 'lead_source': 'FB', 'enquiry_date': '05/10/2026'}], commit=True)
+        self.assertEqual(res.data['counts']['ok'], 1)
+        self.assertEqual(Lead.objects.get().enquiry_date.isoformat(), '2026-10-05')
+        self.assertEqual(self.send([{'phone': '012-3456780', 'lead_source': 'FB', 'enquiry_date': 'semalam'}]).data['counts']['error'], 1)
+
+    def test_every_staff_role_may_import_and_nobody_signed_out(self):
+        for role in (ADMIN, SUPERVISOR, MANAGEMENT):
+            self.as_role(role)
+            self.assertEqual(self.send([self.GOOD]).status_code, 200)
+        self.client.force_authenticate(None)
+        self.assertIn(self.send([self.GOOD]).status_code, (401, 403))

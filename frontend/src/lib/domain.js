@@ -167,3 +167,11 @@ export function grade(mark) {
   if (mark == null || mark === '') return '';
   return GRADES.find(([min]) => mark >= min)[1];
 }
+
+// The category of a school from the school list (master data), or guessed from its name (SK, SMK, SMKA...)
+export function schoolCategory(option) {
+  if (!option) return '';
+  if (option.meta?.category) return option.meta.category;
+  const label = option.label.toUpperCase();
+  return ['SMKA', 'SMK', 'SBP', 'MRSM', 'SK', 'SJK'].find((k) => label.startsWith(k)) || '';
+}

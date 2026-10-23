@@ -72,7 +72,7 @@ npm run e2e                       # semua ujian
 npm run e2e:ui                    # mod interaktif
 npm run e2e:report                # laporan HTML selepas larian
 ```
-Ujian meliputi log masuk dan peranan, pendaftaran hingga resit, baucar mengikut amaun, permohonan kelulusan, tetapan Pengurusan, akaun pengguna dan borang pendaftaran QR ibu bapa.
+Ujian meliputi log masuk dan peranan, pendaftaran hingga resit, baucar mengikut amaun, permohonan kelulusan, tetapan Pengurusan, akaun pengguna, borang pendaftaran QR ibu bapa dan corong prospek (maklumat separa, import CSV, pendaftaran penuh, arkib).
 
 ### Pemasangan di pelayan sebenar
 Panduan lengkap (pelayan Linux, domain, HTTPS, sandaran harian, kemas kini) ada dalam [`deploy/DEPLOYMENT.md`](deploy/DEPLOYMENT.md).

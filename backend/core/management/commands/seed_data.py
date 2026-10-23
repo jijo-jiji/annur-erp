@@ -322,6 +322,11 @@ class Command(BaseCommand):
             ("21_payment_method", "DEBIT_CARD", "Kad Debit Melalui Mesin EDC Kaunter", {"terminal": "Maybank POS"}, "APPROVED"),
         ]
 
+        # The lead funnel's own drop-downs (actions, reasons for losing a lead); campaigns start empty
+        from business_config.lead_lists import LEAD_LIST_DEFAULTS
+        for cat, choices in LEAD_LIST_DEFAULTS.items():
+            master_seed_data.extend((cat, code, label, {"order": order}, "APPROVED") for order, (code, label) in enumerate(choices, start=1))
+
         for cat, code, label, meta, st in master_seed_data:
             DynamicMasterData.objects.update_or_create(
                 category=cat,

@@ -47,7 +47,13 @@ def move(lead, stage, by, remark='', on=None, next_follow_up=None):
     if stage == lead.status:
         raise ValidationError({'stage': 'Lead sudah berada di peringkat ini.'})
     on = on or date.today()
-    action = 'Dibuka semula' if lead.status == 'LOST' else 'Tukar peringkat'
+    # Going back is allowed (a stage clicked by mistake) and is worded as such in the log
+    if lead.status == 'LOST':
+        action = 'Dibuka semula'
+    elif Lead.STAGE_ORDER.index(stage) < Lead.STAGE_ORDER.index(lead.status):
+        action = 'Kembali ke peringkat sebelumnya'
+    else:
+        action = 'Tukar peringkat'
     lead.lost_at_stage = ''
     lead.lost_reason = ''
     previous = _set_stage(lead, stage, on)

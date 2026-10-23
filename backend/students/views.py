@@ -1,6 +1,7 @@
 from datetime import date
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_date
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action, authentication_classes, permission_classes, throttle_classes
@@ -11,9 +12,10 @@ from rest_framework.throttling import ScopedRateThrottle
 from academic.models import ClassTimetable
 from core import numbering
 from core.permissions import APPROVER_ROLES, get_role, display_name, require_role
-from . import leads, services
+from . import lead_import, leads, services
+from business_config.models import SubjectMaster
 from .models import (
-    Student, StudentExamResult, Lead, StudentEvent, ClassWaitlist,
+    Student, StudentExamResult, Lead, LeadActivity, StudentEvent, ClassWaitlist,
     ClassAttendanceSession, StudentAttendance, StudentFeedback,
 )
 from .serializers import (
@@ -61,12 +63,26 @@ class StudentViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         classes = classes_from(request.data.get('class_ids'))
         by = display_name(request.user)
+        # A prospect becomes a student through this full registration form, never through a shortcut
+        lead = None
+        if request.data.get('lead_id'):
+            lead = Lead.objects.filter(pk=request.data['lead_id']).first()
+            if not lead:
+                raise ValidationError({'lead_id': 'Prospek tidak dijumpai.'})
+            if lead.converted_student_id or lead.status in Lead.CLOSED_STAGES:
+                raise ValidationError({'lead_id': 'Prospek ini sudah ditutup atau didaftarkan sebagai pelajar.'})
         with transaction.atomic():
             student = serializer.save(
                 student_id=numbering.student_id(Student, date.today()),
                 join_date=serializer.validated_data.get('join_date') or date.today(),
             )
             results = services.register(student, by, classes)
+            if lead:
+                if lead.interested_subjects:
+                    names = dict(SubjectMaster.objects.filter(code__in=lead.interested_subjects).values_list('code', 'name'))
+                    services.log(student, 'NOTE', by, description=f"Subjek diminati (prospek {lead.lead_id}): "
+                                 f"{', '.join(names.get(c, c) for c in lead.interested_subjects)}")
+                leads.mark_registered(lead, student, by)
         data = self.get_serializer(student).data
         data['enrolment'] = results
         return Response(data, status=status.HTTP_201_CREATED)
@@ -196,7 +212,12 @@ def parent_self_register(request):
 
 
 class LeadViewSet(viewsets.ModelViewSet):
-    queryset = Lead.objects.select_related('converted_student').annotate(activity_total=Count('activities'))
+    queryset = Lead.objects.select_related('converted_student').annotate(
+        activity_total=Count('activities'),
+        # who last moved the lead between stages, and when (shown on the board card)
+        moved_by=Coalesce(Subquery(LeadActivity.objects.filter(lead=OuterRef('pk')).exclude(from_stage='').order_by('-id').values('pic')[:1]), Value('')),
+        moved_at=Subquery(LeadActivity.objects.filter(lead=OuterRef('pk')).exclude(from_stage='').order_by('-id').values('created_at')[:1]),
+    )
     serializer_class = LeadSerializer
 
     def get_queryset(self):
@@ -263,40 +284,14 @@ class LeadViewSet(viewsets.ModelViewSet):
             leads.mark_lost(lead, display_name(request.user), (request.data.get('reason') or '').strip())
         return self._respond(lead)
 
-    @action(detail=True, methods=['post'])
-    def convert_to_student(self, request, pk=None):
-        lead = self.get_object()
-        if lead.converted_student or lead.status in Lead.CLOSED_STAGES:
-            raise ValidationError({'detail': 'Lead ini sudah ditutup atau didaftarkan sebagai pelajar.'})
-        by = display_name(request.user)
-        with transaction.atomic():
-            student = Student.objects.create(
-                student_id=numbering.student_id(Student, date.today()),
-                full_name=lead.student_name,
-                ic_number=request.data.get('ic_number', ''),
-                student_type='MONTHLY',
-                form_level=lead.form_level,
-                stream='GENERAL',
-                school_name=lead.school_name,
-                phone_number=lead.phone,
-                email=lead.email,
-                join_date=date.today(),
-                lead_source=lead.lead_source,
-                parent1_name=lead.parent_name,
-                parent1_phone=lead.phone,
-                parent1_email=lead.email,
-                parent1_relation='Bapa',
-            )
-            services.register(student, by, classes_from(request.data.get('class_ids')))
-            if lead.interested_subjects:
-                services.log(student, 'NOTE', by, description=f"Subjek diminati: {', '.join(map(str, lead.interested_subjects))}")
-            leads.mark_registered(lead, student, by)
-
-        return self._respond(
-            lead,
-            message=f"Lead didaftarkan sebagai pelajar {student.full_name} ({student.student_id}). Menunggu kelulusan Supervisor.",
-            student=StudentSerializer(student).data,
-        )
+    @action(detail=False, methods=['post'], url_path='import')
+    def import_rows(self, request):
+        """CSV import: the browser sends the rows. Without commit=true this only checks them (preview)."""
+        rows, defaults = request.data.get('rows'), request.data.get('defaults')
+        if str(request.data.get('commit')).lower() in ('true', '1'):
+            with transaction.atomic():
+                return Response(lead_import.commit(rows, defaults, display_name(request.user), str(request.data.get('filename') or '')[:100]))
+        return Response(lead_import.preview(rows, defaults))
 
 
 class StudentFeedbackViewSet(viewsets.ModelViewSet):

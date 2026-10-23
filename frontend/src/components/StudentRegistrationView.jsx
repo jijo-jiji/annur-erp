@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Clock, Download, Search, UserPlus, Users } from 'lucide-react';
 import { useStore } from '../store';
 import { useApp } from '../context/AppContext';
 import { studentsApi } from '../api/client';
-import { invoiceBalance, minSubjects, monthlyFee, preferredContact, subjectsForForm } from '../lib/domain';
+import { invoiceBalance, minSubjects, monthlyFee, preferredContact, schoolCategory, subjectsForForm } from '../lib/domain';
 import { date, DAY_LABEL, FORMS, formLabel, formShort, initials, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
@@ -264,6 +264,7 @@ function Approvals({ role, pending }) {
           <tbody>
             {pending.map((s) => {
               const contact = preferredContact(s);
+              const gaps = s.raw?.registration_gaps || []; // what the Supervisor cannot approve without
               return (
                 <tr key={s.id}>
                   <Td>
@@ -271,6 +272,11 @@ function Approvals({ role, pending }) {
                       {s.name}
                     </a>
                     <p className="text-[13px] text-gray-500">{s.id} · {s.source === 'QR_CODE' ? 'Borang QR' : 'Kaunter'}</p>
+                    {gaps.length > 0 && (
+                      <p className="mt-1 text-[13px] text-amber-700">
+                        Belum lengkap: {gaps.join(', ')}. <a href={`#/students/${s.id}`} className="font-medium text-brand-700 hover:underline">Lengkapkan</a>
+                      </p>
+                    )}
                   </Td>
                   <Td className="whitespace-nowrap">{formLabel(s.form)}</Td>
                   <Td className="text-[13px] text-gray-700">
@@ -289,7 +295,7 @@ function Approvals({ role, pending }) {
                         <Button size="sm" variant="danger" onClick={() => setRejecting(s)}>
                           Tolak
                         </Button>
-                        <Button size="sm" variant="primary" onClick={() => approve(s)}>
+                        <Button size="sm" variant="primary" disabled={gaps.length > 0} title={gaps.length ? `Belum lengkap: ${gaps.join(', ')}` : undefined} onClick={() => approve(s)}>
                           Luluskan
                         </Button>
                       </div>
@@ -588,13 +594,6 @@ export function ClassPicker({ form, value, onChange, waitlist = [], onWaitlistCh
 const EMPTY_PARENT = { name: '', phone: '', email: '', occupation: '', age: '' };
 const OTHER_SCHOOL = '__OTHER__';
 
-function schoolCategory(option) {
-  if (!option) return '';
-  if (option.meta?.category) return option.meta.category;
-  const label = option.label.toUpperCase();
-  return ['SMKA', 'SMK', 'SBP', 'MRSM', 'SK', 'SJK'].find((k) => label.startsWith(k)) || '';
-}
-
 function RegistrationForm({ onCancel, onDone }) {
   const { registerStudent, pricingTiers, settings, students, subjects, grades } = useStore();
   const { getMasterOptions } = useApp();
@@ -616,6 +615,28 @@ function RegistrationForm({ onCancel, onDone }) {
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Registering a prospect: its details are filled in first and the prospect is closed as Registered when this is saved
+  const { leads } = useApp();
+  const leadId = useMemo(() => new URLSearchParams(window.location.hash.split('?')[1]).get('lead'), []);
+  const lead = leadId ? leads.find((l) => String(l.id) === leadId) : null;
+  const filledFrom = useRef(null);
+  useEffect(() => {
+    if (!lead || filledFrom.current === lead.id) return;
+    filledFrom.current = lead.id;
+    const school = schools.find((x) => x.label === lead.school_name);
+    setF((prev) => ({
+      ...prev,
+      name: lead.student_name || prev.name,
+      form: lead.form_level || prev.form,
+      schoolKey: school ? school.value : lead.school_name ? OTHER_SCHOOL : prev.schoolKey,
+      school: school ? '' : lead.school_name || '',
+      email: lead.email || prev.email,
+      source: lead.lead_source || prev.source,
+      parent1: { ...prev.parent1, name: lead.parent_name || prev.parent1.name, phone: lead.phone || prev.parent1.phone, email: lead.email || prev.parent1.email },
+    }));
+  }, [lead, schools]);
+  const cancel = lead ? () => navigate('leads') : onCancel;
 
   const set = (patch) => setF((prev) => ({ ...prev, ...patch }));
   const setParent = (key, patch) => setF((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -649,7 +670,7 @@ function RegistrationForm({ onCancel, onDone }) {
           schoolCode: school?.meta?.kod || '',
           stream: upper ? f.stream : 'GENERAL',
         },
-        { waitlist: f.waitlist },
+        { waitlist: f.waitlist, leadId: lead?.id },
       );
       const waited = Object.values(enrolment).filter((r) => r === 'WAITLISTED').length;
       notify(`${student.name} didaftarkan sebagai ${student.id} dan menunggu kelulusan Supervisor${waited ? `; ${waited} kelas dalam senarai menunggu` : ''}.`);
@@ -661,10 +682,21 @@ function RegistrationForm({ onCancel, onDone }) {
 
   return (
     <form onSubmit={submit}>
-      <button type="button" onClick={onCancel} className="mb-4 flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900">
-        <ArrowLeft className="size-4" /> Senarai pelajar
+      <button type="button" onClick={cancel} className="mb-4 flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900">
+        <ArrowLeft className="size-4" /> {lead ? 'Senarai prospek' : 'Senarai pelajar'}
       </button>
       <PageHeader title="Pendaftaran pelajar baharu" description="Berdasarkan borang pendaftaran rasmi Cawangan Telipot." />
+      {leadId && (
+        <p role="note" className="mb-6 rounded-md bg-brand-50 px-4 py-3 text-sm text-brand-900">
+          {lead ? (
+            <>
+              Mendaftar prospek <span className="font-medium">{lead.lead_id}</span> ({lead.student_name || lead.parent_name || lead.phone}). Maklumat prospek sudah diisi;
+              lengkapkan yang selebihnya. Prospek ditutup sebagai Registered selepas disimpan.
+              {lead.interested_subjects.length > 0 && <> Subjek diminati: {lead.interested_subjects.map((c) => subjects.find((x) => x.code === c)?.name ?? c).join(', ')}.</>}
+            </>
+          ) : 'Prospek tidak dijumpai atau sudah ditutup. Anda masih boleh mendaftar pelajar baharu.'}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -884,7 +916,7 @@ function RegistrationForm({ onCancel, onDone }) {
               <Button type="submit" variant="primary" className="w-full" disabled={busy}>
                 {busy ? 'Mendaftar…' : 'Daftar pelajar'}
               </Button>
-              <Button onClick={onCancel} variant="ghost" className="mt-2 w-full">
+              <Button onClick={cancel} variant="ghost" className="mt-2 w-full">
                 Batal
               </Button>
             </div>

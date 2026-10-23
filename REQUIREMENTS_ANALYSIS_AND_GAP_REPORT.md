@@ -108,7 +108,7 @@ The redesigned interface (green theme, sidebar, search with Ctrl+K, page address
 | Date, name, phone, form, interested subject | ✅ | |
 | Lead source (FB, TT, Walk-in, Friend, School, Teacher, Referral, Booth, Google, Website) | ✅ | Master list |
 | Campaign | ✅ | Free text with suggestions from earlier campaigns |
-| 8 conversion stages | ✅ | Enquiry → Contacted → Content 1 → Content 2 → Free Trial → Waiting Payment → Registered → Active, plus "not interested" with reason |
+| 8 conversion stages | ✅ | Enquiry → Content 1 → Content 2 → Content 3 → Free Trial → Waiting Payment → Registered → Active, plus "not interested" with reason |
 | Activity log per stage (date, action, remark, PIC, status) | ✅ | Stage moves are logged automatically |
 | Reminder one week after each action | ✅ | Staff can set another date; overdue follow-ups show on the dashboard |
 | Listing by stages | ✅ | 8-column board, filters, CSV |

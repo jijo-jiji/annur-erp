@@ -33,6 +33,9 @@ const CATEGORIES = [
   { id: '19_expense_subcat', name: 'Subkategori perbelanjaan' },
   { id: '20_vendor', name: 'Pembekal' },
   { id: '21_payment_method', name: 'Kaedah pembayaran' },
+  { id: '22_lead_campaign', name: 'Kempen prospek' },
+  { id: '23_lead_action', name: 'Tindakan susulan prospek' },
+  { id: '24_lost_reason', name: 'Sebab prospek tidak berminat' },
 ];
 const STATUS = {
   APPROVED: { label: 'Aktif', tone: 'green' },

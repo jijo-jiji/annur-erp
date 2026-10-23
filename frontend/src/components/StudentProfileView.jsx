@@ -1,3 +1,4 @@
+import StudentDetailsModal from './StudentDetailsModal';
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Phone, Plus } from 'lucide-react';
 import { useStore } from '../store';
@@ -60,6 +61,8 @@ export default function StudentProfileView({ role, param }) {
   const canEdit = can(role, 'students.edit');
   const canApprove = can(role, 'students.approve');
   const live = ['PENDING', 'ACTIVE', 'ON_HOLD'].includes(s.status);
+  // What a pending registration still lacks; the Supervisor cannot approve it until it is complete
+  const gaps = s.status === 'PENDING' ? (s.raw?.registration_gaps || []) : [];
   const enrolled = classes.filter((c) => s.classes.includes(c.id));
   const myInvoices = invoices.filter((i) => i.studentId === s.id);
   const balance = myInvoices.reduce((a, i) => a + invoiceBalance(i), 0);
@@ -124,6 +127,8 @@ export default function StudentProfileView({ role, param }) {
                     <Button variant="danger" onClick={() => setDialog({ type: 'reject' })}>Tolak</Button>
                     <Button
                       variant="primary"
+                      disabled={gaps.length > 0}
+                      title={gaps.length ? `Belum lengkap: ${gaps.join(', ')}` : undefined}
                       onClick={() => act('approve', {}, (res) => (res.invoice ? `Diluluskan. Invois ${res.invoice.invoice_number} (${rm(res.invoice.total_payable)}) dijana.` : 'Pendaftaran diluluskan.')).catch(() => {})}
                     >
                       Luluskan pendaftaran
@@ -167,6 +172,13 @@ export default function StudentProfileView({ role, param }) {
         <Stat label="Subjek" value={enrolled.length} hint={myWaits.length ? `${myWaits.length} dalam senarai menunggu` : `Sejak ${date(s.joined)}`} />
       </div>
 
+      {gaps.length > 0 && (
+        <p role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span>Pendaftaran belum lengkap: <span className="font-medium">{gaps.join(', ')}</span>. Supervisor hanya boleh meluluskan rekod yang lengkap.</span>
+          {canEdit && gaps.some((g) => g !== 'Pilihan kelas') && <button type="button" onClick={() => setDialog({ type: 'details' })} className="font-medium text-brand-700 hover:underline">Lengkapkan maklumat</button>}
+          {gaps.includes('Pilihan kelas') && <span>Pilih kelas dalam tab Kelas (Tambah subjek).</span>}
+        </p>
+      )}
       <Tabs
         className="mb-6"
         value={tab}
@@ -186,7 +198,7 @@ export default function StudentProfileView({ role, param }) {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="space-y-6 lg:col-span-2">
             <Card>
-              <CardHeader title="Maklumat pelajar" />
+              <CardHeader title="Maklumat pelajar" actions={canEdit && live && <Button size="sm" onClick={() => setDialog({ type: 'details' })}>Ubah maklumat</Button>} />
               <div className="p-5">
                 <DescriptionList
                   items={[
@@ -567,6 +579,7 @@ export default function StudentProfileView({ role, param }) {
           onSubmit={(v) => act('note', v, 'Catatan disimpan.')}
         />
       )}
+      {dialog?.type === 'details' && <StudentDetailsModal student={s} onClose={() => setDialog(null)} />}
       {dialog?.type === 'fee' && (
         <FormModal
           title="Yuran & diskaun" description="Kadar khas untuk kes khas (kadar lain atau kurang daripada subjek minimum). Diskaun tetap ditolak setiap invois bulanan." onClose={() => setDialog(null)}

@@ -157,9 +157,10 @@ export const leadsApi = {
     method: 'PATCH',
     body: JSON.stringify(data),
   }),
-  convertToStudent: (id, studentPayload = {}) => request(`/students/leads/${id}/convert_to_student/`, {
+  // CSV import: without commit the server only checks the rows (preview); with commit it creates the good ones
+  import: (data) => request('/students/leads/import/', {
     method: 'POST',
-    body: JSON.stringify(studentPayload),
+    body: JSON.stringify(data),
   }),
   // move / lost / activities: every stage change is written to the lead's activity log
   action: (id, name, data = {}) => request(`/students/leads/${id}/${name}/`, {

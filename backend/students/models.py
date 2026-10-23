@@ -106,9 +106,9 @@ class Lead(models.Model):
     # j-status.doc: the 8 conversion stages, in order. LOST sits outside the funnel.
     STAGES = [
         ('ENQUIRY', 'Enquiry'),
-        ('CONTACTED', 'Contacted'),
         ('CONTENT_1', 'Content 1'),
         ('CONTENT_2', 'Content 2'),
+        ('CONTENT_3', 'Content 3'),
         ('TRIAL', 'Free Trial'),
         ('WAITING_PAYMENT', 'Waiting Payment'),
         ('REGISTERED', 'Registered'),
@@ -119,11 +119,13 @@ class Lead(models.Model):
     STATUS_CHOICES = STAGES + [('LOST', 'Tidak Berminat (Lost)')]
 
     lead_id = models.CharField(max_length=30, unique=True)
-    student_name = models.CharField(max_length=150)
-    parent_name = models.CharField(max_length=150)
+    # A lead is saved with whatever is known: only the phone number and the source are required.
+    # The rest is filled in as the follow-up goes on; Lead.missing_fields says what is still empty.
+    student_name = models.CharField(max_length=150, blank=True)
+    parent_name = models.CharField(max_length=150, blank=True)
     phone = models.CharField(max_length=30)
     email = models.EmailField(blank=True)
-    form_level = models.CharField(max_length=20)
+    form_level = models.CharField(max_length=20, blank=True)
     school_name = models.CharField(max_length=150, blank=True)
     lead_source = models.CharField(max_length=50, default='WHATSAPP')
     interested_subjects = models.JSONField(default=list, blank=True)
@@ -149,6 +151,16 @@ class Lead(models.Model):
 
     def __str__(self):
         return f"[{self.lead_id}] {self.student_name} ({self.form_level}) - {self.status}"
+
+    # What a complete lead has, in the words staff use
+    DETAIL_LABELS = {
+        'student_name': 'Nama pelajar', 'parent_name': 'Nama ibu bapa', 'form_level': 'Tingkatan',
+        'school_name': 'Sekolah', 'interested_subjects': 'Subjek diminati',
+    }
+
+    @property
+    def missing_fields(self):
+        return [label for field, label in self.DETAIL_LABELS.items() if not getattr(self, field)]
 
     @property
     def reached_stage(self):

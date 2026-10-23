@@ -158,3 +158,17 @@ export function initials(name) {
     .map((w) => w[0].toUpperCase())
     .join('');
 }
+
+// 14:08 — the time of day of a stored timestamp, in this computer's clock
+export function clock(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+// The date n days before today, as YYYY-MM-DD
+export function daysAgoISO(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}

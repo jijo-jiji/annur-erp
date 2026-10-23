@@ -353,10 +353,11 @@ const ToastContext = createContext(() => {});
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
-  const notify = useCallback((message, tone = 'success') => {
+  // options: { action: { label, onClick }, duration } (an action such as "Buat asal" stays longer so it can be used)
+  const notify = useCallback((message, tone = 'success', options = {}) => {
     const id = Math.random().toString(36).slice(2);
-    setToasts((t) => [...t, { id, message, tone }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
+    setToasts((t) => [...t, { id, message, tone, action: options.action }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), options.duration ?? (options.action ? 10000 : 4000));
   }, []);
   const icons = { success: CheckCircle2, error: AlertCircle, info: Info };
   return (
@@ -369,6 +370,15 @@ export function ToastProvider({ children }) {
             <div key={t.id} role="status" className="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-lg bg-gray-900 px-4 py-3 text-sm text-white shadow-lg">
               <Icon className={cx('mt-0.5 size-4 shrink-0', t.tone === 'error' ? 'text-red-400' : t.tone === 'info' ? 'text-sky-300' : 'text-brand-300')} />
               <span className="flex-1">{t.message}</span>
+              {t.action && (
+                <button
+                  type="button"
+                  onClick={() => { setToasts((all) => all.filter((x) => x.id !== t.id)); t.action.onClick(); }}
+                  className="shrink-0 rounded px-2 py-0.5 text-[13px] font-semibold text-brand-300 hover:bg-white/10 hover:text-white"
+                >
+                  {t.action.label}
+                </button>
+              )}
               <button type="button" onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))} className="text-gray-400 hover:text-white" aria-label="Tutup">
                 <X className="size-4" />
               </button>

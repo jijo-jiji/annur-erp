@@ -44,7 +44,9 @@ export async function tryApi(request, who, method, url, data) {
   const token = await tokenFor(request, who);
   const res = await request.fetch(`/api/v1${url}`, { method, data, headers: { Authorization: `Token ${token}` } });
   const text = await res.text();
-  return { status: res.status(), ok: res.ok(), body: text ? JSON.parse(text) : null };
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; } // a 404 page is HTML, not JSON
+  return { status: res.status(), ok: res.ok(), body };
 }
 
 // Call the API as a user to prepare data a test needs (not the thing the test is checking)

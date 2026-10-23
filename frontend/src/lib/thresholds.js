@@ -18,11 +18,13 @@ export const THRESHOLDS = {
   upload_document_mb: 10,
   upload_feedback_mb: 50,
   upload_handout_mb: 25,
+  // Finished prospects stay on the board this many days
+  lead_board_days: 30,
   // Names of the lead stages
   lead_label_ENQUIRY: 'Enquiry',
-  lead_label_CONTACTED: 'Contacted',
   lead_label_CONTENT_1: 'Content 1',
   lead_label_CONTENT_2: 'Content 2',
+  lead_label_CONTENT_3: 'Content 3',
   lead_label_TRIAL: 'Free Trial',
   lead_label_WAITING_PAYMENT: 'Waiting Payment',
   lead_label_REGISTERED: 'Registered',
