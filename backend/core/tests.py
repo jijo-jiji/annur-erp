@@ -773,7 +773,7 @@ class TeacherRequestTests(RoleTestBase):
         self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json')
         self.teacher.refresh_from_db()
         self.assertEqual((self.teacher.phone_number, self.teacher.bank_account, self.teacher.teacher_type, float(self.teacher.rate_per_session)),
-                         ('019', '777', 'REPLACEMENT', 60.0))
+                         ('60191234019', '777', 'REPLACEMENT', 60.0))
 
     def test_a_teacher_with_classes_cannot_be_made_inactive(self):
         from academic.models import ClassTimetable, TimeSlot
