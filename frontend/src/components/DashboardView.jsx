@@ -4,7 +4,7 @@ import { BarChart3, CalendarClock, Check, ChevronRight, UserPlus, Wallet } from 
 import { dashboardApi } from '../api/client';
 import { routeOf } from '../context/AppContext';
 import { can } from '../lib/permissions';
-import { monthEnd, monthKey, studentsHref } from '../lib/drilldown';
+import { classesHref, invoicesHref, monthEnd, monthKey, receiptsHref, studentsHref, voucherHref, vouchersHref } from '../lib/drilldown';
 import { CURRENT_MONTH, date, DAY_LABEL, monthLabel, rm } from '../lib/format';
 import { Donut, STATUS_COLORS } from './Donut';
 import { BarChart, HBarList, Legend, SERIES_COLORS } from './charts';
@@ -56,16 +56,21 @@ function buildNotices(data, role) {
     if (count) out.push({ key: `${tab}-${out.length}`, tone, title, href: href ?? `#/${routeOf(tab)}`, action, detail });
   };
 
-  add(classes.over.length, 'red', `${classes.over.length} kelas melebihi had kerusi`, 'timetable', 'Lihat jadual', classes.over.map((c) => c.class_code).join(', '));
-  if (management) add(approvals.vouchers_pending_management, 'red', `${approvals.vouchers_pending_management} baucar melebihi ${ringgit(THRESHOLDS.voucher_tier2)} menunggu kelulusan anda`, 'expenses', 'Semak');
+  add(classes.over.length, 'red', `${classes.over.length} kelas melebihi had kerusi`, 'timetable', 'Lihat jadual', classes.over.map((c) => c.class_code).join(', '),
+    classesHref({ capacity: 'over' }, { expect: classes.over.length }));
+  if (management) {
+    add(approvals.vouchers_pending_management, 'red', `${approvals.vouchers_pending_management} baucar melebihi ${ringgit(THRESHOLDS.voucher_tier2)} menunggu kelulusan anda`, 'expenses', 'Semak', undefined,
+      vouchersHref({ status: 'PENDING_MANAGEMENT' }, { expect: approvals.vouchers_pending_management }));
+  }
   attendance.low_classes.forEach((c) => add(1, 'red', `Kehadiran ${c.class_code} ${c.rate}% dalam ${attendance.window_days} hari lepas`, 'attendance', 'Lihat', `${c.present}/${c.total} kehadiran`));
   add(approvals.registrations_pending, 'amber', `${approvals.registrations_pending} pendaftaran pelajar menunggu kelulusan`, 'students', approver ? 'Luluskan' : 'Lihat', undefined, '#/students?tab=approvals');
   // these students, with the same rule the number uses
   add(approvals.monthly_invoices_pending, 'amber', `${approvals.monthly_invoices_pending} pelajar aktif belum ada invois ${monthLabel(CURRENT_MONTH)}`, 'billing', 'Jana invois', undefined,
     studentsHref({ uninvoiced: data.today.slice(0, 7) }, { expect: approvals.monthly_invoices_pending }));
-  add(finance.outstanding > 0 ? 1 : 0, 'amber', `Tunggakan yuran ${rm(finance.outstanding)}`, 'billing', 'Susulan');
+  add(finance.outstanding > 0 ? 1 : 0, 'amber', `Tunggakan yuran ${rm(finance.outstanding)}`, 'billing', 'Susulan', undefined,
+    invoicesHref({ status: 'OUTSTANDING' }, { expect: finance.outstanding, unit: 'balance' }));
   add(approvals.lead_followups_due, 'amber', `${approvals.lead_followups_due} prospek perlu susulan`, 'leads', 'Hubungi', 'Lebih seminggu sejak tindakan terakhir');
-  add(classes.full.length, 'amber', `${classes.full.length} kelas penuh`, 'timetable', 'Lihat jadual');
+  add(classes.full.length, 'amber', `${classes.full.length} kelas penuh`, 'timetable', 'Lihat jadual', undefined, classesHref({ capacity: 'full' }, { expect: classes.full.length }));
   // Change requests: what waits for this role, what the user asked, and decisions not yet read; each links to its page
   const requestNotices = (byKind, tone, text, action) => Object.entries(byKind || {}).forEach(([kind, n]) => {
     const page = REQUEST_PAGES[kind];
@@ -75,7 +80,8 @@ function buildNotices(data, role) {
   requestNotices(approvals.change_requests_mine_by_kind, 'blue', (n, name) => `${n} permohonan perubahan ${name} anda menunggu kelulusan`, 'Lihat');
   requestNotices(approvals.change_requests_unseen_by_kind, 'blue', (n, name) => `${n} keputusan baharu pada permohonan perubahan ${name} anda`, 'Lihat');
   if (approver) {
-    add(approvals.vouchers_pending_supervisor, 'amber', `${approvals.vouchers_pending_supervisor} baucar ${ringgit(THRESHOLDS.voucher_tier1)} hingga ${ringgit(THRESHOLDS.voucher_tier2)} menunggu kelulusan`, 'expenses', 'Semak');
+    add(approvals.vouchers_pending_supervisor, 'amber', `${approvals.vouchers_pending_supervisor} baucar ${ringgit(THRESHOLDS.voucher_tier1)} hingga ${ringgit(THRESHOLDS.voucher_tier2)} menunggu kelulusan`, 'expenses', 'Semak', undefined,
+      vouchersHref({ status: 'PENDING_SUPERVISOR' }, { expect: approvals.vouchers_pending_supervisor }));
     add(approvals.reschedules_pending, 'amber', `${approvals.reschedules_pending} rekod batal / ganti kelas menunggu kelulusan`, 'reschedules', 'Luluskan');
     add(approvals.leave_pending, 'amber', `${approvals.leave_pending} permohonan cuti staf menunggu kelulusan`, 'staff_hr', 'Semak');
     add(approvals.master_data_pending, 'blue', `${approvals.master_data_pending} cadangan data induk menunggu kelulusan`, 'dynamic_master_data', 'Semak');
@@ -87,7 +93,7 @@ function buildNotices(data, role) {
     (staff?.birthdays || []).forEach((b) => add(1, 'blue', `Hari lahir ${b.name} ${b.days_left === 0 ? 'hari ini' : `dalam ${b.days_left} hari`}`, 'staff_hr', 'Lihat'));
   } else {
     const waiting = approvals.vouchers_pending_supervisor + approvals.vouchers_pending_management;
-    add(waiting, 'blue', `${waiting} baucar sedang menunggu kelulusan`, 'expenses');
+    add(waiting, 'blue', `${waiting} baucar sedang menunggu kelulusan`, 'expenses', 'Lihat', undefined, vouchersHref({ status: 'PENDING' }, { expect: waiting }));
     add(approvals.reschedules_pending, 'blue', `${approvals.reschedules_pending} rekod batal / ganti kelas menunggu kelulusan supervisor`, 'reschedules');
     add(approvals.master_data_pending, 'blue', `${approvals.master_data_pending} cadangan data induk menunggu kelulusan`, 'dynamic_master_data');
   }
@@ -99,7 +105,8 @@ function buildNotices(data, role) {
   }
   add(approvals.teacher_pay_to_record, 'blue', `${approvals.teacher_pay_to_record} bayaran elaun guru diluluskan, belum direkod dibayar`, 'teacher_payroll', 'Rekod');
   add(approvals.waitlist_waiting, 'blue', `${approvals.waitlist_waiting} pelajar dalam senarai menunggu`, 'students', 'Lihat', undefined, '#/students?tab=waitlist');
-  add(classes.near_full.length, 'blue', `${classes.near_full.length} kelas hampir penuh`, 'timetable', 'Lihat jadual', 'Baki dua kerusi atau kurang');
+  add(classes.near_full.length, 'blue', `${classes.near_full.length} kelas hampir penuh`, 'timetable', 'Lihat jadual', 'Baki dua kerusi atau kurang',
+    classesHref({ capacity: 'near' }, { expect: classes.near_full.length }));
 
   const order = { red: 0, amber: 1, blue: 2 };
   return out.sort((a, b) => order[a.tone] - order[b.tone]);
@@ -187,6 +194,9 @@ export default function DashboardView({ role }) {
   const notices = buildNotices(data, role);
   const { students, finance, attendance, classes } = data;
   const thisMonth = data.today.slice(0, 7);
+  const [thisYear, thisMonthNo] = thisMonth.split('-').map(Number);
+  const lastMonth = thisMonthNo === 1 ? monthKey(thisYear - 1, 12) : monthKey(thisYear, thisMonthNo - 1);
+  const collectedIn = (month, amount) => receiptsHref({ month }, { expect: amount, unit: 'total' });
   // A link to the students a figure counts; `expect` is the number the figure shows
   const sh = (filters, expect) => studentsHref(filters, { from: 'ringkasan', expect });
   const hintLink = (href, text) => <a href={href} className="relative z-10 hover:text-brand-700 hover:underline">{text}</a>;
@@ -235,7 +245,16 @@ export default function DashboardView({ role }) {
             href={sh({ status: 'ACTIVE' }, students.active)}
             hint={<>{hintLink(sh({ joined: thisMonth }, students.new_this_month), `${students.new_this_month} baharu bulan ini`)} · {hintLink(sh({ status: 'ON_HOLD' }, students.on_hold), `${students.on_hold} ditangguh`)}</>}
           />
-          <Stat label={`Kutipan ${monthLabel(CURRENT_MONTH)}`} value={rm(finance.collected_this_month)} hint={`Hari ini ${rm(finance.collected_today)} · tunggakan ${rm(finance.outstanding)}`} />
+          <Stat
+            label={`Kutipan ${monthLabel(CURRENT_MONTH)}`}
+            value={rm(finance.collected_this_month)}
+            href={collectedIn(thisMonth, finance.collected_this_month)}
+            hint={<>
+              {hintLink(receiptsHref({ from: data.today, to: data.today }, { expect: finance.collected_today, unit: 'total' }), `Hari ini ${rm(finance.collected_today)}`)}
+              {' · '}
+              {hintLink(invoicesHref({ status: 'OUTSTANDING' }, { expect: finance.outstanding, unit: 'balance' }), `tunggakan ${rm(finance.outstanding)}`)}
+            </>}
+          />
           {attendanceStat}
         </div>
         <ActionList items={notices} />
@@ -271,9 +290,9 @@ export default function DashboardView({ role }) {
         <Stat label="Tidak aktif" value={students.inactive} href={sh({ status: 'INACTIVE' }, students.inactive)} />
       </div>
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Kutipan hari ini" value={rm(finance.collected_today)} />
-        <Stat label="Kutipan bulan ini" value={rm(finance.collected_this_month)} hint={management ? growthHint(finance.sales_growth_pct, 'Tiada data bulan lepas') : undefined} />
-        <Stat label="Tunggakan yuran" value={rm(finance.outstanding)} tone={finance.outstanding > 0 ? 'red' : undefined} />
+        <Stat label="Kutipan hari ini" value={rm(finance.collected_today)} href={receiptsHref({ from: data.today, to: data.today }, { expect: finance.collected_today, unit: 'total' })} />
+        <Stat label="Kutipan bulan ini" value={rm(finance.collected_this_month)} href={collectedIn(thisMonth, finance.collected_this_month)} hint={management ? growthHint(finance.sales_growth_pct, 'Tiada data bulan lepas') : undefined} />
+        <Stat label="Tunggakan yuran" value={rm(finance.outstanding)} href={invoicesHref({ status: 'OUTSTANDING' }, { expect: finance.outstanding, unit: 'balance' })} tone={finance.outstanding > 0 ? 'red' : undefined} />
         {attendanceStat}
       </div>
 
@@ -290,14 +309,19 @@ export default function DashboardView({ role }) {
           <CardHeader title="Kapasiti kelas" description="Dikira daripada pendaftaran kelas sebenar" actions={<Button as="a" size="sm" href="#/timetable">Jadual</Button>} />
           <ul className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
             {capacity.map((c) => (
-              <li key={c.id} className={cx('rounded-md border px-3 py-2.5 text-sm', c.tone === 'red' ? 'border-red-200 bg-red-50/50' : 'border-gray-200')}>
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-medium text-gray-900">{c.class_code}</p>
-                  <Badge tone={c.tone}>{c.text}</Badge>
-                </div>
-                <p className="mt-0.5 text-[13px] text-gray-500">
-                  {DAY_LABEL[c.day] ?? c.day} {c.time} · <span className="tnum">{c.enrolled}/{c.max_seats}</span>{c.teacher ? ` · ${c.teacher}` : ''}
-                </p>
+              <li key={c.id}>
+                <a
+                  href={classesHref({ id: c.id }, { expect: 1 })}
+                  className={cx('block rounded-md border px-3 py-2.5 text-sm hover:border-brand-400', c.tone === 'red' ? 'border-red-200 bg-red-50/50' : 'border-gray-200')}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-medium text-gray-900">{c.class_code}</p>
+                    <Badge tone={c.tone}>{c.text}</Badge>
+                  </div>
+                  <p className="mt-0.5 text-[13px] text-gray-500">
+                    {DAY_LABEL[c.day] ?? c.day} {c.time} · <span className="tnum">{c.enrolled}/{c.max_seats}</span>{c.teacher ? ` · ${c.teacher}` : ''}
+                  </p>
+                </a>
               </li>
             ))}
           </ul>
@@ -359,12 +383,15 @@ export default function DashboardView({ role }) {
               <CardHeader title="Kategori sekolah" description="Pelajar aktif" />
               <div className="p-5"><Donut rows={students.by_school_category.map((c) => ({ label: c.category, value: c.count, href: sh({ status: 'ACTIVE', school_category: c.value }, c.count) }))} /></div>
             </Card>
-            <SubjectsByForm rows={students.subjects_by_form} />
+            <SubjectsByForm rows={students.subjects_by_form} hrefFor={(form, x) => sh({ status: 'ACTIVE', form, subject: x.code }, x.count)} />
             {management && (
               <Card>
                 <CardHeader title="Status kutipan invois" description="Semua invois" />
                 <div className="p-5">
-                  <Donut rows={INVOICE_STATUS.map(([status, label, color]) => ({ label, color, value: finance.collection_status.find((x) => x.status === status)?.count ?? 0 }))} />
+                  <Donut rows={INVOICE_STATUS.map(([status, label, color]) => {
+                    const value = finance.collection_status.find((x) => x.status === status)?.count ?? 0;
+                    return { label, color, value, href: value ? invoicesHref({ status }, { expect: value }) : undefined };
+                  })} />
                 </div>
               </Card>
             )}
@@ -379,14 +406,14 @@ export default function DashboardView({ role }) {
             <CardHeader title="Jualan dan perbelanjaan bulan ini" />
             <dl className="divide-y divide-gray-100 px-5 text-sm">
               {[
-                ['Kutipan bulan ini', rm(finance.collected_this_month)],
-                ['Kutipan bulan lepas', rm(finance.collected_last_month)],
-                ['Perbelanjaan (baucar disahkan / diluluskan)', rm(finance.expenses_this_month)],
-                ['Pertumbuhan jualan', growthHint(finance.sales_growth_pct, 'Tiada data bulan lepas')],
-              ].map(([k, v]) => (
+                ['Kutipan bulan ini', rm(finance.collected_this_month), collectedIn(thisMonth, finance.collected_this_month)],
+                ['Kutipan bulan lepas', rm(finance.collected_last_month), collectedIn(lastMonth, finance.collected_last_month)],
+                ['Perbelanjaan (baucar disahkan / diluluskan)', rm(finance.expenses_this_month), vouchersHref({ status: 'COUNTED', month: thisMonth }, { expect: finance.expenses_this_month, unit: 'total' })],
+                ['Pertumbuhan jualan', growthHint(finance.sales_growth_pct, 'Tiada data bulan lepas'), collectedIn(thisMonth, finance.collected_this_month)],
+              ].map(([k, v, to]) => (
                 <div key={k} className="flex justify-between gap-4 py-3">
                   <dt className="text-gray-600">{k}</dt>
-                  <dd className="font-medium text-gray-900 tnum">{v}</dd>
+                  <dd className="font-medium text-gray-900 tnum">{to ? <a href={to} className="hover:text-brand-700 hover:underline">{v}</a> : v}</dd>
                 </div>
               ))}
             </dl>
@@ -398,12 +425,14 @@ export default function DashboardView({ role }) {
             ) : (
               <ul className="divide-y divide-gray-100">
                 {data.pending_vouchers.map((pv) => (
-                  <li key={pv.id} className="flex items-center justify-between gap-4 px-5 py-3 text-sm">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-gray-900">{pv.pv_number} · {pv.vendor || '—'}</p>
-                      <p className="text-[13px] text-gray-500">{pv.category} · {pv.status === 'PENDING_MANAGEMENT' ? 'kuasa pengurusan' : 'tahap supervisor'}</p>
-                    </div>
-                    <span className="font-medium tnum">{rm(pv.amount)}</span>
+                  <li key={pv.id}>
+                    <a href={voucherHref(pv.pv_number)} className="flex items-center justify-between gap-4 px-5 py-3 text-sm hover:bg-gray-50">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-gray-900">{pv.pv_number} · {pv.vendor || '—'}</p>
+                        <p className="text-[13px] text-gray-500">{pv.category} · {pv.status === 'PENDING_MANAGEMENT' ? 'kuasa pengurusan' : 'tahap supervisor'}</p>
+                      </div>
+                      <span className="font-medium tnum">{rm(pv.amount)}</span>
+                    </a>
                   </li>
                 ))}
               </ul>
@@ -416,7 +445,7 @@ export default function DashboardView({ role }) {
 }
 
 // Subjects taken, one grade at a time
-function SubjectsByForm({ rows }) {
+function SubjectsByForm({ rows, hrefFor }) {
   const [form, setForm] = useState(rows[0]?.form || '');
   const current = rows.find((f) => f.form === form) || rows[0];
   return (
@@ -436,7 +465,7 @@ function SubjectsByForm({ rows }) {
         )}
       />
       <div className="p-5">
-        {current ? <Donut rows={current.subjects.map((x) => ({ label: x.subject, value: x.count }))} /> : <p className="text-sm text-gray-500">Tiada pendaftaran kelas.</p>}
+        {current ? <Donut rows={current.subjects.map((x) => ({ label: x.subject, value: x.count, href: hrefFor?.(current.form, x) }))} /> : <p className="text-sm text-gray-500">Tiada pendaftaran kelas.</p>}
       </div>
     </Card>
   );

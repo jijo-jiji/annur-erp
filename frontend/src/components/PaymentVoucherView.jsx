@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Building2, Download, FileText, Plus, Printer } from 'lucide-react';
+import { expensesApi } from '../api/client';
 import { useApp } from '../context/AppContext';
+import { describeVoucherFilters, useDrill, useMatching, VOUCHER_FILTERS } from '../lib/drilldown';
+import { navigate } from '../lib/nav';
 import { CENTRE } from '../lib/config';
 import { useStore } from '../store';
 import { voucherTier } from '../lib/domain';
@@ -11,6 +14,7 @@ import { AttachmentList, SignaturePad } from './Attachments';
 import { downloadCsv } from '../lib/csv';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import ExpenseCategories from './ExpenseCategories';
+import DrilldownBar from './DrilldownBar';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, DescriptionList, EmptyState, Input, Modal, PageHeader, Select, Table, Tabs, Td, Textarea, Th } from './ui';
 
@@ -69,12 +73,18 @@ export default function PaymentVoucherView({ role }) {
   const [tab, setTab] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'all');
   const [creating, setCreating] = useState(false);
   const [viewing, setViewing] = useState(null);
+  // Opened from a figure on Ringkasan: the address carries a filter, or the one voucher to open (see lib/drilldown.js)
+  const drill = useDrill(VOUCHER_FILTERS);
+  const matched = useMatching(drill, expensesApi.matchingVouchers);
+  const openParam = useMemo(() => new URLSearchParams(window.location.hash.split('?')[1]).get('open'), []);
+  const [dismissed, setDismissed] = useState(false);
   const [rejecting, setRejecting] = useState(null);
   const [vendorDialog, setVendorDialog] = useState(null); // { type: 'add' } | { type: 'edit', vendor }
   const { requests: vendorRequests, load: loadVendorRequests } = useChangeRequests('VENDOR');
 
   const pending = vouchers.filter((v) => v.status === 'PENDING');
-  const rows = tab === 'pending' ? pending : vouchers;
+  const shownTab = drill ? 'all' : tab;
+  const rows = drill ? vouchers.filter((v) => matched?.ids.has(v.no)) : tab === 'pending' ? pending : vouchers;
   // Vendor details: Supervisor asks, Management approves (Management's own changes apply at once)
   const canManageVendors = can(role, 'vendors.manage');
   const vendorDirect = role === 'MANAGEMENT';
@@ -84,7 +94,8 @@ export default function PaymentVoucherView({ role }) {
     showToast(done.status === 'PENDING' ? 'Permohonan dihantar. Ia berkuat kuasa selepas diluluskan oleh Pengurusan.' : 'Maklumat pembekal disimpan.');
     await loadVendorRequests();
   };
-  const open = viewing && vouchers.find((v) => v.pk === viewing);
+  const autoOpen = !dismissed && openParam ? vouchers.find((v) => v.no === openParam)?.pk : null; // one voucher named in the address
+  const open = (viewing ?? autoOpen) && vouchers.find((v) => v.pk === (viewing ?? autoOpen));
 
   const exportCsv = () => downloadCsv('baucar-bayaran.csv',
     ['No. PV', 'Tarikh', 'Penerima', 'Kategori', 'Subkategori', 'Perkara', 'Kaedah', 'No. rujukan', 'Amaun (RM)', 'Status', 'Disediakan oleh', 'Diluluskan oleh'],
@@ -118,8 +129,8 @@ export default function PaymentVoucherView({ role }) {
 
       <Tabs
         className="mb-4"
-        value={tab}
-        onChange={setTab}
+        value={shownTab}
+        onChange={(t) => { setTab(t); if (drill) navigate('vouchers'); }}
         items={[
           { value: 'all', label: 'Semua baucar', count: vouchers.length },
           { value: 'pending', label: 'Menunggu kelulusan', count: pending.length },
@@ -128,9 +139,9 @@ export default function PaymentVoucherView({ role }) {
         ]}
       />
 
-      {tab === 'categories' && can(role, 'categories.manage') ? (
+      {shownTab === 'categories' && can(role, 'categories.manage') ? (
         <ExpenseCategories role={role} />
-      ) : tab === 'vendors' ? (
+      ) : shownTab === 'vendors' ? (
         <div className="space-y-6">
         <Card>
           <CardHeader
@@ -181,9 +192,21 @@ export default function PaymentVoucherView({ role }) {
         )}
         </div>
       ) : (
+        <>
+        {drill && (
+          <DrilldownBar
+            chips={describeVoucherFilters(drill.filters)}
+            result={matched}
+            expect={drill.expect}
+            unit={drill.unit}
+            src={drill.src}
+            noun="baucar"
+            onClear={() => navigate('vouchers')}
+          />
+        )}
         <Card>
           {rows.length === 0 ? (
-            <EmptyState icon={FileText} title={tab === 'pending' ? 'Tiada baucar menunggu kelulusan' : 'Belum ada baucar'} />
+            <EmptyState icon={FileText} title={drill ? (matched ? 'Tiada baucar sepadan dengan penapis' : 'Memuatkan…') : tab === 'pending' ? 'Tiada baucar menunggu kelulusan' : 'Belum ada baucar'} />
           ) : (
             <Table>
               <thead>
@@ -231,10 +254,11 @@ export default function PaymentVoucherView({ role }) {
             </Table>
           )}
         </Card>
+        </>
       )}
 
       {creating && <CreateModal onClose={() => setCreating(false)} onCreated={(pv) => { setCreating(false); setViewing(pv.id); }} />}
-      {open && <VoucherModal v={open} onClose={() => setViewing(null)} />}
+      {open && <VoucherModal v={open} onClose={() => { setViewing(null); setDismissed(true); }} />}
       {rejecting && (
         <FormModal
           title={`Tolak ${rejecting.no}`}

@@ -7,6 +7,8 @@ from billing.models import Invoice, PaymentReceipt
 from business_config.models import DynamicMasterData
 from expenses.models import PaymentVoucher
 from students.models import Student, StudentExamResult, StudentEvent, ClassWaitlist, Lead
+from academic.drilldown import capacity_state
+from expenses.drilldown import COUNTED_STATUSES
 from students.drilldown import REGISTERED_STATUSES, STAY_BUCKETS, stay_days, stay_key, uninvoiced_students
 from students.views import attendance_rates
 from teachers.staff import alerts as staff_alerts
@@ -22,7 +24,7 @@ def form_order(present):
     """Grades highest first (from master data), then any older codes still in use."""
     order = grades.display_order()
     return order + sorted(set(present) - set(order))
-COUNTED_PV_STATUSES = ('VERIFIED_ADMIN', 'APPROVED_SUPERVISOR', 'APPROVED_MANAGEMENT')
+COUNTED_PV_STATUSES = COUNTED_STATUSES  # spending counts once a voucher is verified or approved (expenses/drilldown.py)
 LOW_GRADES = ('D', 'E', 'F', 'G', 'TH')
 def month_end(year, month):
     return (date(year, month, 1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
@@ -110,16 +112,21 @@ def build_dashboard(role, today=None, user=None):
     new_this = students.filter(join_date__gte=month_start, join_date__lt=next_month).count()
     new_last = students.filter(join_date__gte=prev_start, join_date__lt=month_start).count()
 
-    subjects_by_form = defaultdict(lambda: defaultdict(int))
-    for form, subject in active.values_list('form_level', 'enrolled_classes__subject__name'):
-        if subject:
-            subjects_by_form[form][subject] += 1
+    # Students taking each subject, by tingkatan: a student counts once per subject (the list behind it is the
+    # active students of that tingkatan enrolled in a class of the subject)
+    subjects_by_form = defaultdict(dict)
+    seen = set()
+    for sid, form, code, name in active.values_list('id', 'form_level', 'enrolled_classes__subject__code', 'enrolled_classes__subject__name'):
+        if code and (sid, code) not in seen:
+            seen.add((sid, code))
+            subjects_by_form[form].setdefault(code, {'subject': name, 'code': code, 'count': 0})['count'] += 1
 
     # Classes: seats come from real enrolments
     classes = list(ClassTimetable.with_enrolment().select_related('slot', 'subject', 'teacher', 'classroom'))
-    over = [class_row(c) for c in classes if c.available_seats < 0]
-    full = [class_row(c) for c in classes if c.available_seats == 0]
-    near_full = [class_row(c) for c in classes if 0 < c.available_seats <= limits['nearly_full_seats']]
+    near_seats = limits['nearly_full_seats']
+    over = [class_row(c) for c in classes if capacity_state(c, near_seats) == 'over']
+    full = [class_row(c) for c in classes if capacity_state(c, near_seats) == 'full']
+    near_full = [class_row(c) for c in classes if capacity_state(c, near_seats) == 'near']
 
     receipts = PaymentReceipt.objects.all()
     collected_today = receipts.filter(payment_date=today).aggregate(t=Sum('amount_paid'))['t']
@@ -216,7 +223,7 @@ def build_dashboard(role, today=None, user=None):
             ],
             'subjects_by_form': [
                 {'form': f, 'label': form_labels.get(f, f),
-                 'subjects': sorted(({'subject': k, 'count': v} for k, v in subjects_by_form[f].items()), key=lambda x: -x['count'])}
+                 'subjects': sorted(subjects_by_form[f].values(), key=lambda x: -x['count'])}
                 for f in form_order(subjects_by_form) if f in subjects_by_form
             ],
             'new_this_month': new_this,

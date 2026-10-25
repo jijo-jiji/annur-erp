@@ -225,6 +225,9 @@ export const attendanceApi = {
 // 4. Billing API
 export const billingApi = {
   getInvoices: () => request('/billing/invoices/'),
+  // The invoices / receipts a dashboard or report figure counts: { count, ids, ...totals } (same rule as the figure)
+  matchingInvoices: (params = {}) => request(`/billing/invoices/matching/?${new URLSearchParams(params)}`),
+  matchingReceipts: (params = {}) => request(`/billing/receipts/matching/?${new URLSearchParams(params)}`),
   getReceipts: () => request('/billing/receipts/'),
   payInvoice: (invoiceId, paymentData) => request('/billing/receipts/', {
     method: 'POST',
@@ -257,6 +260,7 @@ export const billingApi = {
 export const expensesApi = {
   getVendors: () => request('/expenses/vendors/'),
   getVouchers: () => request('/expenses/vouchers/'),
+  matchingVouchers: (params = {}) => request(`/expenses/vouchers/matching/?${new URLSearchParams(params)}`),
   createVoucher: (data) => request('/expenses/vouchers/', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -281,6 +285,7 @@ export const academicApi = {
   getTimeSlots: () => request('/academic/time-slots/'),
   getClosedDates: () => request('/academic/closed-dates/'),
   getTimetable: () => request('/academic/timetable/'),
+  matchingClasses: (params = {}) => request(`/academic/timetable/matching/?${new URLSearchParams(params)}`),
   createClass: (data) => request('/academic/timetable/', {
     method: 'POST',
     body: JSON.stringify(data),

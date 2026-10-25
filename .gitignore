@@ -9,6 +9,8 @@ __pycache__/
 *.py[cod]
 *.class
 *.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 db.sqlite3
 *.log
 .env

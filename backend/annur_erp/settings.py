@@ -145,14 +145,18 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': DATA_DIR / 'db.sqlite3',
+        # Several people use the system at once, and even opening a list can write (overdue invoices are marked as the
+        # invoice list is read). Without these settings SQLite fails a write that arrives while a page is loading with
+        # "database is locked", seen as an occasional 500. WAL lets readers and the writer work side by side; IMMEDIATE
+        # takes the write lock when a transaction starts instead of failing when a reader tries to become a writer;
+        # the timeout waits for a busy moment instead of giving up.
+        'OPTIONS': {
+            'timeout': 20,
+            'transaction_mode': 'IMMEDIATE',
+            'init_command': 'PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;',
+        },
     }
 }
-if PRODUCTION:
-    DATABASES['default']['OPTIONS'] = {
-        'timeout': 20,  # wait for a concurrent write instead of failing
-        'transaction_mode': 'IMMEDIATE',
-        'init_command': 'PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;',
-    }
 
 
 # Password validation

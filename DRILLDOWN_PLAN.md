@@ -1,9 +1,16 @@
-# Dashboard and report drill-down: plan for confirmation (not built yet)
+# Dashboard and report drill-down
+
+**Status:** step 1 (student figures) and step 2 (money, vouchers, classes) are built and tested. Step 3 (Laporan, and
+the teacher and attendance figures) is next. Two changes from the first plan, found while building:
+- "Subjek mengikut tingkatan" slices open **Pelajar** (the active students of that tingkatan taking the subject), not
+  Jadual kelas: the figure counts students, so the student list is the one that adds up to it.
+- "Guru aktif", "Permit hampir / telah luput" and "Kehadiran 30 hari lepas" move to step 3: their lists are the
+  Guru & elaun filters and the attendance history, which Laporan also needs.
 
 **The request:** every figure on *Ringkasan* (Ringkas and Terperinci) and *Laporan* opens the list behind it, so a
 number can be checked by looking at the records. Clicking "Jumlah pelajar" shows the students.
 
-## How it will work
+## How it works
 
 1. **A number and its list use one rule.** Today the dashboard counts on the server and each list filters in the
    browser, so they can drift apart. Each figure gets a name (for example `students.active_monthly`) and the server

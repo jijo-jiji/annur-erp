@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { request } from '../api/client';
 import { loadThresholds } from '../lib/thresholds';
 import { Badge, Button, Card, CardHeader, Checkbox, Input, useToast } from './ui';
@@ -24,7 +24,17 @@ export default function ThresholdsPanel({ editable }) {
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(() => request('/thresholds/').then((data) => { setRows(data); setDraft({}); }).catch(() => notify('Gagal memuat tetapan.', 'error')), [notify]);
+  // Only the newest load may reset the draft; an older answer arriving late would wipe what has been typed
+  const latest = useRef(0);
+  const load = useCallback(() => {
+    const mine = ++latest.current;
+    return request('/thresholds/')
+      .then((data) => {
+        if (mine !== latest.current) return;
+        setRows(data); setDraft({});
+      })
+      .catch(() => notify('Gagal memuat tetapan.', 'error'));
+  }, [notify]);
   useEffect(() => { load(); }, [load]);
 
   const changed = Object.fromEntries(Object.entries(draft).filter(([name, v]) => String(v) !== String(rows.find((r) => r.name === name)?.value)));

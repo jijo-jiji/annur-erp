@@ -7,6 +7,12 @@ import { signInAs } from './support/auth';
 const MONTHS = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogo', 'Sep', 'Okt', 'Nov', 'Dis'];
 const bar = (page) => page.getByRole('region', { name: 'Penapis dari paparan' });
 
+// The list has answered, and it agrees with the figure that opened it (the bar says so when it does not)
+async function agrees(page) {
+  await expect(bar(page)).not.toContainText('Memuatkan');
+  await expect(bar(page)).not.toContainText('menunjukkan');
+}
+
 // The student rows on the list (not the header)
 async function studentRows(page) {
   await expect(bar(page)).not.toContainText('Memuatkan');
@@ -43,7 +49,7 @@ test.describe('Figures open the students they count', () => {
       await expect(bar(page)).toContainText('Dari Ringkasan');
       for (const chip of chips) await expect(bar(page)).toContainText(chip);
       await expect(bar(page)).toContainText(`${shown} pelajar`);
-      await expect(bar(page)).not.toContainText('menunjukkan'); // the figure and the list agree
+      await agrees(page); // the figure and the list agree
       if (shown === 0) await expect(page.getByText('Tiada pelajar ditemui')).toBeVisible();
       else expect(await studentRows(page)).toBe(shown);
     });
@@ -71,7 +77,7 @@ test.describe('Figures open the students they count', () => {
     await link.click();
     await expect(bar(page)).toContainText('Pada');
     await expect(bar(page)).toContainText(`${value} pelajar`);
-    await expect(bar(page)).not.toContainText('menunjukkan');
+    await agrees(page);
     expect(await studentRows(page)).toBe(value);
   });
 
@@ -88,7 +94,7 @@ test.describe('Figures open the students they count', () => {
     await expect(page.getByText('Status pelajar', { exact: true })).toBeVisible();
     await page.locator('a', { hasText: /^Aktif\s*\d+/ }).first().click();
     await expect(bar(page)).toContainText('Aktif');
-    await expect(bar(page)).not.toContainText('menunjukkan');
+    await agrees(page);
   });
 
   test('in the short view the active students and the two small figures under it open their lists', async ({ page }) => {
@@ -103,12 +109,12 @@ test.describe('Figures open the students they count', () => {
 
     await page.getByRole('link', { name: /baharu bulan ini$/ }).click();
     await expect(bar(page)).toContainText(/Daftar/);
-    await expect(bar(page)).not.toContainText('menunjukkan');
+    await agrees(page);
     await page.goBack();
 
     await page.getByRole('link', { name: /ditangguh$/ }).click();
     await expect(bar(page)).toContainText('Ditangguh');
-    await expect(bar(page)).not.toContainText('menunjukkan');
+    await agrees(page);
   });
 
   test('"Perlu tindakan": students without this month\'s invoice open that very list', async ({ page }) => {
@@ -144,7 +150,7 @@ test.describe('The filter bar', () => {
 
   test('says so when the figure and the list disagree, instead of hiding it', async ({ page }) => {
     await signInAs(page, 'ADMIN');
-    await page.goto('/#/students?status=ACTIVE&from=ringkasan&expect=999');
+    await page.goto('/#/students?status=ACTIVE&src=ringkasan&expect=999');
     await expect(bar(page)).toContainText('Ringkasan menunjukkan 999');
   });
 

@@ -1,4 +1,7 @@
 import { useMemo, useState } from 'react';
+import { academicApi } from '../api/client';
+import { CLASS_FILTERS, describeClassFilters, useDrill, useMatching } from '../lib/drilldown';
+import DrilldownBar from './DrilldownBar';
 import { CalendarDays, Download, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
 import { DAYS } from '../lib/config';
 import { useStore } from '../store';
@@ -19,6 +22,9 @@ export default function TimetableView({ role }) {
   const [form, setForm] = useState('ALL');
   const [teacher, setTeacher] = useState('ALL');
   const [fullOnly, setFullOnly] = useState(false);
+  // Opened from a figure on Ringkasan: the address carries the filter (see lib/drilldown.js)
+  const drill = useDrill(CLASS_FILTERS);
+  const matched = useMatching(drill, academicApi.matchingClasses);
   const [editing, setEditing] = useState(null); // class being edited, or {} for a new one
   const [changesKey, setChangesKey] = useState(0);
   const canEdit = can(role, 'timetable.edit');
@@ -31,9 +37,11 @@ export default function TimetableView({ role }) {
   const filtered = useMemo(
     () =>
       classes
-        .filter((c) => (form === 'ALL' || c.form === form) && (teacher === 'ALL' || c.teacher === teacher) && (!fullOnly || c.enrolled >= c.max))
+        .filter((c) => (drill
+          ? Boolean(matched?.ids.has(c.id)) // the server's answer, not the screen's own filters
+          : (form === 'ALL' || c.form === form) && (teacher === 'ALL' || c.teacher === teacher) && (!fullOnly || c.enrolled >= c.max)))
         .sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || a.start.localeCompare(b.start) || a.form.localeCompare(b.form)),
-    [classes, form, teacher, fullOnly],
+    [classes, form, teacher, fullOnly, drill, matched],
   );
 
   const teachingTeachers = teachers.filter((t) => classes.some((c) => c.teacher === t.code));
@@ -62,7 +70,19 @@ export default function TimetableView({ role }) {
         </div>
       )}
 
+      {drill && (
+        <DrilldownBar
+          chips={describeClassFilters(drill.filters, { subject: (code) => subjects.find((x) => x.code === code)?.name })}
+          result={matched}
+          expect={drill.expect}
+          unit={drill.unit}
+          src={drill.src}
+          noun="kelas"
+          onClear={() => navigate('timetable')}
+        />
+      )}
       <div className="mb-4 flex flex-wrap items-center gap-3">
+        {!drill && <>
         <select value={form} onChange={(e) => setForm(e.target.value)} aria-label="Tapis tingkatan" className={selectClass}>
           <option value="ALL">Semua tingkatan</option>
           {FORMS.map((f) => (
@@ -83,6 +103,7 @@ export default function TimetableView({ role }) {
           <input type="checkbox" checked={fullOnly} onChange={(e) => setFullOnly(e.target.checked)} className="size-4" />
           Kelas penuh sahaja
         </label>
+        </>}
         <span className="ml-auto text-sm text-gray-500">
           {filtered.length} kelas{over > 0 && <> · <span className="font-medium text-red-700">{over} melebihi had</span></>}
         </span>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { request } from '../api/client';
 import { loadCentre } from '../lib/centre';
 import { date } from '../lib/format';
@@ -23,9 +23,18 @@ export default function CentrePanel() {
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(() => Promise.all([request('/centre/profile/'), request('/centre/events/')])
-    .then(([profile, history]) => { setF(profile); setSaved(profile); setEvents(history); })
-    .catch(() => notify('Gagal memuat maklumat pusat.', 'error')), [notify]);
+  // Only the newest load may fill the form. An older answer arriving late (the page asks twice while it opens in
+  // development) would otherwise wipe what has been typed in the meantime.
+  const latest = useRef(0);
+  const load = useCallback(() => {
+    const mine = ++latest.current;
+    return Promise.all([request('/centre/profile/'), request('/centre/events/')])
+      .then(([profile, history]) => {
+        if (mine !== latest.current) return;
+        setF(profile); setSaved(profile); setEvents(history);
+      })
+      .catch(() => notify('Gagal memuat maklumat pusat.', 'error'));
+  }, [notify]);
   useEffect(() => { load(); }, [load]);
 
   if (!f) return <p className="py-10 text-center text-sm text-gray-500">Memuatkan…</p>;

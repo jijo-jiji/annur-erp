@@ -85,6 +85,7 @@ def students_matching(params, today=None):
     as_at          YYYY-MM-DD: registered students on the books that day
     stay           length of study bucket (lt3, 3to6, 6to12, 1to2, gt2)
     uninvoiced     YYYY-MM: active monthly students with classes and no invoice for that month
+    subject        subject code: students enrolled in a class of that subject
 
     The date filters count registered students, as the dashboard does, unless a status is given."""
     today = today or date.today()
@@ -119,4 +120,6 @@ def students_matching(params, today=None):
     if params.get('uninvoiced'):
         first, _ = month_range(params['uninvoiced'], 'uninvoiced')
         qs = qs.filter(id__in=uninvoiced_students(first).values('id'))
+    if params.get('subject'):
+        qs = qs.filter(id__in=Student.objects.filter(enrolled_classes__subject__code=params['subject']).values('id'))
     return qs

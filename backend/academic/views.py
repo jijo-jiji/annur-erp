@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from django.db import transaction
 from django.utils import timezone
 from core.permissions import APPROVER_ROLES, MANAGEMENT, display_name, get_role, require_role
+from . import drilldown
 from .models import Classroom, TimeSlot, ClosedDate, ClassTimetable, ClassRescheduleLog, LessonHandout, TimetableChange
 from .serializers import (
     ClassroomSerializer, TimeSlotSerializer, ClosedDateSerializer, ClassTimetableSerializer,
@@ -52,6 +53,12 @@ class ClassTimetableViewSet(viewsets.ModelViewSet):
     ).prefetch_related('teacher__subjects_qualified')
     serializer_class = ClassTimetableSerializer
     write_roles = APPROVER_ROLES
+
+    @action(detail=False, methods=['get'])
+    def matching(self, request):
+        """The classes a dashboard figure counts (see academic/drilldown.py)."""
+        classes = drilldown.classes_matching(request.query_params)
+        return Response({'count': len(classes), 'ids': [c.id for c in classes]})
 
     def _request_change(self, action_name, instance=None, data=None):
         by = display_name(self.request.user)

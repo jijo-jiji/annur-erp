@@ -102,7 +102,7 @@ class StudentViewSet(viewsets.ModelViewSet):
     def matching(self, request):
         """The students a dashboard or report figure counts, for the list it opens (see students/drilldown.py)."""
         ids = list(drilldown.students_matching(request.query_params).order_by('student_id').values_list('student_id', flat=True))
-        return Response({'count': len(ids), 'student_ids': ids})
+        return Response({'count': len(ids), 'ids': ids})
 
     @action(detail=False, methods=['post'])
     def promote(self, request):

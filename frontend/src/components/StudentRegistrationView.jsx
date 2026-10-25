@@ -8,7 +8,7 @@ import { date, DAY_LABEL, FORMS, formLabel, formShort, initials, rm, STREAM_LABE
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
-import { describeStudentFilters, readStudentDrill } from '../lib/drilldown';
+import { describeStudentFilters, STUDENT_FILTERS, useDrill, useMatching } from '../lib/drilldown';
 import DrilldownBar from './DrilldownBar';
 import { can } from '../lib/permissions';
 import { downloadCsv } from '../lib/csv';
@@ -46,16 +46,8 @@ function StudentsHome({ role, canEdit }) {
   const active = students.filter((s) => s.status === 'ACTIVE').length;
 
   // Opened from a figure on Ringkasan or Laporan: the address carries the filter (see lib/drilldown.js)
-  const [drill, setDrill] = useState(readStudentDrill);
-  useEffect(() => {
-    const onHash = () => {
-      const next = readStudentDrill();
-      setDrill(next);
-      if (next) setTab('list');
-    };
-    window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
-  }, []);
+  const drill = useDrill(STUDENT_FILTERS);
+  const shownTab = drill ? 'list' : tab;
 
   return (
     <>
@@ -72,8 +64,8 @@ function StudentsHome({ role, canEdit }) {
       />
       <Tabs
         className="mb-4"
-        value={tab}
-        onChange={setTab}
+        value={shownTab}
+        onChange={(t) => { setTab(t); if (drill) navigate('students'); }}
         items={[
           { value: 'list', label: 'Senarai' },
           { value: 'approvals', label: 'Kelulusan', count: pending.length },
@@ -83,12 +75,12 @@ function StudentsHome({ role, canEdit }) {
           ...(can(role, 'students.promote') ? [{ value: 'promote', label: 'Naik tingkatan' }] : []),
         ]}
       />
-      {tab === 'list' && <StudentList drill={drill} />}
-      {tab === 'approvals' && <Approvals role={role} pending={pending} />}
-      {tab === 'waitlist' && <WaitingList role={role} />}
-      {tab === 'history' && <HistoryReport />}
-      {tab === 'gallery' && <FeedbackGallery canDelete={can(role, 'students.approve')} />}
-      {tab === 'promote' && can(role, 'students.promote') && <PromotionPanel />}
+      {shownTab === 'list' && <StudentList drill={drill} />}
+      {shownTab === 'approvals' && <Approvals role={role} pending={pending} />}
+      {shownTab === 'waitlist' && <WaitingList role={role} />}
+      {shownTab === 'history' && <HistoryReport />}
+      {shownTab === 'gallery' && <FeedbackGallery canDelete={can(role, 'students.approve')} />}
+      {shownTab === 'promote' && can(role, 'students.promote') && <PromotionPanel />}
     </>
   );
 }
@@ -96,7 +88,7 @@ function StudentsHome({ role, canEdit }) {
 // ---- Directory ----------------------------------------------------------------
 
 function StudentList({ drill }) {
-  const { students, invoices } = useStore();
+  const { students, invoices, subjects } = useStore();
   const [q, setQ] = useState('');
   const [form, setForm] = useState('ALL');
   const [status, setStatus] = useState('ACTIVE');
@@ -109,16 +101,7 @@ function StudentList({ drill }) {
   }, [invoices]);
 
   // Opened from a figure: which students match is decided by the server, with the rule the figure uses
-  const [result, setResult] = useState(null); // { key, count, ids } for the filter it was asked about
-  useEffect(() => {
-    if (!drill) return undefined;
-    let current = true;
-    studentsApi.matching(drill.filters)
-      .then((res) => { if (current) setResult({ key: drill.key, count: res.count, ids: new Set(res.student_ids) }); })
-      .catch(() => { if (current) setResult({ key: drill.key, count: 0, ids: new Set() }); });
-    return () => { current = false; };
-  }, [drill]);
-  const matched = drill && result?.key === drill.key ? result : null; // null while the answer for this filter is on its way
+  const matched = useMatching(drill, studentsApi.matching); // null while the answer for this filter is on its way
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -148,10 +131,11 @@ function StudentList({ drill }) {
     <>
     {drill && (
       <DrilldownBar
-        chips={describeStudentFilters(drill.filters)}
-        count={matched ? matched.count : null}
+        chips={describeStudentFilters(drill.filters, { subject: (code) => subjects.find((x) => x.code === code)?.name })}
+        result={matched}
         expect={drill.expect}
-        from={drill.from}
+        unit={drill.unit}
+        src={drill.src}
         onClear={() => navigate('students')}
       />
     )}

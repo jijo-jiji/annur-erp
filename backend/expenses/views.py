@@ -5,6 +5,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from core import numbering
 from core.permissions import SUPERVISOR, MANAGEMENT, APPROVER_ROLES, get_role, display_name, require_role
+from . import drilldown
 from .models import Vendor, PaymentVoucher
 from .serializers import VendorSerializer, PaymentVoucherSerializer
 
@@ -75,6 +76,12 @@ class PaymentVoucherViewSet(viewsets.ModelViewSet):
         pv.approval_comment = comment
         pv.save()
         return Response(self.get_serializer(pv).data)
+
+    @action(detail=False, methods=['get'])
+    def matching(self, request):
+        """The vouchers a dashboard figure counts, with what they add up to (see expenses/drilldown.py)."""
+        rows = list(drilldown.vouchers_matching(request.query_params).order_by('pv_number').values_list('pv_number', 'amount'))
+        return Response({'count': len(rows), 'ids': [r[0] for r in rows], 'total': float(sum(r[1] for r in rows))})
 
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):

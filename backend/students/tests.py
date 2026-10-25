@@ -787,7 +787,7 @@ class StudentFiguresMatchTheirListsTests(Phase2Base):
         self.as_role(SUPERVISOR)
         res = self.client.get('/api/v1/students/students/matching/', params)
         self.assertEqual(res.status_code, 200, res.data)
-        self.assertEqual(res.data['count'], len(res.data['student_ids']))
+        self.assertEqual(res.data['count'], len(res.data['ids']))
         return res.data
 
     def dashboard(self):
@@ -838,16 +838,16 @@ class StudentFiguresMatchTheirListsTests(Phase2Base):
         self.assertEqual(data['approvals']['monthly_invoices_pending'], 3)
         listed = self.listed(uninvoiced=month)
         self.assertEqual(listed['count'], 3)
-        self.assertNotIn(self.a.student_id, listed['student_ids'])
+        self.assertNotIn(self.a.student_id, listed['ids'])
 
     def test_the_list_holds_the_right_students_not_only_the_right_number(self):
-        self.assertEqual(sorted(self.listed(status='ACTIVE', type='WALK_IN')['student_ids']), [self.d.student_id])
-        self.assertEqual(sorted(self.listed(status='INACTIVE', form='F3')['student_ids']), sorted([self.g.student_id, self.h.student_id]))
-        self.assertEqual(self.listed(joined=self.today.strftime('%Y-%m'))['student_ids'].count(self.e.student_id), 1)
+        self.assertEqual(sorted(self.listed(status='ACTIVE', type='WALK_IN')['ids']), [self.d.student_id])
+        self.assertEqual(sorted(self.listed(status='INACTIVE', form='F3')['ids']), sorted([self.g.student_id, self.h.student_id]))
+        self.assertEqual(self.listed(joined=self.today.strftime('%Y-%m'))['ids'].count(self.e.student_id), 1)
         # as at a day before the first student left: both were still on the books
         before_leaving = (self.today - timedelta(days=70)).isoformat()
-        self.assertIn(self.g.student_id, self.listed(as_at=before_leaving)['student_ids'])
-        self.assertNotIn(self.g.student_id, self.listed(as_at=self.today.isoformat())['student_ids'])
+        self.assertIn(self.g.student_id, self.listed(as_at=before_leaving)['ids'])
+        self.assertNotIn(self.g.student_id, self.listed(as_at=self.today.isoformat())['ids'])
 
     def test_filters_combine_and_nonsense_is_refused(self):
         self.assertEqual(self.listed(status='ACTIVE', form='F5', school_category='SMK')['count'], 2)
@@ -857,3 +857,137 @@ class StudentFiguresMatchTheirListsTests(Phase2Base):
             self.assertEqual(res.status_code, 400, bad)
         self.client.force_authenticate(None)
         self.assertIn(self.client.get('/api/v1/students/students/matching/').status_code, (401, 403))
+
+
+class MoneyClassAndVoucherFiguresMatchTheirListsTests(Phase2Base):
+    """Collections, arrears, spending, class seats and subject counts equal what the list behind them adds up to."""
+
+    def setUp(self):
+        super().setUp()
+        from billing.models import PaymentReceipt
+        from expenses.models import PaymentVoucher
+        today = date.today()
+        self.today = today
+        self.this_month = today.strftime('%Y-%m')
+        self.last_month = (today.replace(day=1) - timedelta(days=1)).strftime('%Y-%m')
+        first = today.replace(day=1)
+        last = first - timedelta(days=15)
+
+        def student(code, form='F5', classes=()):
+            s = Student.objects.create(student_id=code, full_name=f'Pelajar {code}', ic_number='1', form_level=form, status='ACTIVE',
+                                       join_date=today - timedelta(days=100), parent1_name='P', parent1_phone='012')
+            for cls in classes:
+                s.enrolled_classes.add(cls)
+            return s
+
+        # classes: Fizik (1 seat) holds 2 students -> over; Kimia (5 seats) holds 4 -> near; a F4 class with 1 seat holds 1 -> full
+        full_class = ClassTimetable.objects.create(slot=self.fz.slot, form_level='F4', section='A', max_seats=1, subject=self.kim.subject)
+        self.s1 = student('AN-8001', classes=[self.fz, self.kim])
+        self.s2 = student('AN-8002', classes=[self.fz, self.kim])
+        self.s3 = student('AN-8003', classes=[self.kim])
+        self.s4 = student('AN-8004', classes=[self.kim])
+        self.s5 = student('AN-8005', form='F4', classes=[full_class])
+        self.full_class = full_class
+
+        n = iter(range(1, 100))
+
+        def invoice(student, status, month, total=100, paid=0):
+            return Invoice.objects.create(invoice_number=f'INV-8-{next(n)}', student=student, billing_month=month, invoice_type='MONTHLY',
+                                          total_payable=total, total_paid=paid, balance_due=total - paid, status=status, due_date=month)
+
+        paid = invoice(self.s1, 'PAID', first, 100, 100)
+        unpaid = invoice(self.s2, 'UNPAID', first, 100)
+        partial = invoice(self.s3, 'PARTIAL', first, 120, 50)
+        overdue = invoice(self.s4, 'OVERDUE', last.replace(day=1), 80)
+        invoice(self.s5, 'PAID', last.replace(day=1), 60, 60)
+
+        def receipt(inv, day, amount):
+            return PaymentReceipt.objects.create(receipt_number=f'REC-8-{next(n)}', invoice=inv, student=inv.student, payment_date=day, amount_paid=amount)
+
+        receipt(paid, today, 100)
+        receipt(partial, first, 50)       # this month (the same day as the 1st, or today if today is the 1st)
+        receipt(overdue, last, 30)        # last month
+        receipt(paid, last, 25)           # last month
+
+        def voucher(status, day, amount, category='Utiliti'):
+            return PaymentVoucher.objects.create(pv_number=f'PV-8-{next(n)}', date=day, category=category, amount=amount, items_description='x', status=status)
+
+        voucher('VERIFIED_ADMIN', today, 120)
+        voucher('APPROVED_SUPERVISOR', first, 800, 'Sewa')
+        voucher('APPROVED_MANAGEMENT', last, 4000, 'Sewa')                 # last month: not this month's spending
+        voucher('PENDING_SUPERVISOR', today, 900)
+        voucher('PENDING_SUPERVISOR', today, 1500)
+        voucher('PENDING_MANAGEMENT', today, 7000)
+        voucher('REJECTED', today, 300)                                    # counted nowhere
+
+    def get(self, url, **params):
+        self.as_role(MANAGEMENT)
+        res = self.client.get(url, params)
+        self.assertEqual(res.status_code, 200, res.data)
+        return res.data
+
+    def dashboard(self):
+        return self.get('/api/v1/dashboard/summary/')
+
+    def test_collections_open_the_receipts_that_add_up_to_them(self):
+        f = self.dashboard()['finance']
+        day = self.today.isoformat()
+        for key, params in {
+            'collected_today': {'from': day, 'to': day},
+            'collected_this_month': {'month': self.this_month},
+            'collected_last_month': {'month': self.last_month},
+        }.items():
+            listed = self.get('/api/v1/billing/receipts/matching/', **params)
+            self.assertAlmostEqual(listed['total'], f[key], places=2, msg=key)
+            self.assertEqual(listed['count'], len(listed['ids']))
+        self.assertGreater(f['collected_this_month'], 0)
+        self.assertGreater(f['collected_last_month'], 0)
+
+    def test_arrears_and_each_collection_status_open_the_invoices_behind_them(self):
+        data = self.dashboard()['finance']
+        owed = self.get('/api/v1/billing/invoices/matching/', status='OUTSTANDING')
+        self.assertAlmostEqual(owed['balance'], data['outstanding'], places=2)
+        self.assertEqual(owed['count'], 3)  # unpaid, partial, overdue
+        for row in data['collection_status']:
+            listed = self.get('/api/v1/billing/invoices/matching/', status=row['status'])
+            self.assertEqual(listed['count'], row['count'], row)
+            self.assertAlmostEqual(listed['billed'], row['billed'], places=2)
+            self.assertAlmostEqual(listed['balance'], row['balance'], places=2)
+        this_month = self.get('/api/v1/billing/invoices/matching/', month=self.this_month)
+        self.assertEqual(this_month['count'], 3)
+
+    def test_spending_and_pending_vouchers_open_the_vouchers_behind_them(self):
+        data = self.dashboard()
+        spent = self.get('/api/v1/expenses/vouchers/matching/', status='COUNTED', month=self.this_month)
+        self.assertAlmostEqual(spent['total'], data['finance']['expenses_this_month'], places=2)
+        self.assertEqual(spent['count'], 2)  # the counter-verified one and the Supervisor-approved one
+        self.assertEqual(self.get('/api/v1/expenses/vouchers/matching/', status='PENDING_SUPERVISOR')['count'], data['approvals']['vouchers_pending_supervisor'])
+        self.assertEqual(self.get('/api/v1/expenses/vouchers/matching/', status='PENDING_MANAGEMENT')['count'], data['approvals']['vouchers_pending_management'])
+        waiting = {pv['pv_number'] for pv in data['pending_vouchers']}  # Management sees every pending voucher
+        self.assertEqual(waiting, set(self.get('/api/v1/expenses/vouchers/matching/', status='PENDING')['ids']))
+        self.assertEqual(self.get('/api/v1/expenses/vouchers/matching/', category='Sewa', status='COUNTED')['count'], 2)
+
+    def test_classes_over_full_and_nearly_full_open_the_same_classes(self):
+        classes = self.dashboard()['classes']
+        self.assertEqual((len(classes['over']), len(classes['full']), len(classes['near_full'])), (1, 1, 1))
+        for key, capacity in (('over', 'over'), ('full', 'full'), ('near_full', 'near')):
+            listed = self.get('/api/v1/academic/timetable/matching/', capacity=capacity)
+            self.assertEqual(sorted(listed['ids']), sorted(c['id'] for c in classes[key]), key)
+        self.assertEqual(self.get('/api/v1/academic/timetable/matching/', id=self.full_class.id)['ids'], [self.full_class.id])
+
+    def test_each_subject_slice_opens_the_active_students_taking_it(self):
+        rows = self.dashboard()['students']['subjects_by_form']
+        self.assertTrue(rows)
+        for form_row in rows:
+            for subject in form_row['subjects']:
+                listed = self.get('/api/v1/students/students/matching/', status='ACTIVE', form=form_row['form'], subject=subject['code'])
+                self.assertEqual(listed['count'], subject['count'], (form_row['form'], subject))
+        f5 = next(r for r in rows if r['form'] == 'F5')
+        self.assertEqual({s['code']: s['count'] for s in f5['subjects']}, {'FZ': 2, 'KIM': 4})
+
+    def test_bad_filters_are_refused(self):
+        self.as_role(ADMIN)
+        for url, bad in (('/api/v1/billing/receipts/matching/', {'month': '2026-13'}), ('/api/v1/billing/receipts/matching/', {'from': 'semalam'}),
+                         ('/api/v1/billing/invoices/matching/', {'status': 'ABC'}), ('/api/v1/expenses/vouchers/matching/', {'status': 'ABC'}),
+                         ('/api/v1/academic/timetable/matching/', {'capacity': 'half'}), ('/api/v1/academic/timetable/matching/', {'id': 'x'})):
+            self.assertEqual(self.client.get(url, bad).status_code, 400, (url, bad))

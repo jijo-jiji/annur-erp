@@ -8,7 +8,7 @@ from django.db import transaction
 from django.db.models import F
 from core import numbering, pdf
 from core.permissions import APPROVER_ROLES, display_name
-from . import services
+from . import drilldown, services
 from .models import Discount, Invoice, PaymentReceipt
 from .serializers import DiscountSerializer, InvoiceSerializer, PaymentReceiptSerializer
 from business_config.models import PricingTier, BusinessSetting
@@ -46,6 +46,15 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             due_date=on + timedelta(days=7),
         )
 
+    @action(detail=False, methods=['get'])
+    def matching(self, request):
+        """The invoices a dashboard figure counts, with what they add up to (see billing/drilldown.py)."""
+        rows = list(drilldown.invoices_matching(request.query_params).order_by('invoice_number').values_list('invoice_number', 'total_payable', 'balance_due'))
+        return Response({
+            'count': len(rows), 'ids': [r[0] for r in rows],
+            'billed': float(sum(r[1] for r in rows)), 'balance': float(sum(r[2] for r in rows)),
+        })
+
     def perform_destroy(self, instance):
         if instance.payments.exists() or instance.credit_applied > 0:
             raise ValidationError({'detail': 'Invois yang telah dibayar tidak boleh dipadam.'})
@@ -82,6 +91,12 @@ class PaymentReceiptViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentReceiptSerializer
     # A receipt is a financial record: it is issued once and never edited in place
     http_method_names = ['get', 'post', 'delete', 'head', 'options']
+
+    @action(detail=False, methods=['get'])
+    def matching(self, request):
+        """The receipts a dashboard figure counts, with what they add up to (see billing/drilldown.py)."""
+        rows = list(drilldown.receipts_matching(request.query_params).order_by('receipt_number').values_list('receipt_number', 'amount_paid'))
+        return Response({'count': len(rows), 'ids': [r[0] for r in rows], 'total': float(sum(r[1] for r in rows))})
 
     @action(detail=True, methods=['get'])
     def pdf(self, request, pk=None):

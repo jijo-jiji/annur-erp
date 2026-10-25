@@ -3,7 +3,9 @@ import { AlertTriangle, Calculator, Download, FilePlus2, Plus, Printer, Receipt,
 import { CENTRE } from '../lib/config';
 import { bankLine } from '../lib/centre';
 import { fillMessage } from '../lib/messages';
-import { downloadPdf } from '../api/client';
+import { billingApi, downloadPdf } from '../api/client';
+import { describeInvoiceFilters, describeReceiptFilters, INVOICE_FILTERS, RECEIPT_FILTERS, useDrill, useMatching } from '../lib/drilldown';
+import DrilldownBar from './DrilldownBar';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
 import {
@@ -52,6 +54,19 @@ export default function BillingView({ role }) {
   const { invoices, receipts, students, settings } = useStore();
   const query = new URLSearchParams(window.location.hash.split('?')[1]);
   const [tab, setTab] = useState(query.get('tab') ?? 'invoices');
+  // Opened from a figure on Ringkasan or Laporan: the address carries the filter (see lib/drilldown.js)
+  const [tabInAddress, setTabInAddress] = useState(query.get('tab'));
+  useEffect(() => {
+    const follow = () => {
+      const next = new URLSearchParams(window.location.hash.split('?')[1]).get('tab');
+      setTabInAddress(next);
+      if (next) setTab(next);
+    };
+    window.addEventListener('hashchange', follow);
+    return () => window.removeEventListener('hashchange', follow);
+  }, []);
+  const drill = useDrill(tab === 'receipts' ? RECEIPT_FILTERS : INVOICE_FILTERS);
+  const matched = useMatching(drill, tab === 'receipts' ? billingApi.matchingReceipts : billingApi.matchingInvoices);
   const [status, setStatus] = useState('ALL');
   const [month, setMonth] = useState(() => (invoices.some((i) => i.month === CURRENT_MONTH) ? CURRENT_MONTH : 'ALL'));
   const [q, setQ] = useState('');
@@ -74,6 +89,7 @@ export default function BillingView({ role }) {
   const matches = (no, sid) => !needle || `${no} ${studentById[sid]?.name} ${sid}`.toLowerCase().includes(needle);
 
   const invoiceRows = invoices.filter((i) => {
+    if (drill) return Boolean(matched?.ids.has(i.no)) && matches(i.no, i.studentId); // the server's answer, not the screen's own filters
     if (month !== 'ALL' && i.month !== month) return false;
     const st = invoiceStatus(i);
     if (status === 'UNPAID' && st === 'PAID') return false;
@@ -81,7 +97,7 @@ export default function BillingView({ role }) {
     return matches(i.no, i.studentId);
   });
   const invoiceByNo = useMemo(() => Object.fromEntries(invoices.map((i) => [i.no, i])), [invoices]);
-  const receiptRows = receipts.filter((r) => (month === 'ALL' || r.date.startsWith(month)) && matches(r.no, invoiceByNo[r.invoiceNo]?.studentId));
+  const receiptRows = receipts.filter((r) => (drill ? Boolean(matched?.ids.has(r.no)) : (month === 'ALL' || r.date.startsWith(month))) && matches(r.no, invoiceByNo[r.invoiceNo]?.studentId));
   const cases = arrearsCases(students, invoices, settings.unpaidMonthsLimit);
   const openInvoices = invoices.filter((i) => invoiceBalance(i) > 0);
   const collectedToday = receipts.filter((r) => r.date === todayISO()).reduce((a, r) => a + r.amount, 0);
@@ -135,6 +151,7 @@ export default function BillingView({ role }) {
         onChange={(t) => {
           setTab(t);
           setLimit(PAGE);
+          if (drill || tabInAddress) window.location.hash = '/billing'; // a figure's filter belongs to one tab
         }}
         items={[
           { value: 'invoices', label: 'Invois' },
@@ -146,10 +163,22 @@ export default function BillingView({ role }) {
       {tab === 'arrears' ? (
         <ArrearsPanel cases={cases} role={role} openInvoices={openInvoices} onPay={setPaying} />
       ) : (
+        <>
+        {drill && (
+          <DrilldownBar
+            chips={tab === 'receipts' ? describeReceiptFilters(drill.filters) : describeInvoiceFilters(drill.filters)}
+            result={matched}
+            expect={drill.expect}
+            unit={drill.unit}
+            src={drill.src}
+            noun={tab === 'receipts' ? 'resit' : 'invois'}
+            onClear={() => { window.location.hash = tab === 'receipts' ? '/billing?tab=receipts' : '/billing'; }}
+          />
+        )}
         <Card>
           <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 p-4">
             <SearchInput icon={Search} value={q} onChange={setQ} placeholder="Cari no. invois / resit atau pelajar" className="w-full sm:w-72" />
-            <select
+            {!drill && <select
               value={month}
               onChange={(e) => {
                 setMonth(e.target.value);
@@ -164,8 +193,8 @@ export default function BillingView({ role }) {
                 </option>
               ))}
               <option value="ALL">Semua bulan</option>
-            </select>
-            {tab === 'invoices' && (
+            </select>}
+            {tab === 'invoices' && !drill && (
               <Segmented
                 value={status}
                 onChange={setStatus}
@@ -299,6 +328,7 @@ export default function BillingView({ role }) {
             </div>
           )}
         </Card>
+        </>
       )}
 
       {paying && (
