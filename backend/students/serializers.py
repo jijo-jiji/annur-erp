@@ -2,9 +2,11 @@ from rest_framework import serializers
 from .models import Student, StudentExamResult, Lead, LeadActivity, StudentEvent, ClassWaitlist, StudentFeedback
 from academic.serializers import ClassTimetableSerializer
 from core import grades
+from core.phone import PhoneFieldsMixin
 
 
-class StudentSerializer(serializers.ModelSerializer):
+class StudentSerializer(PhoneFieldsMixin, serializers.ModelSerializer):
+    phone_fields = ('phone_number', 'home_phone', 'parent1_phone', 'parent2_phone')
     standing_discount_name = serializers.SerializerMethodField()
     student_id = serializers.CharField(read_only=True)
     join_date = serializers.DateField(required=False)
@@ -98,7 +100,8 @@ class LeadActivitySerializer(serializers.ModelSerializer):
         read_only_fields = ['lead', 'stage', 'from_stage', 'pic', 'created_at']
 
 
-class LeadSerializer(serializers.ModelSerializer):
+class LeadSerializer(PhoneFieldsMixin, serializers.ModelSerializer):
+    phone_fields = ('phone',)
     lead_id = serializers.CharField(read_only=True)
     status_label = serializers.CharField(source='get_status_display', read_only=True)
     reached_stage = serializers.CharField(read_only=True)
@@ -122,12 +125,6 @@ class LeadSerializer(serializers.ModelSerializer):
 
     def validate_form_level(self, value):
         return grades.validate(value) if value else ''
-
-    def validate_phone(self, value):
-        value = ' '.join(str(value).split())
-        if not any(ch.isdigit() for ch in value):
-            raise serializers.ValidationError('Masukkan no. telefon yang sah.')
-        return value
 
     def get_missing_fields(self, obj):
         return obj.missing_fields

@@ -151,6 +151,21 @@ sudo bash /opt/annur/deploy/update.sh
 If screens changed, rebuild and upload the web app again (step 7). Check after an update with
 `sudo journalctl -u annur -n 30 --no-pager`.
 
+### One time: telephone numbers saved before the phone rule
+
+Every number is now kept as `60133474009` (see `backend/core/phone.py`) and cleaned as it is saved. Numbers that were
+saved earlier (`013-347 4009`) still read correctly, but search and duplicate checks work best once they are cleaned too.
+This applies only to a server that already holds students, prospects, teachers or staff, so a new empty server skips it.
+
+```bash
+sudo bash /opt/annur/deploy/manage.sh normalize_phones            # report only: what would change, what cannot be understood
+sudo bash /opt/annur/deploy/manage.sh normalize_phones --apply    # backs up first, then rewrites
+```
+
+A number that cannot be understood (a toll-free 1-300 number, two numbers in one box, a note) is never guessed at: it
+is left exactly as it was and listed, so someone can correct it by hand. How numbers read and are typed is a setting
+(Settings > Had & amaran > Format nombor telefon).
+
 ## If something is wrong
 
 | Symptom | Look at |

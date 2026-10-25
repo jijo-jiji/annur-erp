@@ -9,7 +9,7 @@ import { useStore } from '../store';
 import { voucherTier } from '../lib/domain';
 import { ringgit, THRESHOLDS } from '../lib/thresholds';
 import { can } from '../lib/permissions';
-import { date, rm, todayISO } from '../lib/format';
+import { date, rm, todayISO, fmtPhone } from '../lib/format';
 import { AttachmentList, SignaturePad } from './Attachments';
 import { downloadCsv } from '../lib/csv';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
@@ -53,7 +53,7 @@ function vendorFields(editing) {
     { name: 'vendor_id', label: 'No. SSM / ID pembekal', required: true },
     { name: 'tin_number', label: 'No. cukai (TIN)' },
     { name: 'pic_name', label: 'Pegawai dihubungi (PIC)' },
-    { name: 'phone_number', label: 'Telefon' },
+    { name: 'phone_number', label: 'Telefon', type: 'tel' },
     { name: 'address', label: 'Alamat', type: 'textarea' },
     { name: 'bank_name', label: 'Bank' },
     { name: 'bank_account', label: 'No. akaun bank' },
@@ -163,7 +163,7 @@ export default function PaymentVoucherView({ role }) {
                     </Td>
                     <Td className="text-gray-700">{v.vendor_id}</Td>
                     <Td className="text-gray-700">{v.tin_number || '—'}</Td>
-                    <Td className="whitespace-nowrap text-gray-700">{v.phone_number || '—'}</Td>
+                    <Td className="whitespace-nowrap text-gray-700">{v.phone_number ? fmtPhone(v.phone_number) : '—'}</Td>
                     <Td className="text-gray-700">{[v.bank_name, v.bank_account].filter(Boolean).join(' ') || '—'}</Td>
                     <Td>
                       {vendorWaiting.has(v.id) ? <Badge tone="amber">Menunggu kelulusan</Badge> : <Badge tone={(v.status || 'ACTIVE') === 'ACTIVE' ? 'green' : 'neutral'}>{(v.status || 'ACTIVE') === 'ACTIVE' ? 'Aktif' : 'Tidak aktif'}</Badge>}
@@ -402,7 +402,7 @@ function VoucherModal({ v, onClose }) {
             <div>
               <p className="font-semibold text-gray-900">{CENTRE.name}</p>
               <p className="text-[13px] text-gray-500">{CENTRE.address}</p>
-              <p className="text-[13px] text-gray-500">Tel: {CENTRE.phone}</p>
+              <p className="text-[13px] text-gray-500">Tel: {fmtPhone(CENTRE.phone)}</p>
               {CENTRE.tin && <p className="text-[13px] text-gray-500">No. TIN: {CENTRE.tin}</p>}
             </div>
             <div className="text-right">

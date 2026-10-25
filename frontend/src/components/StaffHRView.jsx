@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Cake, Download, FileWarning, Plus, Users } from 'lucide-react';
 import { hrApi, staffApi } from '../api/client';
 import { useApp } from '../context/AppContext';
-import { date, dateLong, monthLabel, todayISO } from '../lib/format';
+import { date, dateLong, monthLabel, todayISO, fmtPhone } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import FormModal from './FormModal';
 import StaffProfileModal, { EMPLOYMENT, LEAVE_LABELS } from './StaffProfileModal';
@@ -246,7 +246,7 @@ export default function StaffHRView({ role }) {
                     </Td>
                     <Td>{s.role}<p className="text-[13px] text-gray-500">{s.department}</p></Td>
                     <Td className="whitespace-nowrap">{s.employment_type_label}</Td>
-                    <Td className="whitespace-nowrap">{s.phone}</Td>
+                    <Td className="whitespace-nowrap">{fmtPhone(s.phone)}</Td>
                     <Td className="whitespace-nowrap">{date(s.join_date)}</Td>
                     <Td className="whitespace-nowrap">{date(s.contract_end)}</Td>
                     <Td>{s.username || <Badge tone="amber">Belum dipautkan</Badge>}</Td>
@@ -410,7 +410,7 @@ export default function StaffHRView({ role }) {
           initial={{ name: '', phone: '', role: '', department: 'Pentadbiran & Khidmat Pelanggan', employment_type: 'PERMANENT', join_date: todayISO() }}
           fields={[
             { name: 'name', label: 'Nama', required: true },
-            { name: 'phone', label: 'Telefon', required: true },
+            { name: 'phone', label: 'Telefon', required: true, type: 'tel' },
             { name: 'role', label: 'Jawatan', required: true },
             { name: 'department', label: 'Jabatan' },
             { name: 'employment_type', label: 'Jenis pekerjaan', type: 'select', required: true, options: EMPLOYMENT.map((m) => ({ value: m.id, label: m.label })) },

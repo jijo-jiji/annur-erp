@@ -6,6 +6,7 @@ import { invoiceBalance } from '../lib/domain';
 import { navigate, navItemsFor } from '../lib/nav';
 import { can } from '../lib/permissions';
 import { cx } from './ui';
+import { phoneMatches } from '../lib/phone';
 
 const norm = (s) => (s ?? '').toLowerCase().replace(/[\s-]/g, '');
 
@@ -34,7 +35,8 @@ export default function CommandPalette({ role, onClose }) {
 
     const studentHits = students
       .filter((s) =>
-        [s.name, s.id, s.ic, s.school, s.parent1?.name, s.parent1?.phone, s.parent2?.name, s.parent2?.phone].some((v) => norm(v).includes(needle)),
+        [s.name, s.id, s.ic, s.school, s.parent1?.name, s.parent2?.name].some((v) => norm(v).includes(needle))
+        || [s.parent1?.phone, s.parent2?.phone].some((v) => phoneMatches(v, q)),
       )
       .slice(0, 6)
       .map((s) => ({

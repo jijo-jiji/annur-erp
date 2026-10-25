@@ -128,7 +128,7 @@ class StaffHRTests(APITestCase):
 
     def test_only_management_adds_staff_and_changes_job_details(self):
         self.as_role(SUPERVISOR)
-        payload = {'name': 'Baru', 'role': 'Kerani', 'phone': '3'}
+        payload = {'name': 'Baru', 'role': 'Kerani', 'phone': '60123456003'}
         self.assertEqual(self.client.post('/api/v1/teachers/staff/', payload, format='json').status_code, 403)
         self.as_role(MANAGEMENT)
         res = self.client.post('/api/v1/teachers/staff/', {**payload, 'employment_type': 'CONTRACT'}, format='json')

@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Clock, Download, Search, UserPlus, Users } from 'lucide-react';
 import { useStore } from '../store';
 import { useApp } from '../context/AppContext';
 import { studentsApi } from '../api/client';
 import { invoiceBalance, minSubjects, monthlyFee, preferredContact, schoolCategory, subjectsForForm } from '../lib/domain';
-import { date, DAY_LABEL, FORMS, formLabel, formShort, initials, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink } from '../lib/format';
+import { date, DAY_LABEL, FORMS, formLabel, formShort, initials, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink, fmtPhone } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
@@ -18,6 +18,7 @@ import {
   Avatar, Badge, Button, Card, CardHeader, Checkbox, cx, EmptyState, Input, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs, Td, Textarea, Th,
   useToast, WhatsAppIcon,
 } from './ui';
+import { phoneMatches } from '../lib/phone';
 
 const PAGE = 50;
 
@@ -114,7 +115,7 @@ function StudentList({ drill }) {
         if (form !== 'ALL' && s.form !== form) return false;
       }
       if (!needle) return true;
-      return [s.name, s.id, s.ic, s.school, s.parent1.name, s.parent1.phone, s.parent2?.phone].some((v) => v?.toLowerCase().includes(needle));
+      return [s.name, s.id, s.ic, s.school, s.parent1.name].some((v) => v?.toLowerCase().includes(needle)) || [s.parent1.phone, s.parent2?.phone, s.phone].some((v) => phoneMatches(v, q));
     });
   }, [students, q, form, status, drill, matched]);
 
@@ -124,7 +125,7 @@ function StudentList({ drill }) {
     ['ID', 'Nama', 'No. KP', 'Tingkatan', 'Jenis', 'Status', 'Sekolah', 'Telefon pelajar', 'Penjaga', 'Telefon penjaga', 'Subjek', 'Tarikh daftar', 'Baki yuran'],
     filtered.map((s) => {
       const c = preferredContact(s);
-      return [s.id, s.name, s.ic, formLabel(s.form), s.type === 'WALK_IN' ? 'Walk-in' : 'Bulanan', STUDENT_STATUS[s.status]?.label, s.school, s.phone, c.name, c.phone, s.classes.length, s.joined, balances[s.id] ?? 0];
+      return [s.id, s.name, s.ic, formLabel(s.form), s.type === 'WALK_IN' ? 'Walk-in' : 'Bulanan', STUDENT_STATUS[s.status]?.label, s.school, fmtPhone(s.phone), c.name, fmtPhone(c.phone), s.classes.length, s.joined, balances[s.id] ?? 0];
     }),
   );
 
@@ -219,7 +220,7 @@ function StudentList({ drill }) {
                   <Td className="hidden text-gray-700 xl:table-cell">{s.school}</Td>
                   <Td className="hidden md:table-cell">
                     <p className="whitespace-nowrap text-gray-900">{contact.name}</p>
-                    <p className="text-[13px] text-gray-500">{contact.phone}</p>
+                    <p className="text-[13px] text-gray-500">{fmtPhone(contact.phone)}</p>
                   </Td>
                   <Td className={cx('hidden text-right tnum sm:table-cell', bal ? 'font-medium text-red-700' : 'text-gray-400')}>{bal ? rm(bal) : '—'}</Td>
                   <Td onClick={(e) => e.stopPropagation()}>
@@ -312,7 +313,7 @@ function Approvals({ role, pending }) {
                   </Td>
                   <Td className="hidden md:table-cell">
                     <p className="text-gray-900">{contact.name}</p>
-                    <p className="text-[13px] text-gray-500">{contact.phone}</p>
+                    <p className="text-[13px] text-gray-500">{fmtPhone(contact.phone)}</p>
                   </Td>
                   <Td className="whitespace-nowrap text-gray-600">{date(s.joined)}</Td>
                   <Td className="whitespace-nowrap text-right">
@@ -741,7 +742,7 @@ function RegistrationForm({ onCancel, onDone }) {
         <p role="note" className="mb-6 rounded-md bg-brand-50 px-4 py-3 text-sm text-brand-900">
           {lead ? (
             <>
-              Mendaftar prospek <span className="font-medium">{lead.lead_id}</span> ({lead.student_name || lead.parent_name || lead.phone}). Maklumat prospek sudah diisi;
+              Mendaftar prospek <span className="font-medium">{lead.lead_id}</span> ({lead.student_name || lead.parent_name || fmtPhone(lead.phone)}). Maklumat prospek sudah diisi;
               lengkapkan yang selebihnya. Prospek ditutup sebagai Registered selepas disimpan.
               {lead.interested_subjects.length > 0 && <> Subjek diminati: {lead.interested_subjects.map((c) => subjects.find((x) => x.code === c)?.name ?? c).join(', ')}.</>}
             </>
@@ -832,7 +833,7 @@ function RegistrationForm({ onCancel, onDone }) {
                       <option>Penjaga</option>
                     </Select>
                     <Input label="Nama" required={n === 1} value={p.name} onChange={(e) => setParent(key, { name: e.target.value })} />
-                    <Input label="No. telefon (WhatsApp)" type="tel" required={n === 1} value={p.phone} onChange={(e) => setParent(key, { phone: e.target.value })} placeholder="012-345 6789" />
+                    <Input label="No. telefon (WhatsApp)" type="tel" required={n === 1} value={p.phone} onChange={(e) => setParent(key, { phone: e.target.value })} />
                     <Input label="E-mel" type="email" value={p.email} onChange={(e) => setParent(key, { email: e.target.value })} />
                     <Select label="Umur" value={p.age} onChange={(e) => setParent(key, { age: e.target.value })}>
                       <option value="">Tidak dinyatakan</option>

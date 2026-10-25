@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { request } from '../api/client';
+import { displayPhone, toInputStyle } from '../lib/phone';
 import { loadThresholds } from '../lib/thresholds';
-import { Badge, Button, Card, CardHeader, Checkbox, Input, useToast } from './ui';
+import { Badge, Button, Card, CardHeader, Checkbox, Input, Select, useToast } from './ui';
 
 const WEEK = ['Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu', 'Ahad'];
 
@@ -12,8 +13,21 @@ const GROUPS = [
   ['Staf baharu', 'Nilai awal untuk staf baharu', 'Cuti setahun dan waktu bekerja yang diberikan kepada staf yang ditambah selepas ini. Staf sedia ada tidak berubah, dan nilai setiap staf boleh diubah pada profil mereka.'],
   ['Muat naik fail', 'Had saiz muat naik', 'Saiz fail terbesar yang diterima. Jenis fail yang dibenarkan tidak boleh diubah di sini kerana ia peraturan keselamatan.'],
   ['Nombor dokumen', 'Awalan nombor dokumen', 'Huruf di permulaan nombor baharu. Tahun dan nombor turutan diteruskan, dan nombor yang telah dikeluarkan tidak berubah. Awalan baharu memulakan turutan di 1.'],
+  ['Format nombor telefon', 'Format nombor telefon', 'Nombor disimpan dengan satu cara sahaja (60133474009), jadi pautan WhatsApp dan carian sentiasa berfungsi. Di sini anda memilih bagaimana ia dipaparkan kepada staf dan dicetak, dan bagaimana ia kelihatan dalam kotak input. Nombor yang telah disimpan tidak berubah.'],
   ['Peringkat prospek', 'Papan prospek', 'Berapa lama prospek yang sudah selesai kekal di papan, dan nama lapan peringkat. Susunan peringkat dan peraturannya tetap. Prospek yang selesai kekal dalam tab Arkib dan senarai pelajar.'],
 ];
+
+// What a number looks like with the choices on screen, before they are saved
+function PhonePreview({ shown }) {
+  const stored = '60133474009';
+  return (
+    <div className="grid gap-1 bg-gray-50 px-5 py-3 text-sm text-gray-700" aria-label="Contoh nombor telefon">
+      <p>Dipaparkan: <span className="font-medium text-gray-900 tnum">{displayPhone(stored, shown('phone_prefix'), shown('phone_separator'))}</span></p>
+      <p>Dalam kotak input: <span className="font-medium text-gray-900 tnum">{toInputStyle(stored, shown('phone_input'))}</span></p>
+      <p className="text-[13px] text-gray-500">Apa sahaja yang ditaip (013-347 4009, +6013-347 4009) dibersihkan apabila staf keluar dari kotak.</p>
+    </div>
+  );
+}
 
 // Voucher approval amounts, alerts, starting values for new staff, upload limits, document number prefixes and
 // lead stage names. Everyone with Settings can read them; only Management changes them. Each has a safe check.
@@ -75,6 +89,13 @@ export default function ThresholdsPanel({ editable }) {
         </div>
       );
     }
+    if (r.kind === 'choice') {
+      return (
+        <Select aria-label={r.label} value={value} disabled={!editable} onChange={(e) => set(r.name, e.target.value)} className="w-72">
+          {r.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </Select>
+      );
+    }
     const inputProps = r.kind === 'time' ? { type: 'time', className: 'w-32' }
       : r.kind === 'text' ? { type: 'text', className: 'w-44', maxLength: r.group === 'Nombor dokumen' ? 6 : 30 }
         : { type: 'number', min: r.min, max: r.max, step: r.unit === 'RM' ? '0.01' : '1', className: 'w-32' };
@@ -89,6 +110,7 @@ export default function ThresholdsPanel({ editable }) {
   const hint = (r) => {
     if (r.kind === 'number') return `Asal: ${r.default} ${r.unit} · Julat ${r.min.toLocaleString()} hingga ${r.max.toLocaleString()}`;
     if (r.kind === 'weekdays') return `Asal: ${r.default.split(',').map((d) => WEEK[Number(d)]).join(', ')}`;
+    if (r.kind === 'choice') return `Asal: ${r.options.find((o) => o.value === r.default)?.label ?? r.default}`;
     return `Asal: ${r.default}`;
   };
 
@@ -108,6 +130,7 @@ export default function ThresholdsPanel({ editable }) {
                 {control(r)}
               </div>
             ))}
+            {group === 'Format nombor telefon' && <PhonePreview shown={(name) => draft[name] ?? rows.find((r) => r.name === name)?.value} />}
           </div>
         </Card>
       ))}

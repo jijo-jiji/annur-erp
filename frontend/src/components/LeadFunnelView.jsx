@@ -7,7 +7,7 @@ import { THRESHOLDS, useThresholds } from '../lib/thresholds';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
 import { describeLeadFilters, LEAD_FILTERS, useDrill, useMatching } from '../lib/drilldown';
-import { clock, date, daysAgoISO, FORMS, formLabel, formShort, todayISO, waLink } from '../lib/format';
+import { clock, date, daysAgoISO, FORMS, formLabel, formShort, todayISO, waLink, fmtPhone } from '../lib/format';
 import DrilldownBar from './DrilldownBar';
 import { Donut } from './Donut';
 import { downloadCsv } from '../lib/csv';
@@ -15,6 +15,7 @@ import { HBarList } from './charts';
 import LeadFields from './LeadFields';
 import LeadImportModal from './LeadImportModal';
 import { Badge, Button, Card, CardHeader, Checkbox, cx, DescriptionList, EmptyState, filterClass, Input, Modal, PageHeader, Segmented, Select, Stat, Table, Td, Th, useToast, WhatsAppIcon } from './ui';
+import { phoneMatches } from '../lib/phone';
 
 // The 8 conversion stages, in order
 // The order and the rules of the stages are fixed; their names are the centre's (Settings > Had & amaran)
@@ -36,7 +37,7 @@ const ARCHIVE_PAGE = 25;
 const OTHER_REASON = '__other__';
 
 const isDue = (lead) => lead.next_follow_up && !CLOSED.includes(lead.status) && lead.next_follow_up <= todayISO();
-const leadTitle = (lead) => lead.student_name || lead.parent_name || lead.phone;
+const leadTitle = (lead) => lead.student_name || lead.parent_name || fmtPhone(lead.phone);
 
 function AddLeadModal({ onClose, sources, campaigns, schools }) {
   const { createLead } = useApp();
@@ -168,7 +169,7 @@ function LeadDetailModal({ lead, onClose, sources, sourceLabel, subjectName, cam
               items={[
                 ['Pelajar', lead.student_name],
                 ['Ibu bapa', lead.parent_name],
-                ['Telefon', lead.phone],
+                ['Telefon', fmtPhone(lead.phone)],
                 ['Sekolah', lead.school_name],
                 ['Sumber', sourceLabel(lead.lead_source)],
                 ['Kempen', lead.campaign],
@@ -409,14 +410,14 @@ export default function LeadFunnelView() {
 
   const exportCsv = () => downloadCsv(`prospek-${todayISO()}.csv`,
     ['ID', 'Tarikh', 'Pelajar', 'Ibu bapa', 'Telefon', 'Tingkatan', 'Sumber', 'Kempen', 'Peringkat', 'PIC', 'Susulan', 'Subjek'],
-    filtered.map((l) => [l.lead_id, l.enquiry_date, l.student_name, l.parent_name, l.phone, l.form_level, sourceLabel(l.lead_source),
+    filtered.map((l) => [l.lead_id, l.enquiry_date, l.student_name, l.parent_name, fmtPhone(l.phone), l.form_level, sourceLabel(l.lead_source),
       l.campaign, STAGE_LABEL[l.status], l.assigned_to, l.next_follow_up || '', l.interested_subjects.map(subjectName).join(' / ')]));
 
   const archived = useMemo(() => {
     const needle = archive.q.trim().toLowerCase();
     return finished
       .filter((l) => archive.outcome === 'ALL' || l.status === archive.outcome)
-      .filter((l) => !needle || [l.student_name, l.parent_name, l.phone, l.lead_id, l.converted_student_code].some((v) => String(v || '').toLowerCase().includes(needle)))
+      .filter((l) => !needle || [l.student_name, l.parent_name, l.lead_id, l.converted_student_code].some((v) => String(v || '').toLowerCase().includes(needle)) || phoneMatches(l.phone, archive.q))
       .sort((a, b) => (b.stage_changed_at || '').localeCompare(a.stage_changed_at || ''));
   }, [finished, archive.outcome, archive.q]);
 
@@ -566,7 +567,7 @@ export default function LeadFunnelView() {
                 {archived.slice(0, archive.limit).map((l) => (
                   <tr key={l.id}>
                     <Td className="font-medium text-gray-900">{leadTitle(l)} <span className="font-normal text-gray-400">· {l.lead_id}</span>
-                      <p className="text-[13px] font-normal text-gray-500">{l.phone}</p>
+                      <p className="text-[13px] font-normal text-gray-500">{fmtPhone(l.phone)}</p>
                     </Td>
                     <Td>{l.form_level ? formShort(l.form_level) : '—'}</Td>
                     <Td>

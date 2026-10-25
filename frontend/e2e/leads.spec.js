@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { api, openAs, signInAs, tryApi, unique } from './support/auth';
+import { displayPhone, normalizePhone } from '../src/lib/phone.js';
 
 // The prospect funnel: partial leads, subjects by tingkatan, who moved a lead and going back, the lists managed in
 // Data induk, registration through the full form, the board window (Arkib) and CSV import.
@@ -9,6 +10,8 @@ const column = (page, label) => page.locator(`section[aria-label="${label}"]`);
 const cardIn = (page, label, text) => column(page, label).locator('div.space-y-2 > div').filter({ hasText: text });
 const toast = (page) => page.getByRole('status');
 const newPhone = () => `011-${Math.floor(10000000 + Math.random() * 89999999)}`;
+// How a number typed into the form is written on the screen: +6011-1234-5678 (the server keeps it as 601112345678)
+const shown = (typed) => displayPhone(normalizePhone(typed));
 
 async function openLeads(page) {
   await page.goto('/#/leads');
@@ -39,10 +42,10 @@ test.describe('Saving a prospect with partial information', () => {
     await form.getByRole('button', { name: 'Simpan' }).click();
     await expect(form).toBeHidden();
 
-    const card = cardIn(page, 'Enquiry', phone);
+    const card = cardIn(page, 'Enquiry', shown(phone));
     await expect(card).toContainText('Belum lengkap (5)');
-    await card.getByRole('button', { name: phone }).click();
-    const detail = page.getByRole('dialog', { name: phone });
+    await card.getByRole('button', { name: shown(phone) }).click();
+    const detail = page.getByRole('dialog', { name: shown(phone) });
     await expect(detail).toContainText('Maklumat belum lengkap: Nama pelajar, Nama ibu bapa, Tingkatan, Sekolah, Subjek diminati');
 
     await detail.getByRole('button', { name: 'Lengkapkan' }).click();
@@ -205,7 +208,7 @@ test.describe('Registering a prospect through the full form', () => {
     await expect(page.getByRole('note')).toContainText(`Mendaftar prospek ${lead.lead_id}`);
     await expect(page.getByLabel('Nama penuh')).toHaveValue(lead.name);
     await expect(page.getByLabel(/^Nama( \*)?$/).first()).toHaveValue(parent);
-    await expect(page.getByLabel(/^No\. telefon \(WhatsApp\)/).first()).toHaveValue(lead.phone);
+    await expect(page.getByLabel(/^No\. telefon \(WhatsApp\)/).first()).toHaveValue(normalizePhone(lead.phone));
     await expect(page.getByLabel(/^Tingkatan \/ darjah/)).toHaveValue('F4');
 
     // what the prospect did not have is completed here
@@ -375,7 +378,7 @@ test.describe('Importing prospects from a CSV', () => {
 
     // the imported prospects are on the board; the one with only a phone says it is incomplete
     await expect(cardIn(page, 'Enquiry', 'Aina Import')).toContainText('Fizik, Kimia');
-    await expect(cardIn(page, 'Enquiry', partial)).toContainText('Belum lengkap');
+    await expect(cardIn(page, 'Enquiry', shown(partial))).toContainText('Belum lengkap');
 
     // the same file again adds nothing
     await page.getByRole('button', { name: 'Import CSV' }).click();
@@ -401,9 +404,9 @@ test.describe('Importing prospects from a CSV', () => {
     await expect(dialog).toContainText('1 prospek diimport.');
     await dialog.getByRole('button', { name: 'Selesai' }).click();
     await expect(cardIn(page, 'Content 2', 'Dari Excel')).toBeVisible();
-    // stored the way the centre writes numbers: the 0 is back and there is a dash after the network code
+    // stored the way every number is kept: the 0 Excel dropped is back as the country code 60
     const saved = (await api(request, 'ADMIN', 'GET', '/students/leads/')).find((l) => l.student_name === 'Dari Excel');
-    expect(saved.phone).toBe(`0${digits.slice(0, 2)}-${digits.slice(2)}`);
+    expect(saved.phone).toBe(`60${digits}`);
   });
 
   test('a file without a phone column is refused with the headings that are accepted', async ({ page }) => {

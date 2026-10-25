@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { CheckCircle2, AlertCircle, X, Info } from 'lucide-react';
+import { normalizePhone, toInputStyle } from '../lib/phone';
+import { THRESHOLDS } from '../lib/thresholds';
 
 export function cx(...parts) {
   return parts.filter(Boolean).join(' ');
@@ -259,10 +261,33 @@ export function Field({ label, hint, error, required, className, children }) {
   );
 }
 
+// A telephone box (type="tel"): whatever is typed or pasted (013-347 4009, +6013-347 4009) is cleaned to the stored form when the
+// person leaves the box, and a saved number shows in the style Management chose (Settings > Format nombor telefon)
+export function TelInput({ value, onChange, onBlur, placeholder, ...props }) {
+  const style = THRESHOLDS.phone_input;
+  return (
+    <input
+      className={inputClass}
+      inputMode="tel"
+      placeholder={placeholder ?? toInputStyle('60133474009', style)}
+      {...props}
+      value={toInputStyle(value, style)}
+      onChange={onChange}
+      onBlur={(e) => {
+        const cleaned = normalizePhone(e.target.value);
+        if (cleaned && cleaned !== value) onChange?.({ target: { value: cleaned }, currentTarget: { value: cleaned } });
+        onBlur?.(e);
+      }}
+    />
+  );
+}
+
 export function Input({ label, hint, error, className, required, ...props }) {
   return (
     <Field label={label} hint={hint} error={error} required={required} className={className}>
-      {(id) => <input id={id} required={required} className={inputClass} {...props} />}
+      {(id) => (props.type === 'tel'
+        ? <TelInput id={id} required={required} {...props} />
+        : <input id={id} required={required} className={inputClass} {...props} />)}
     </Field>
   );
 }

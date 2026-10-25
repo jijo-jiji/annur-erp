@@ -34,8 +34,8 @@ class Phase2Base(APITestCase):
     def register(self, name='Ali', class_ids=None):
         self.as_role(ADMIN)
         res = self.client.post('/api/v1/students/students/', {
-            'full_name': name, 'ic_number': '0', 'form_level': 'F5', 'school_name': 'SK Telipot', 'phone_number': '011',
-            'parent1_name': 'Bapa', 'parent1_phone': '012', 'parent1_age': 'AGE_36_45',
+            'full_name': name, 'ic_number': '0', 'form_level': 'F5', 'school_name': 'SK Telipot', 'phone_number': '60112345011',
+            'parent1_name': 'Bapa', 'parent1_phone': '60123456012', 'parent1_age': 'AGE_36_45',
             'class_ids': class_ids or [], 'status': 'ACTIVE',
         }, format='json')
         self.assertEqual(res.status_code, 201, res.data)
@@ -93,8 +93,8 @@ class RegistrationTests(Phase2Base):
 
     def test_parent_qr_registration_is_pending_without_classes(self):
         res = self.client.post('/api/v1/students/parent-self-register/', {
-            'full_name': 'Siti', 'ic_number': '0', 'form_level': 'F4', 'phone_number': '011',
-            'parent1_name': 'Ibu', 'parent1_phone': '012', 'status': 'ACTIVE', 'credit_balance': '999',
+            'full_name': 'Siti', 'ic_number': '0', 'form_level': 'F4', 'phone_number': '60112345011',
+            'parent1_name': 'Ibu', 'parent1_phone': '60123456012', 'status': 'ACTIVE', 'credit_balance': '999',
         }, format='json')
         self.assertEqual(res.status_code, 201, res.data)
         s = Student.objects.get(student_id=res.data['student_id'])
@@ -223,7 +223,7 @@ class LeadFunnelTests(Phase2Base):
     def new_lead(self, **extra):
         self.as_role(ADMIN)
         res = self.client.post('/api/v1/students/leads/', {
-            'student_name': 'Danish', 'parent_name': 'Faizal', 'phone': '019', 'form_level': 'F5',
+            'student_name': 'Danish', 'parent_name': 'Faizal', 'phone': '60191234019', 'form_level': 'F5',
             'lead_source': 'TIKTOK', 'campaign': 'SPM 2027', 'notes': 'Tanya pakej sains', **extra,
         }, format='json')
         self.assertEqual(res.status_code, 201, res.data)
@@ -283,7 +283,7 @@ class LeadFunnelTests(Phase2Base):
         self.assertEqual((after['status'], after['converted_student_code']), ('REGISTERED', student['student_id']))
         # the same prospect cannot be registered twice
         again = self.client.post('/api/v1/students/students/', {
-            'full_name': 'Lagi', 'ic_number': '1', 'form_level': 'F5', 'school_name': 'X', 'parent1_name': 'P', 'parent1_phone': '1',
+            'full_name': 'Lagi', 'ic_number': '1', 'form_level': 'F5', 'school_name': 'X', 'parent1_name': 'P', 'parent1_phone': '60123456001',
             'class_ids': [self.kim.id], 'lead_id': lead['id']}, format='json')
         self.assertEqual(again.status_code, 400)
         self.as_role(SUPERVISOR)
@@ -419,7 +419,7 @@ class GradeListTests(Phase2Base):
         self.add_grade('F5', 'Tingkatan 5', 11, '')
         self.add_grade('PRA', 'Pra-U', 12, '')
         self.as_role(ADMIN)
-        body = {'full_name': 'X', 'ic_number': '0', 'phone_number': '1', 'parent1_name': 'P', 'parent1_phone': '2'}
+        body = {'full_name': 'X', 'ic_number': '0', 'phone_number': '60123456001', 'parent1_name': 'P', 'parent1_phone': '60123456002'}
         self.assertEqual(self.client.post('/api/v1/students/students/', {**body, 'form_level': 'S5'}, format='json').status_code, 400)
         self.assertEqual(self.client.post('/api/v1/students/students/', {**body, 'form_level': 'PRA'}, format='json').status_code, 201)
         codes = [g['code'] for g in self.client.get('/api/v1/business-config/grades/').data]
@@ -624,7 +624,7 @@ class RegistrationCompletenessTests(Phase2Base):
         self.as_role(ADMIN)
         res = self.client.post('/api/v1/students/students/', {
             'full_name': 'Walk In', 'ic_number': '1', 'form_level': 'F5', 'school_name': 'SMK', 'student_type': 'WALK_IN',
-            'parent1_name': 'P', 'parent1_phone': '1'}, format='json')
+            'parent1_name': 'P', 'parent1_phone': '60123456001'}, format='json')
         self.assertEqual(res.data['registration_gaps'], ['Keterangan walk-in'])
         self.as_role(SUPERVISOR)
         self.assertEqual(self.client.post(f"/api/v1/students/students/{res.data['id']}/approve/").status_code, 400)
@@ -661,17 +661,17 @@ class LeadImportTests(Phase2Base):
         res = self.send([self.GOOD])
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual((res.data['committed'], res.data['counts']), (False, {'ok': 1, 'duplicate': 0, 'error': 0}))
-        self.assertEqual(res.data['rows'][0]['phone'], '012-3456789')
+        self.assertEqual(res.data['rows'][0]['phone'], '60123456789')  # kept the way every number is (core/phone.py)
         self.assertEqual(Lead.objects.count(), 0)
 
     def test_importing_creates_leads_with_codes_from_the_lists_and_logs_who_did_it(self):
         res = self.send([self.GOOD, {'phone': '019-8881122', 'lead_source': 'FB'}], commit=True, status='CONTENT_1')
         self.assertEqual((res.data['counts'], len(res.data['created'])), ({'ok': 2, 'duplicate': 0, 'error': 0}, 2))
-        lead = Lead.objects.get(phone='012-3456789')
+        lead = Lead.objects.get(phone='60123456789')
         self.assertEqual((lead.lead_source, lead.form_level, lead.school_name, lead.campaign), ('TIKTOK', 'F5', 'SMK Telipot', 'SPM 2027'))
         self.assertEqual((lead.interested_subjects, lead.status, lead.assigned_to), (['FZ', 'KIM'], 'CONTENT_1', 'admin'))
         self.assertEqual(lead.missing_fields, [])
-        partial = Lead.objects.get(phone='019-8881122')
+        partial = Lead.objects.get(phone='60198881122')
         self.assertEqual(partial.missing_fields[:3], ['Nama pelajar', 'Nama ibu bapa', 'Tingkatan'])
         entry = lead.activities.get()
         self.assertEqual((entry.action, entry.pic, entry.remark), ('Diimport dari CSV', 'admin', 'okt.csv'))
@@ -679,7 +679,7 @@ class LeadImportTests(Phase2Base):
     def test_the_zero_that_excel_drops_is_put_back_and_country_codes_are_understood(self):
         rows = [{'phone': '123456789', 'lead_source': 'FB'}, {'phone': '+60 11-2345 6789', 'lead_source': 'FB'}, {'phone': '60198881122', 'lead_source': 'FB'}]
         res = self.send(rows)
-        self.assertEqual([r['phone'] for r in res.data['rows']], ['012-3456789', '011-23456789', '019-8881122'])
+        self.assertEqual([r['phone'] for r in res.data['rows']], ['60123456789', '601123456789', '60198881122'])
 
     def test_rows_that_cannot_be_imported_say_why(self):
         rows = [

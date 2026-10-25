@@ -72,7 +72,13 @@ npm run e2e                       # semua ujian
 npm run e2e:ui                    # mod interaktif
 npm run e2e:report                # laporan HTML selepas larian
 ```
-Ujian meliputi log masuk dan peranan, pendaftaran hingga resit, baucar mengikut amaun, permohonan kelulusan, tetapan Pengurusan, akaun pengguna, borang pendaftaran QR ibu bapa dan corong prospek (maklumat separa, import CSV, pendaftaran penuh, arkib).
+Ujian meliputi log masuk dan peranan, pendaftaran hingga resit, baucar mengikut amaun, permohonan kelulusan, tetapan Pengurusan, akaun pengguna, borang pendaftaran QR ibu bapa, corong prospek (maklumat separa, import CSV, pendaftaran penuh, arkib) dan format nombor telefon.
+
+Peraturan nombor telefon (disimpan sebagai `60133474009`, dipaparkan `+6013-347-4009` atau mengikut tetapan) ada ujian kecil tanpa pelayar yang berkongsi jadual kes dengan ujian pelayan:
+```bash
+cd frontend
+npm run test:unit
+```
 
 ### Pemasangan di pelayan sebenar
 Panduan lengkap (pelayan Linux, domain, HTTPS, sandaran harian, kemas kini) ada dalam [`deploy/DEPLOYMENT.md`](deploy/DEPLOYMENT.md).

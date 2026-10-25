@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import { CENTRE } from '../lib/config';
 import { Button, Input } from './ui';
 import { BrandMark } from './Sidebar';
+import { fmtPhone } from '../lib/format';
 
 export default function LoginView({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -47,7 +48,7 @@ export default function LoginView({ onLogin }) {
         <p className="text-sm text-brand-300">
           {CENTRE.address}
           <br />
-          Tel: {CENTRE.phone}
+          Tel: {fmtPhone(CENTRE.phone)}
         </p>
       </aside>
 

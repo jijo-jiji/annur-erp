@@ -1,7 +1,10 @@
 from rest_framework import serializers
+from core.phone import PhoneFieldsMixin
 from .models import Vendor, PaymentVoucher
 
-class VendorSerializer(serializers.ModelSerializer):
+class VendorSerializer(PhoneFieldsMixin, serializers.ModelSerializer):
+    phone_fields = ('phone_number',)
+
     class Meta:
         model = Vendor
         fields = '__all__'

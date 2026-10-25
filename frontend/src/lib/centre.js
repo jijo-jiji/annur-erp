@@ -10,7 +10,7 @@ export const CENTRE = {
   name: 'Pusat Tuisyen An Nur',
   branch: 'Telipot',
   address: 'Tingkat 1 & 2, PT 105, Seksyen 23, Jalan Telipot, 15150 Kota Bharu, Kelantan',
-  phone: '013-983 8085',
+  phone: '60139838085',
   whatsapp: '60139838085',
   email: '',
   tin: '',

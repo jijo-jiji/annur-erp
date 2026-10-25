@@ -6,7 +6,7 @@ from reportlab.lib.pagesizes import A4, A5
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-from . import centre
+from . import centre, phone
 
 
 INK = colors.HexColor('#0f172a')
@@ -33,7 +33,7 @@ def _esc(text):
 def _header(doc_title):
     """The centre's name, address, phone and TIN come from Settings, so a change shows on the next document."""
     c = centre.profile()
-    lines = [Paragraph(_esc(c['name']).upper(), TITLE), Paragraph(_esc(c['address']), SUB), Paragraph(f"Tel: {_esc(c['phone'])}", SUB)]
+    lines = [Paragraph(_esc(c['name']).upper(), TITLE), Paragraph(_esc(c['address']), SUB), Paragraph(f"Tel: {_esc(phone.shown(c['phone']))}", SUB)]
     if c['tin']:
         lines.append(Paragraph(f"No. TIN: {_esc(c['tin'])}", SUB))
     return [*lines, Paragraph(doc_title, DOC), Spacer(1, 4 * mm)]

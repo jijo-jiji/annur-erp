@@ -5,8 +5,10 @@ from .models import (
 )
 from business_config.serializers import SubjectMasterSerializer
 from core.permissions import ADMIN, get_role
+from core.phone import PhoneFieldsMixin
 
-class TeacherSerializer(serializers.ModelSerializer):
+class TeacherSerializer(PhoneFieldsMixin, serializers.ModelSerializer):
+    phone_fields = ('phone_number',)
     subjects_qualified_details = SubjectMasterSerializer(source='subjects_qualified', many=True, read_only=True)
     class Meta:
         model = Teacher
@@ -72,7 +74,8 @@ class TeacherRateIncrementSerializer(serializers.ModelSerializer):
         # previous_rate is copied from the teacher; decisions go through approve/reject
         read_only_fields = ('previous_rate', 'status', 'proposed_by', 'decided_by', 'decision_comment')
 
-class StaffMemberSerializer(serializers.ModelSerializer):
+class StaffMemberSerializer(PhoneFieldsMixin, serializers.ModelSerializer):
+    phone_fields = ('phone', 'emergency_phone')
     staff_id = serializers.CharField(read_only=True)
     leave_balances = serializers.SerializerMethodField()
     username = serializers.CharField(source='user.username', read_only=True, default=None)

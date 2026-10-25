@@ -8,7 +8,7 @@ import { can } from '../lib/permissions';
 import {
   arrearsCases, attendanceSummary, classLabel, grade, invoiceBalance, invoiceStatus, preferredContact, siblingsOf,
 } from '../lib/domain';
-import { date, DAY_LABEL, formLabel, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink } from '../lib/format';
+import { date, DAY_LABEL, formLabel, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink, fmtPhone } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { PhotoBox } from './Attachments';
@@ -19,6 +19,7 @@ import FormModal from './FormModal';
 import {
   Badge, Button, Card, CardHeader, DescriptionList, EmptyState, PageHeader, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon,
 } from './ui';
+import { telLink } from '../lib/phone';
 
 const INVOICE_BADGE = {
   PAID: <Badge tone="green">Dibayar</Badge>,
@@ -117,7 +118,7 @@ export default function StudentProfileView({ role, param }) {
                     <Button as="a" href={waLink(contact.phone, fillMessage('parent_general', { parent: contact.name, centre: CENTRE.name, student: s.name }))} target="_blank" rel="noreferrer">
                       <WhatsAppIcon /> WhatsApp {(contact.relation || 'penjaga').toLowerCase()}
                     </Button>
-                    <Button as="a" href={`tel:${contact.phone}`} icon={Phone}>
+                    <Button as="a" href={telLink(contact.phone)} icon={Phone}>
                       Telefon
                     </Button>
                   </>
@@ -205,7 +206,7 @@ export default function StudentProfileView({ role, param }) {
                     ['No. K/P', s.ic],
                     ['Jenis', s.type === 'WALK_IN' ? 'Walk-in (bayar setiap sesi)' : 'Bulanan (tetap)'],
                     ['Sekolah', [s.school, s.schoolCategory].filter(Boolean).join(' · ')],
-                    ['Telefon pelajar', s.phone],
+                    ['Telefon pelajar', fmtPhone(s.phone)],
                     ['E-mel', s.email],
                     ['Tarikh daftar', date(s.joined)],
                     ['Alamat', s.address],
@@ -225,13 +226,13 @@ export default function StudentProfileView({ role, param }) {
                       {s.preferred === i + 1 && <Badge tone="green">Hubungan utama</Badge>}
                     </div>
                     <p className="mt-1 font-medium text-gray-900">{p.name}</p>
-                    <p className="text-gray-600">{p.phone}</p>
+                    <p className="text-gray-600">{fmtPhone(p.phone)}</p>
                     {p.email && <p className="text-gray-600">{p.email}</p>}
                     {(p.occupation || p.age) && <p className="text-gray-500">{[p.occupation, p.age && ageLabel(p.age)].filter(Boolean).join(' · ')}</p>}
                     {p.phone && (
                       <div className="mt-2 flex gap-2">
                         <Button as="a" size="sm" href={waLink(p.phone)} target="_blank" rel="noreferrer"><WhatsAppIcon className="size-3.5" /> WhatsApp</Button>
-                        <Button as="a" size="sm" href={`tel:${p.phone}`}>Telefon</Button>
+                        <Button as="a" size="sm" href={telLink(p.phone)}>Telefon</Button>
                         {p.email && <Button as="a" size="sm" href={`mailto:${p.email}`}>E-mel</Button>}
                       </div>
                     )}

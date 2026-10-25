@@ -3,7 +3,7 @@ import { Download, Printer } from 'lucide-react';
 import { dashboardApi } from '../api/client';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
-import { formLabel, rm } from '../lib/format';
+import { formLabel, rm, fmtPhone } from '../lib/format';
 import { attendanceHref, classesHref, historyHref, invoicesHref, monthEnd, monthKey, receiptsHref, sessionsHref, studentsHref, vouchersHref } from '../lib/drilldown';
 import { downloadCsv } from '../lib/csv';
 import { BarChart, HBarList, Legend, SERIES_COLORS } from './charts';
@@ -340,14 +340,14 @@ export default function ReportsView({ role }) {
                 <CardHeader
                   title={<>{title} (<Fig href={link(studentsHref, { status }, list.length)}>{list.length}</Fig>)</>}
                   actions={list.length > 0 && <CsvButton onClick={() => downloadCsv(file, ['ID', 'Nama', 'Tingkatan', 'Telefon', 'Telefon penjaga'],
-                    list.map((s) => [s.student_id, s.full_name, s.form_level, s.phone_number, s.parent1_phone]))} />}
+                    list.map((s) => [s.student_id, s.full_name, s.form_level, fmtPhone(s.phone_number), fmtPhone(s.parent1_phone)]))} />}
                 />
                 {list.length === 0 ? <p className="p-5 text-sm text-gray-500">Tiada.</p> : (
                   <ul className="max-h-80 divide-y divide-gray-100 overflow-y-auto text-sm">
                     {list.map((s) => (
                       <li key={s.student_id} className="flex justify-between gap-3 px-5 py-2.5">
                         <a href={`#/students/${s.student_id}`} className="text-gray-900 hover:underline">{s.full_name} <span className="text-gray-400">· {formLabel(s.form_level)}</span></a>
-                        <span className="whitespace-nowrap text-gray-500">{s.parent1_phone}</span>
+                        <span className="whitespace-nowrap text-gray-500">{fmtPhone(s.parent1_phone)}</span>
                       </li>
                     ))}
                   </ul>

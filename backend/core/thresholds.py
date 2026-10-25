@@ -15,9 +15,9 @@ from .models import SettingEvent
 from .permissions import MANAGEMENT, display_name, require_role
 
 
-def _spec(key, label, group, default, kind='number', unit='', low=None, high=None, pattern=None):
+def _spec(key, label, group, default, kind='number', unit='', low=None, high=None, pattern=None, options=None):
     return {'key': key, 'label': label, 'group': group, 'default': default, 'kind': kind, 'unit': unit,
-            'min': low, 'max': high, 'pattern': pattern}
+            'min': low, 'max': high, 'pattern': pattern, 'options': options}
 
 
 LEAD_STAGES = [('ENQUIRY', 'Enquiry'), ('CONTENT_1', 'Content 1'), ('CONTENT_2', 'Content 2'), ('CONTENT_3', 'Content 3'),
@@ -55,6 +55,13 @@ SPECS = {
     # Leads that finished (registered, active or not interested) leave the board after this many days;
     # they stay in the Arkib tab and on the student list
     'lead_board_days': _spec('LEAD_BOARD_DAYS', 'Prospek yang selesai kekal di papan selama', 'Peringkat prospek', 30, unit='hari', low=7, high=365),
+    # How telephone numbers read and are typed (core/phone.py). Saved numbers are never rewritten when these change.
+    'phone_prefix': _spec('PHONE_PREFIX', 'Awalan nombor yang dipaparkan', 'Format nombor telefon', 'plus60', kind='choice',
+                          options=[('plus60', '+60 (+6013-347-4009)'), ('60', '60 (6013-347-4009)'), ('0', '0 (013-347-4009)')]),
+    'phone_separator': _spec('PHONE_SEPARATOR', 'Pemisah dalam nombor yang dipaparkan', 'Format nombor telefon', 'dash', kind='choice',
+                             options=[('dash', 'Sengkang (+6013-347-4009)'), ('space', 'Ruang (+6013 347 4009)'), ('none', 'Tiada (+60133474009)')]),
+    'phone_input': _spec('PHONE_INPUT', 'Nombor dalam kotak input bermula dengan', 'Format nombor telefon', '60', kind='choice',
+                         options=[('60', '60 (60133474009)'), ('0', '0 (0133474009)'), ('plus60', '+60 (+60133474009)')]),
     # Names of the lead stages (the order and the rules of the stages stay as they are)
     **{f'lead_label_{code}': _spec(f'LEAD_LABEL_{code}', f'Peringkat {i + 1}', 'Peringkat prospek', label, kind='text', pattern=r'.{1,30}')
        for i, (code, label) in enumerate(LEAD_STAGES)},
@@ -74,6 +81,11 @@ def _clean(name, raw):
         if not parts or any(p not in '0123456' or len(p) != 1 for p in parts):
             raise ValueError(f'{label}: pilih sekurang-kurangnya satu hari.')
         return ','.join(str(d) for d in sorted({int(p) for p in parts}))
+    if kind == 'choice':
+        value = str(raw if raw is not None else '').strip()
+        if value not in dict(spec['options']):
+            raise ValueError(f'{label}: pilih salah satu pilihan yang ada.')
+        return value
     if kind == 'text':
         value = ' '.join(str(raw or '').split())
         if spec['pattern'].startswith('[A-Z]'):
@@ -123,6 +135,7 @@ def listing():
     return [{
         'name': name, 'label': s['label'], 'unit': s['unit'], 'group': s['group'], 'kind': s['kind'], 'value': _plain(current[name]),
         'default': s['default'], 'min': s['min'], 'max': s['max'],
+        'options': [{'value': v, 'label': l} for v, l in s['options']] if s['options'] else None,
     } for name, s in SPECS.items()]
 
 

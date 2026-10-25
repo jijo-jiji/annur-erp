@@ -5,7 +5,7 @@ import { studentsApi } from '../api/client';
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { useStore } from '../store';
-import { date, formLabel, STUDENT_STATUS, waLink } from '../lib/format';
+import { date, formLabel, STUDENT_STATUS, waLink, fmtPhone } from '../lib/format';
 import { useGrades } from '../lib/grades';
 import { Badge, Button, Card, CardHeader, Checkbox, cx, EmptyState, Input, PageHeader, Select, Table, Td, Th, useToast, WhatsAppIcon } from './ui';
 import { BrandMark } from './Sidebar';
@@ -106,7 +106,7 @@ export default function ParentQRView() {
                     </Td>
                     <Td>
                       <p className="text-gray-900">{s.parent1.name}</p>
-                      <p className="text-[13px] text-gray-500">{s.parent1.phone}</p>
+                      <p className="text-[13px] text-gray-500">{fmtPhone(s.parent1.phone)}</p>
                     </Td>
                     <Td className="whitespace-nowrap text-gray-700">{date(s.joined)}</Td>
                     <Td><Badge tone={STUDENT_STATUS[s.status]?.tone}>{STUDENT_STATUS[s.status]?.label ?? s.status}</Badge></Td>
@@ -236,7 +236,7 @@ export function ParentRegistrationForm() {
               <option>Ibu</option>
               <option>Penjaga</option>
             </Select>
-            <Input label="No. telefon (WhatsApp)" required type="tel" value={f.parent1_phone} onChange={(e) => set({ parent1_phone: e.target.value })} autoComplete="tel" placeholder="012-345 6789" />
+            <Input label="No. telefon (WhatsApp)" required type="tel" value={f.parent1_phone} onChange={(e) => set({ parent1_phone: e.target.value })} autoComplete="tel" />
             <Input label="E-mel" type="email" value={f.parent1_email} onChange={(e) => set({ parent1_email: e.target.value })} autoComplete="email" />
           </div>
         </Card>
