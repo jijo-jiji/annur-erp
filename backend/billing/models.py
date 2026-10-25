@@ -103,6 +103,33 @@ class PaymentReceipt(models.Model):
         return f"[{self.receipt_number}] RM{self.amount_paid} ({self.payment_method})"
 
 
+class PaymentFollowUp(models.Model):
+    """Week 5 of the month (Phase E): a monthly invoice still unpaid after the counter's reminders in weeks 2 to 4 becomes
+    a task for Supervisor to contact the parent and record what was agreed. It comes before the arrears rule (unpaid for
+    the set number of months). The task is done when the outcome is recorded, or when the invoice is paid."""
+    OUTCOMES = [
+        ('WILL_PAY', 'Akan bayar minggu ini'),
+        ('PROMISED', 'Berjanji bayar pada tarikh'),
+        ('PAID_ALREADY', 'Sudah bayar, belum direkod'),
+        ('HARDSHIP', 'Masalah kewangan, minta tempoh'),
+        ('STOPPING', 'Mahu berhenti'),
+        ('NO_ANSWER', 'Tiada jawapan'),
+        ('OTHER', 'Lain-lain'),
+    ]
+    CHANNELS = [('WHATSAPP', 'WhatsApp'), ('CALL', 'Panggilan telefon'), ('IN_PERSON', 'Bersemuka')]
+    invoice = models.OneToOneField(Invoice, on_delete=models.CASCADE, related_name='follow_up')
+    created_on = models.DateField()
+    outcome = models.CharField(max_length=20, choices=OUTCOMES, blank=True)  # empty while the task is open
+    channel = models.CharField(max_length=20, choices=CHANNELS, blank=True)
+    promised_date = models.DateField(null=True, blank=True)
+    note = models.TextField(blank=True)
+    contacted_by = models.CharField(max_length=150, blank=True)
+    contacted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_on', '-id']
+
+
 class DailyCashClose(models.Model):
     """Tutup kaunter harian: the day's receipts by payment method, the cash the counter should hold and the cash counted.
     Admin closes the day (and may close it again until it is verified); Supervisor verifies it or returns it for a recount.

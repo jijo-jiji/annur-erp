@@ -12,6 +12,7 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
+from core import notify
 from core.permissions import APPROVER_ROLES, MANAGEMENT, display_name, get_role
 from students.drilldown import month_range, parse_day
 from .models import DailyCashClose, PaymentReceipt
@@ -124,6 +125,7 @@ def cash_close(request):
         close.status = 'CLOSED'
         close.closed_by, close.closed_by_user, close.closed_at = display_name(request.user), request.user, timezone.now()
         close.save()
+        notify.cash_close_closed(close, request.user)
     return Response(day_data(on, request.user))
 
 
@@ -144,6 +146,7 @@ def _decide(request, status):
             raise PermissionDenied('Anda tidak boleh mengesahkan tutup kaunter yang anda buat sendiri.')
         close.status, close.verified_by, close.verified_at, close.verify_note = status, display_name(request.user), timezone.now(), note
         close.save(update_fields=['status', 'verified_by', 'verified_at', 'verify_note'])
+        notify.cash_close_decided(close)
     return Response(day_data(on, request.user))
 
 

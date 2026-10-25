@@ -28,6 +28,7 @@ class Handler:
     fields = {}  # field -> label shown in the list of changes
     proposers = ALL_ROLES  # who may ask for a change
     approvers = APPROVER_ROLES  # who may decide it (their own changes apply at once)
+    link = ''  # the page where requests of this kind are decided, for notifications
     note_required = False  # a reason even when an approver makes the change (financial corrections)
     action_labels = {}  # how the actions read for this kind, e.g. a receipt is cancelled, not deleted
     delete_word = 'dipadam'
@@ -144,6 +145,7 @@ class ModelHandler(Handler):
 
 class SubjectHandler(ModelHandler):
     kind = 'SUBJECT'
+    link = '#/settings'
     fields = {'code': 'Kod', 'name': 'Nama', 'level_category': 'Peringkat', 'stream': 'Aliran', 'category': 'Kategori', 'is_active': 'Status'}
     key_field = 'code'
     immutable = ('code',)
@@ -188,6 +190,7 @@ class SubjectHandler(ModelHandler):
 class VendorHandler(ModelHandler):
     """Vendor details (j-status.doc: Supervisor holds them, Management approves or rejects the detail)."""
     kind = 'VENDOR'
+    link = '#/vouchers?tab=vendors'
     fields = {
         'vendor_id': 'Kod syarikat', 'vendor_name': 'Nama pembekal', 'supply_type': 'Jenis bekalan', 'pic_name': 'PIC',
         'phone_number': 'Telefon', 'address': 'Alamat', 'bank_name': 'Bank', 'bank_account': 'No. akaun bank',
@@ -318,6 +321,7 @@ class MasterEntryHandler(Handler):
 
 class ExpenseCategoryHandler(MasterEntryHandler):
     kind = 'EXPENSE_CATEGORY'
+    link = '#/vouchers?tab=categories'
     master = '18_expense_cat'
     fields = {'code': 'Kod', 'label': 'Nama kategori', 'budget': 'Bajet bulanan'}
     editable = ('budget',)
@@ -355,6 +359,7 @@ class ExpenseCategoryHandler(MasterEntryHandler):
 
 class ExpenseSubcategoryHandler(MasterEntryHandler):
     kind = 'EXPENSE_SUBCATEGORY'
+    link = '#/vouchers?tab=categories'
     master = '19_expense_subcat'
     fields = {'code': 'Kod', 'label': 'Nama subkategori', 'cat': 'Kategori'}
     editable = ('cat',)
@@ -395,6 +400,7 @@ class TeacherHandler(Handler):
     Management approves or rejects). The pay rate is set when the teacher is added; later rises
     go through the rate-increment flow, which keeps their history."""
     kind = 'TEACHER'
+    link = '#/teachers?tab=requests'
     fields = {
         'teacher_code': 'Kod guru', 'full_name': 'Nama', 'phone_number': 'Telefon', 'email': 'E-mel', 'teacher_type': 'Kategori',
         'is_active': 'Status', 'rate_per_session': 'Kadar sesi', 'bank_name': 'Bank', 'bank_account': 'No. akaun bank',
@@ -518,6 +524,7 @@ class PricingTierHandler(ModelHandler):
     """Fee packages: a group (e.g. Darjah 1-4), its packages and the per-subject rate. The package
     total always follows the rate. A group is named once; renaming it renames every package in it."""
     kind = 'PRICING_TIER'
+    link = '#/settings?tab=pricing'
     fields = {'level_category': 'Kumpulan', 'group_label': 'Nama kumpulan', 'subject_count': 'Bilangan subjek', 'price_per_subject': 'Kadar / subjek'}
     proposers = APPROVER_ROLES
     approvers = (MANAGEMENT,)
@@ -576,6 +583,7 @@ class PricingTierHandler(ModelHandler):
 class DiscountHandler(ModelHandler):
     """Discount types and voucher codes (used at the counter and on student accounts)."""
     kind = 'DISCOUNT'
+    link = '#/settings?tab=discounts'
     fields = {
         'name': 'Nama diskaun', 'code': 'Kod baucar', 'mode': 'Jenis nilai', 'value': 'Nilai', 'recurring': 'Berulang',
         'valid_from': 'Sah dari', 'valid_until': 'Sah hingga', 'max_uses': 'Had penggunaan', 'is_active': 'Status',
@@ -655,6 +663,7 @@ DAY_NAMES = {'JUMAAT': 'Jumaat', 'SABTU': 'Sabtu', 'AHAD': 'Ahad', 'ISNIN': 'Isn
 class TimeSlotHandler(ModelHandler):
     """When classes can be held (day and time). Slots are retired, not removed, once classes use them."""
     kind = 'TIME_SLOT'
+    link = '#/settings?tab=schedule'
     fields = {'day': 'Hari', 'start_time': 'Masa mula', 'end_time': 'Masa tamat', 'period_label': 'Nama slot', 'is_active': 'Status'}
     proposers = APPROVER_ROLES
     approvers = (MANAGEMENT,)
@@ -723,6 +732,7 @@ class TimeSlotHandler(ModelHandler):
 class ClassroomHandler(ModelHandler):
     """Rooms classes can be given. Rooms are retired, not removed, once classes use them."""
     kind = 'CLASSROOM'
+    link = '#/settings?tab=schedule'
     fields = {'name': 'Nama bilik', 'capacity': 'Muatan', 'is_active': 'Status'}
     proposers = APPROVER_ROLES
     approvers = (MANAGEMENT,)
@@ -775,6 +785,7 @@ class ClassroomHandler(ModelHandler):
 class ClosedDateHandler(ModelHandler):
     """Days the centre is closed. Nothing is held, taken or paid on them."""
     kind = 'CLOSED_DATE'
+    link = '#/settings?tab=schedule'
     fields = {'date': 'Tarikh', 'reason': 'Sebab'}
     proposers = APPROVER_ROLES
     approvers = (MANAGEMENT,)
@@ -837,6 +848,7 @@ class ReceiptHandler(Handler):
     reason (its amount comes off the invoice again) and, for a correction, a new receipt with the right details replaces
     it. Anyone at the counter may ask; Supervisor or Management decide (theirs apply at once), always with a reason."""
     kind = 'RECEIPT'
+    link = '#/billing?tab=corrections'
     fields = {
         'payment_date': 'Tarikh bayaran', 'amount_paid': 'Amaun', 'payment_method': 'Kaedah', 'reference_number': 'No. rujukan',
         'payment_type': 'Jenis bayaran', 'payment_month': 'Bulan', 'notes': 'Catatan',
@@ -922,6 +934,7 @@ class InvoiceHandler(Handler):
     """Changing an invoice nothing has been paid on yet: the fee, the registration fee or the description. Same order as
     receipts: anyone may ask with a reason, Supervisor or Management decide."""
     kind = 'INVOICE'
+    link = '#/billing?tab=corrections'
     fields = {'monthly_fee': 'Yuran', 'registration_fee': 'Yuran pendaftaran', 'description': 'Keterangan'}
     note_required = True
     action_labels = {'UPDATE': 'Ubah'}
@@ -1048,6 +1061,8 @@ def submit(user, kind, action, target_id, data, note):
         req.decided_by, req.decided_at = display_name(user), timezone.now()
         req.target_id = handler.apply(action, target_id, values, req).pk
     req.save()
+    from . import notify
+    notify.change_request_submitted(req)
     return req
 
 
@@ -1084,6 +1099,8 @@ def approve(req, user, comment):
     req.payload, req.before = values, before
     req.target_id = handler.apply(req.action, req.target_id, values, req).pk
     req.save()
+    from . import notify
+    notify.change_request_decided(req, user)
     return req
 
 
@@ -1098,6 +1115,8 @@ def reject(req, user, comment):
     req.decision_comment = comment
     req.seen = req.requested_by_id == user.id
     req.save()
+    from . import notify
+    notify.change_request_decided(req, user)
     return req
 
 

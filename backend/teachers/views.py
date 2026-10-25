@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from datetime import date, datetime
 from django.db.models import Q
 from django.utils.dateparse import parse_date, parse_time
-from core import numbering, pdf
+from core import notify, numbering, pdf
 from core.permissions import MANAGEMENT, APPROVER_ROLES, display_name, get_role, require_role
 from . import drilldown, payroll
 from . import staff as staff_hr
@@ -51,7 +51,7 @@ class TeacherRateIncrementViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         teacher = serializer.validated_data['teacher']
-        serializer.save(previous_rate=teacher.rate_per_session, proposed_by=display_name(self.request.user))
+        notify.rate_increment_waiting(serializer.save(previous_rate=teacher.rate_per_session, proposed_by=display_name(self.request.user)))
 
     def _decide(self, request, approve):
         require_role(request, MANAGEMENT)
@@ -189,6 +189,7 @@ class TeacherPaymentViewSet(viewsets.ReadOnlyModelViewSet):
         require_role(request, *APPROVER_ROLES)
         payment = self.get_object()
         payroll.verify(payment, display_name(request.user))
+        notify.payroll_step(payment)
         return self._respond(payment)
 
     @action(detail=True, methods=['post'])
@@ -196,6 +197,7 @@ class TeacherPaymentViewSet(viewsets.ReadOnlyModelViewSet):
         require_role(request, MANAGEMENT)
         payment = self.get_object()
         payroll.decide(payment, display_name(request.user), True, (request.data.get('comment') or '').strip())
+        notify.payroll_step(payment)
         return self._respond(payment)
 
     @action(detail=True, methods=['post'])
@@ -203,6 +205,7 @@ class TeacherPaymentViewSet(viewsets.ReadOnlyModelViewSet):
         require_role(request, MANAGEMENT)
         payment = self.get_object()
         payroll.decide(payment, display_name(request.user), False, (request.data.get('comment') or '').strip())
+        notify.payroll_step(payment)
         return self._respond(payment)
 
     @action(detail=True, methods=['post'])
@@ -476,7 +479,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         days = len(staff_hr.working_days(staff, start, end))
         if days == 0:
             raise ValidationError({'detail': 'Tiada hari bekerja dalam tempoh ini.'})
-        serializer.save(leave_id=numbering.next_number(LeaveRequest, 'leave_id', f"LV-{start.year}-", 3), days_count=days)
+        notify.leave_waiting(serializer.save(leave_id=numbering.next_number(LeaveRequest, 'leave_id', f"LV-{start.year}-", 3), days_count=days))
 
     def perform_destroy(self, instance):
         # Only a pending application can be withdrawn, by its owner or an approver
@@ -502,6 +505,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         leave.status = 'APPROVED' if approve else 'REJECTED'
         leave.supervisor_remark = f"{remark or ('Diluluskan' if approve else '')} ({display_name(request.user)})"
         leave.save()
+        notify.leave_decided(leave)
         return Response(self.get_serializer(leave).data)
 
     @action(detail=True, methods=['post'])

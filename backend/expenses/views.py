@@ -3,7 +3,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
-from core import numbering
+from core import notify, numbering
 from core.permissions import SUPERVISOR, MANAGEMENT, APPROVER_ROLES, get_role, display_name, require_role
 from . import drilldown
 from .models import Vendor, PaymentVoucher
@@ -42,10 +42,11 @@ class PaymentVoucherViewSet(viewsets.ModelViewSet):
         d = serializer.validated_data.get('date') or date.today()
         pv_num = numbering.voucher_number(PaymentVoucher, d)
         tier, initial_status = tier_and_initial_status(amount)
-        serializer.save(
+        pv = serializer.save(
             pv_number=pv_num, date=d, tier_level=tier, status=initial_status,
-            prepared_by=display_name(self.request.user),
+            prepared_by=display_name(self.request.user), prepared_by_user=self.request.user,
         )
+        notify.voucher_waiting(pv)
 
     def perform_update(self, serializer):
         pv = serializer.instance
@@ -56,7 +57,7 @@ class PaymentVoucherViewSet(viewsets.ModelViewSet):
         if new_amount is not None and new_amount != pv.amount:
             # A changed amount always goes back through approval for its tier
             tier, initial_status = tier_and_initial_status(new_amount)
-            serializer.save(tier_level=tier, status=initial_status, approved_by='', approval_comment='')
+            notify.voucher_waiting(serializer.save(tier_level=tier, status=initial_status, approved_by='', approval_comment=''))
         else:
             serializer.save()
 
@@ -75,6 +76,7 @@ class PaymentVoucherViewSet(viewsets.ModelViewSet):
         pv.approved_by = display_name(request.user)
         pv.approval_comment = comment
         pv.save()
+        notify.voucher_decided(pv, request.user)
         return Response(self.get_serializer(pv).data)
 
     @action(detail=False, methods=['get'])

@@ -9,7 +9,7 @@ building it, before the next one starts.
 | B | Student code `HQ-YY0000` and renumbering | **Done** 25 Oct 2026 |
 | C | School exam results: terms per year, grid entry, public results form + review queue, student and class statistics | **Done** 25 Oct 2026 |
 | D | Fees: payment proof, receipt correction, unpaid invoice edit; daily counter close; Admin daily checklist | **Done** 26 Oct 2026 |
-| E | Notifications and the week-5 unpaid rule for Supervisor | Planned |
+| E | Notifications and the week-5 unpaid rule for Supervisor | **Done** 26 Oct 2026 |
 | F | Teacher private links and the public teacher profile form | Planned |
 | I | QR self check-in for student attendance | Planned |
 | G | Handouts linked to classes, copy count and received list | Planned |
@@ -191,6 +191,33 @@ rule and the new student codes (see the merge commit).
 A notification bell per user. A monthly invoice still unpaid through weeks 3–4 of its month gives Supervisor a task in
 week 5 (from day 29) to contact the parent, with WhatsApp / call buttons and an outcome. Fits between the existing
 reminders and the 2-month arrears rule.
+
+### Phase E: what was built
+
+| Where | What |
+|---|---|
+| **Bell** beside the centre's name (desktop) and in the top bar (phone) | Each person's own notices, newest first, with the unread count. Opening one marks it read and goes to the page that deals with it; *Tandakan semua dibaca* clears the rest. Checked every minute, when the window regains focus and on every page change. |
+| Who is told about what (`backend/core/notify.py`) | A change request (subjects, vendors, categories, teachers, fees, discounts, slots, rooms, closed days, receipt corrections, invoice changes) reaches whoever may decide that kind; the decision reaches the person who asked. A registration (counter, parent's QR form, sent again) reaches Supervisor and Management; the decision reaches Admin. A voucher reaches the approvers of its tier (none below the counter limit); the decision reaches the person who prepared it. Leave reaches the approvers (an approver's own leave goes to Management only); the decision reaches the applicant. Extra / cancelled classes reach Supervisor, then Management to verify. Master timetable changes, rate increases and teacher pay to approve reach Management; verified, approved or rejected pay reaches the next person. The counter close reaches the checkers (not the closer); their decision reaches the closer. Results from the parents' form reach Admin and Supervisor. Week-5 tasks reach Supervisor (Management when there is none), once a day. |
+| Yuran & resit → Tunggakan & susulan → **Minggu 5: hubungi ibu bapa** | Monthly invoices still unpaid in week 5 (from day 29, or the last day of a shorter month such as February) whose due date was before week 5. Supervisor or Management uses WhatsApp (new editable message *Susulan yuran minggu 5* in Tetapan → Mesej) or the phone button and records how they reached the parent and the outcome (will pay this week, promised date, already paid, hardship, stopping, no answer, other); it can be updated while the invoice is unpaid. A paid invoice closes the task. Admin sees the list and outcomes without the buttons. The month before is caught up if nobody opened the system in its week 5; older months belong to the arrears rule. |
+| Ringkasan | *n yuran perlu dihubungi (minggu 5)* for Supervisor and Management. |
+
+Changes from the plan, found while building:
+- Vouchers now keep the login that prepared them (`prepared_by_user`), so a decision can reach that person. Vouchers made
+  before this have none and their decisions reach nobody's bell (they still show on the voucher).
+- A notice is saved in the same transaction as the action that caused it, inside its own savepoint: an action that fails
+  leaves no notice, and a notice that cannot be saved never stops the action (it is logged). Under `manage.py test` a
+  notice that cannot be saved fails the test instead (`NOTIFY_STRICT`), so a mistake in `notify.py` cannot hide. This
+  found a wrong field name in the leave notice while building.
+- The staff leave page and the extra / cancel class page now read their tab from the address, so a notice opens the
+  right tab (`#/staff?tab=leave`, `#/reschedules?tab=pending`).
+- Tasks are made when Ringkasan or the follow-up list is opened; `manage.py week5_followups` does the same for a daily
+  schedule (deploy/DEPLOYMENT.md, *Scheduled jobs*).
+
+Data: `core.Notification` (user, title, body, link, key, read), `billing.PaymentFollowUp` (one per invoice: outcome, channel,
+promised date, note, who and when), `PaymentVoucher.prepared_by_user`. APIs: `/notifications/`, `/notifications/read/`,
+`/billing/follow-ups/`, `/billing/follow-ups/<id>/record/`; dashboard `approvals.fee_followups_open`.
+
+Tests: `PhaseENotificationsAndWeek5Tests` (9 tests); full backend suite 273 tests OK; browser `e2e/notifications.spec.js` (2 tests).
 
 ## Phase F: teacher private links and profile form
 

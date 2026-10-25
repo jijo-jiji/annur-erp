@@ -4,6 +4,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from django.db import transaction
 from django.utils import timezone
+from core import notify
 from core.permissions import APPROVER_ROLES, MANAGEMENT, display_name, get_role, require_role
 from . import drilldown
 from .models import Classroom, TimeSlot, ClosedDate, ClassTimetable, ClassRescheduleLog, LessonHandout, TimetableChange
@@ -71,6 +72,7 @@ class ClassTimetableViewSet(viewsets.ModelViewSet):
             payload=data, summary=describe(instance, data) if action_name != 'DELETE' else 'Padam kelas daripada jadual induk',
             requested_by=by,
         )
+        notify.timetable_change_waiting(change)
         return Response({'pending_change': TimetableChangeSerializer(change).data,
                          'message': 'Perubahan dihantar untuk kelulusan Management.'}, status=status.HTTP_202_ACCEPTED)
 
@@ -162,9 +164,10 @@ class ClassRescheduleLogViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         by = display_name(self.request.user)
         if get_role(self.request.user) in APPROVER_ROLES:
-            serializer.save(recorded_by=by, status='APPROVED', supervisor_approved=True, decided_by=by)
+            entry = serializer.save(recorded_by=by, status='APPROVED', supervisor_approved=True, decided_by=by)
         else:
-            serializer.save(recorded_by=by, status='PENDING', supervisor_approved=False)
+            entry = serializer.save(recorded_by=by, status='PENDING', supervisor_approved=False)
+        notify.reschedule_waiting(entry)
 
     def perform_update(self, serializer):
         log = serializer.instance
@@ -186,6 +189,7 @@ class ClassRescheduleLogViewSet(viewsets.ModelViewSet):
         log.decided_by = display_name(request.user)
         log.decision_comment = comment
         log.save()
+        notify.reschedule_waiting(log)  # approved: Management verifies it next
         return Response(self.get_serializer(log).data)
 
     @action(detail=True, methods=['post'])

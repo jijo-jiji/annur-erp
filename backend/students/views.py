@@ -10,7 +10,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from academic.models import ClassTimetable
-from core import numbering
+from core import notify, numbering
 from core.permissions import APPROVER_ROLES, get_role, display_name, require_role
 from . import drilldown, lead_import, leads, services
 from business_config.models import SubjectMaster
@@ -77,6 +77,7 @@ class StudentViewSet(viewsets.ModelViewSet):
                 join_date=serializer.validated_data.get('join_date') or date.today(),
             )
             results = services.register(student, by, classes)
+            notify.registration_waiting(student, by)
             if lead:
                 if lead.interested_subjects:
                     names = dict(SubjectMaster.objects.filter(code__in=lead.interested_subjects).values_list('code', 'name'))
@@ -117,6 +118,7 @@ class StudentViewSet(viewsets.ModelViewSet):
         require_role(request, *APPROVER_ROLES)
         student = self.get_object()
         invoice = services.decide_registration(student, display_name(request.user), True, (request.data.get('comment') or '').strip())
+        notify.registration_decided(student, True, request.user)
         return self._respond(student, invoice=InvoiceSerializer(invoice).data if invoice else None)
 
     @action(detail=True, methods=['post'])
@@ -124,6 +126,7 @@ class StudentViewSet(viewsets.ModelViewSet):
         require_role(request, *APPROVER_ROLES)
         student = self.get_object()
         services.decide_registration(student, display_name(request.user), False, (request.data.get('comment') or '').strip())
+        notify.registration_decided(student, False, request.user)
         return self._respond(student)
 
     @action(detail=True, methods=['post'])
@@ -132,6 +135,7 @@ class StudentViewSet(viewsets.ModelViewSet):
         student = self.get_object()
         classes = classes_from(request.data.get('class_ids'))
         results = services.resubmit(student, display_name(request.user), classes, (request.data.get('note') or '').strip())
+        notify.registration_waiting(student, display_name(request.user), again=True)
         return self._respond(student, enrolment=results)
 
     @action(detail=True, methods=['post'])
@@ -215,6 +219,7 @@ def parent_self_register(request):
             lead_source=serializer.validated_data.get('lead_source') or 'QR_CODE',
         )
         services.register(student, 'Ibu bapa (QR)', [])
+        notify.registration_waiting(student, 'ibu bapa (borang QR)')
         interested = [str(s)[:40] for s in (request.data.get('interested_subjects') or [])][:12]
         if interested:
             services.log(student, 'NOTE', 'Ibu bapa (QR)', description=f"Subjek diminati: {', '.join(interested)}")

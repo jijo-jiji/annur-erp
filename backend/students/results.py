@@ -17,7 +17,7 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from academic.models import ClassTimetable
 from business_config.models import SubjectMaster
-from core import files, grades, phone
+from core import files, grades, notify, phone
 from core.models import Attachment
 from core.permissions import display_name
 from . import exam_terms
@@ -329,5 +329,6 @@ def public_results_submit(request):
             Attachment.objects.filter(kind='RESULT_SLIP', object_id=sub.pk).delete()
             Attachment.objects.create(kind='RESULT_SLIP', object_id=sub.pk, file=slip, original_name=slip.name[:255],
                                       content_type=content_type, size=slip.size, uploaded_by_name=sender)
+        notify.result_submission(sub)
     return Response({'success': True, 'reference': reference(sub), 'replaced': replaced, 'student_name': student.full_name,
                      'exam': f"{exam_terms.label(term)} {year}", 'count': len(clean)}, status=status.HTTP_201_CREATED)

@@ -9,6 +9,7 @@ from expenses.models import PaymentVoucher
 from students.models import Student, StudentExamResult, ClassWaitlist
 from academic.drilldown import capacity_state
 from billing.counter import counter_alerts
+from billing.followups import generate as week5_generate, open_tasks as week5_open_tasks
 from billing.drilldown import invoices_matching, receipts_matching
 from expenses.drilldown import COUNTED_STATUSES, vouchers_matching
 from students.drilldown import REGISTERED_STATUSES, STAY_BUCKETS, events_matching, leads_matching, stay_days, stay_key, uninvoiced_students
@@ -65,6 +66,11 @@ def period_of_stay(today):
 def monthly_invoices_pending(today):
     """Active monthly students with classes but no invoice yet for this month."""
     return uninvoiced_students(today.replace(day=1)).count()
+
+
+def week5_open(today):
+    week5_generate(today)
+    return week5_open_tasks().count()
 
 
 def money(value):
@@ -188,6 +194,8 @@ def build_dashboard(role, today=None, user=None):
         'teacher_pay_to_approve': TeacherPayment.objects.filter(status='VERIFIED').count() if role != ADMIN else 0,
         'teacher_pay_to_record': TeacherPayment.objects.filter(status='APPROVED').count() if role != ADMIN else 0,
         'lead_followups_due': leads_matching({'due': '1'}, today).count(),
+        # Week 5: unpaid monthly fees for Supervisor to follow up (billing/followups.py)
+        'fee_followups_open': week5_open(today) if role != ADMIN else 0,
     }
 
     attendance_start = today - timedelta(days=limits['attendance_window_days'])

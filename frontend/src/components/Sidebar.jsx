@@ -2,6 +2,7 @@ import { KeyRound, LogOut, Search, X } from 'lucide-react';
 import { ROLE_LABEL, initials } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { Avatar, cx } from './ui';
+import NotificationBell from './NotificationBell';
 
 export function BrandMark({ inverted, className }) {
   return (
@@ -34,6 +35,7 @@ export default function Sidebar({ current, role, user, items, onSearch, onLogout
             <p className="truncate text-sm font-semibold text-gray-900">{CENTRE.name}</p>
             <p className="text-xs text-gray-500">Cawangan {CENTRE.branch}</p>
           </div>
+          <NotificationBell className="ml-auto hidden lg:block" />
           <button type="button" onClick={onClose} className="ml-auto rounded-md p-1 text-gray-500 hover:bg-gray-100 lg:hidden" aria-label="Tutup menu">
             <X className="size-5" />
           </button>

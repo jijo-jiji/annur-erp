@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -22,6 +23,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Production refuses to start without its own secret key and host name, so a forgotten setting fails loudly
 # instead of running with development defaults.
 PRODUCTION = os.environ.get('ANNUR_ENV', '').strip().lower() == 'production'
+# Under `manage.py test` a notification that cannot be saved fails the test instead of only being logged (core/notify.py)
+NOTIFY_STRICT = len(sys.argv) > 1 and sys.argv[1] == 'test'
 
 
 def _env_list(name):

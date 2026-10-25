@@ -17,7 +17,7 @@ export default function RescheduleLogView({ role }) {
   const notify = useToast();
   // The timetable links here with ?class=<id> to record a cancellation for that class
   const presetClass = new URLSearchParams(window.location.hash.split('?')[1]).get('class') || '';
-  const [tab, setTab] = useState('all');
+  const [tab, setTab] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'all');
   const [creating, setCreating] = useState(Boolean(presetClass));
   const [notice, setNotice] = useState(null);
   const [rejecting, setRejecting] = useState(null);

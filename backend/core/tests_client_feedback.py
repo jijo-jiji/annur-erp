@@ -504,3 +504,175 @@ class PhaseDFeesAndCounterTests(FeedbackBase):
         self.assertEqual(self.client.post('/api/v1/checklist/tick/', {'code': 'TUTUP'}, format='json').status_code, 400)
         DynamicMasterData.objects.filter(code='MESEJ').delete()  # a later change to the list leaves a checked day as it was
         self.assertEqual(len(self.client.get('/api/v1/checklist/').data['items']), 2)
+
+
+class PhaseENotificationsAndWeek5Tests(FeedbackBase):
+    def setUp(self):
+        super().setUp()
+        self.student = Student.objects.create(student_id='HQ-260001', full_name='Ali', ic_number='090101-03-1234', form_level='F5',
+                                              join_date=date(2026, 1, 1), status='ACTIVE', parent1_name='Bapa', parent1_phone='60123456789')
+
+    def bell(self, role):
+        self.as_role(role)
+        return self.client.get('/api/v1/notifications/').data
+
+    def titles(self, role):
+        return [n['title'] for n in self.bell(role)['items']]
+
+    def test_a_change_request_reaches_whoever_decides_it_and_the_decision_reaches_the_person_who_asked(self):
+        self.as_role(ADMIN)
+        asked = self.client.post('/api/v1/change-requests/', {'kind': 'SUBJECT', 'action': 'CREATE', 'note': 'Kelas baharu',
+                                                              'payload': {'code': 'EKO', 'name': 'Ekonomi', 'level_category': 'UPPER_SEC', 'stream': 'SASTERA', 'category': ''}}, format='json')
+        self.assertEqual(asked.status_code, 201, asked.data)
+        for role in (SUPERVISOR, MANAGEMENT):
+            bell = self.bell(role)
+            self.assertEqual(bell['unread'], 1)
+            self.assertEqual((bell['items'][0]['title'], bell['items'][0]['link']), ('Tambah subjek: EKO Ekonomi', '#/settings'))
+        self.assertEqual(self.bell(ADMIN)['unread'], 0)  # not told about their own request
+
+        self.as_role(SUPERVISOR)
+        self.client.post(f"/api/v1/change-requests/{asked.data['id']}/approve/", {}, format='json')
+        self.assertEqual(self.titles(ADMIN), ['Permohonan diluluskan: tambah subjek EKO Ekonomi'])
+
+        # marking read: one at a time, or all; only one's own
+        mine = self.bell(MANAGEMENT)['items'][0]['id']
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post('/api/v1/notifications/read/', {'ids': [mine]}, format='json').data['marked'], 0)
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.post('/api/v1/notifications/read/', {'ids': [mine]}, format='json').data['unread'], 0)
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post('/api/v1/notifications/read/', {'all': True}, format='json').data['unread'], 0)
+
+    def test_vouchers_reach_the_approvers_of_their_tier_and_the_decision_reaches_the_preparer(self):
+        vendor = Vendor.objects.create(vendor_name='Kedai A', vendor_id='VND-0001')
+        self.as_role(ADMIN)
+        small = self.client.post('/api/v1/expenses/vouchers/', {'vendor': vendor.id, 'category': 'Utiliti', 'amount': 100,
+                                                                'items_description': 'Bil air', 'payment_method': 'CASH'}, format='json')
+        self.assertEqual(small.status_code, 201, small.data)
+        self.assertEqual(self.bell(SUPERVISOR)['unread'], 0)  # below the counter limit: nobody has to approve it
+        self.as_role(ADMIN)
+        big = self.client.post('/api/v1/expenses/vouchers/', {'vendor': vendor.id, 'category': 'Utiliti', 'amount': 4000,
+                                                              'items_description': 'Penghawa dingin', 'payment_method': 'CASH'}, format='json').data
+        self.assertEqual(self.bell(SUPERVISOR)['unread'], 0)  # above RM3,000: Management only
+        self.assertIn('RM 4,000.00 menunggu kelulusan', self.titles(MANAGEMENT)[0])
+        self.as_role(MANAGEMENT)
+        self.client.post(f"/api/v1/expenses/vouchers/{big['id']}/reject/", {'comment': 'Dapatkan sebut harga lain'}, format='json')
+        self.assertEqual(self.titles(ADMIN), [f"Baucar {big['pv_number']} ditolak"])
+
+    def test_registrations_reach_the_approvers_and_the_decision_reaches_the_counter(self):
+        self.register('Siti')
+        self.assertEqual(self.titles(SUPERVISOR), ['Pendaftaran baharu: Siti'])
+        self.client.post('/api/v1/public/results/check/', {}, format='json')  # (unrelated public call does nothing)
+        student = Student.objects.get(full_name='Siti')
+        self.as_role(SUPERVISOR)
+        self.client.post(f'/api/v1/students/students/{student.id}/reject/', {'comment': 'IC tidak jelas'}, format='json')
+        self.assertEqual(self.titles(ADMIN)[0], 'Pendaftaran ditolak: Siti')
+
+    def test_a_supervisor_s_own_leave_goes_to_management_only(self):
+        from teachers.models import StaffMember
+        staff = StaffMember.objects.create(name='Sup', user=self.users[SUPERVISOR], staff_id='ST-001', phone='60123456789')
+        self.as_role(SUPERVISOR)
+        res = self.client.post('/api/v1/teachers/leave-requests/', {'staff': staff.id, 'leave_type': 'AL', 'start_date': '2026-11-02',
+                                                                   'end_date': '2026-11-02', 'reason': 'Urusan keluarga'}, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(self.bell(MANAGEMENT)['unread'], 1)
+        self.assertEqual(self.bell(SUPERVISOR)['unread'], 0)
+
+    def test_the_counter_close_reaches_the_checkers_and_their_decision_reaches_the_closer(self):
+        self.as_role(ADMIN)
+        self.client.post('/api/v1/billing/cash-close/', {'cash_counted': '0'}, format='json')
+        self.assertIn('menunggu semakan', self.titles(SUPERVISOR)[0])
+        self.as_role(SUPERVISOR)
+        self.client.post('/api/v1/billing/cash-close/return/', {'note': 'Kira semula'}, format='json')
+        self.assertIn('dikembalikan untuk dikira semula', self.titles(ADMIN)[0])
+
+    def test_a_notice_that_cannot_be_saved_never_stops_the_action(self):
+        from unittest import mock
+        # in use a failed notice is only logged; tests normally make it fail loudly (NOTIFY_STRICT), so turn that off here
+        with self.settings(NOTIFY_STRICT=False), \
+                mock.patch('core.notify.Notification.objects.get_or_create', side_effect=RuntimeError('db down')), \
+                self.assertLogs('core.notify', level='ERROR'):  # logged instead
+            self.as_role(ADMIN)
+            res = self.client.post('/api/v1/change-requests/', {'kind': 'SUBJECT', 'action': 'CREATE', 'note': 'x',
+                                                                'payload': {'code': 'EKX', 'name': 'Eko', 'level_category': 'UPPER_SEC', 'stream': 'SASTERA', 'category': ''}}, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+
+    def test_class_changes_timetable_rates_teacher_pay_and_parent_results_each_reach_the_next_person(self):
+        from teachers.models import Teacher, TeacherPayment
+        teacher = Teacher.objects.create(teacher_code='NAK', full_name='Cikgu Nik', phone_number='60123456789')
+        self.as_role(ADMIN)
+        logged = self.client.post('/api/v1/academic/reschedule-logs/', {'timetable_class': self.fz.id, 'month_label': "OKT '26",
+                                                                        'tarikh_batal': '2026-10-30', 'reason_type': 'OTHER', 'remarks': 'Guru sakit'}, format='json')
+        self.assertEqual(logged.status_code, 201, logged.data)
+        self.assertIn('menunggu kelulusan', self.titles(SUPERVISOR)[0])
+        self.as_role(SUPERVISOR)
+        self.client.post(f"/api/v1/academic/reschedule-logs/{logged.data['id']}/approve/", {}, format='json')
+        self.assertIn('perlu disahkan', self.titles(MANAGEMENT)[0])
+
+        self.as_role(SUPERVISOR)
+        moved = self.client.patch(f'/api/v1/academic/timetable/{self.fz.id}/', {'max_seats': 12}, format='json')
+        self.assertEqual(moved.status_code, 202, moved.data)
+        self.client.post('/api/v1/teachers/rate-increments/', {'teacher': teacher.id, 'proposed_rate': '70.00', 'effective_date': '2026-11-01',
+                                                              'reason': 'Setahun mengajar'}, format='json')
+        pay = TeacherPayment.objects.create(teacher=teacher, month=date(2026, 10, 1), sessions=4, calculated_amount=240, amount_payable=240)
+        self.client.post(f'/api/v1/teachers/payments/{pay.id}/verify/', {}, format='json')
+        titles = self.titles(MANAGEMENT)
+        for expected in ('Perubahan jadual induk menunggu kelulusan', 'Cadangan kenaikan kadar Cikgu Nik', 'Elaun Cikgu Nik 10/2026 menunggu kelulusan anda'):
+            self.assertTrue(any(expected in t for t in titles), (expected, titles))
+        self.as_role(MANAGEMENT)
+        self.client.post(f'/api/v1/teachers/payments/{pay.id}/reject/', {'comment': 'Sesi 3 Okt tiada'}, format='json')
+        self.assertIn('ditolak oleh Pengurusan', self.titles(SUPERVISOR)[0])
+
+        self.student.ic_number, self.student.form_level = '090101-03-1234', 'F5'
+        self.student.save()
+        self.client.force_authenticate(None)
+        sent = self.client.post('/api/v1/public/results/', {
+            'student_code': 'HQ-260001', 'ic_last4': '1234', 'year': 2026, 'term': 'PENGGAL_2',
+            'rows': json.dumps([{'subject': self.fizik.id, 'mark': 70}]), 'submitted_by': 'Bapa Ali', 'relation': 'Bapa'}, format='multipart')
+        self.assertEqual(sent.status_code, 201, sent.data)
+        self.assertEqual(self.titles(ADMIN)[0], 'Keputusan dari borang ibu bapa: Ali')
+
+    def invoice(self, month, due, number, paid=False):
+        from billing.models import Invoice
+        return Invoice.objects.create(invoice_number=number, student=self.student, billing_month=month, invoice_type='MONTHLY',
+                                      registration_fee=0, monthly_fee=240, total_payable=240, balance_due=0 if paid else 240,
+                                      total_paid=240 if paid else 0, status='PAID' if paid else 'OVERDUE', due_date=due)
+
+    def test_monthly_fees_unpaid_in_week_5_become_supervisor_tasks_once(self):
+        from billing import followups
+        from billing.models import PaymentFollowUp
+        unpaid = self.invoice(date(2026, 10, 1), date(2026, 10, 7), 'INV-1')
+        self.invoice(date(2026, 10, 1), date(2026, 10, 30), 'INV-2')  # raised too late to be due before week 5
+        self.invoice(date(2026, 10, 1), date(2026, 10, 7), 'INV-3', paid=True)
+        self.assertEqual(followups.generate(date(2026, 10, 28)), 0)  # week 5 starts on the 29th
+        self.assertEqual(followups.generate(date(2026, 10, 29)), 1)
+        self.assertEqual(followups.generate(date(2026, 10, 29)), 0)  # one task per invoice
+        self.assertEqual(PaymentFollowUp.objects.get().invoice, unpaid)
+        self.assertEqual(self.titles(SUPERVISOR), ['1 yuran perlu dihubungi (minggu 5)'])
+        self.assertEqual(self.bell(ADMIN)['unread'], 0)
+        # a month the system was not opened in week 5 is caught up the next month; February's week 5 is its last day
+        self.invoice(date(2026, 10, 1), date(2026, 10, 7), 'INV-4')
+        self.assertEqual(followups.generate(date(2026, 11, 2)), 1)
+        self.invoice(date(2026, 9, 1), date(2026, 9, 7), 'INV-5')  # two months back belongs to the arrears rule
+        self.assertEqual(followups.generate(date(2026, 11, 2)), 0)
+        self.assertEqual(followups.week5_start(date(2027, 2, 1)), date(2027, 2, 28))
+
+    def test_supervisor_records_the_outcome_and_a_paid_invoice_closes_the_task(self):
+        from billing import followups
+        invoice = self.invoice(date(2026, 10, 1), date(2026, 10, 7), 'INV-1')
+        followups.generate(date(2026, 10, 30))
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['approvals']['fee_followups_open'], 1)
+        task = self.client.get('/api/v1/billing/follow-ups/').data[0]
+        self.assertEqual((task['state'], task['student_name'], task['balance']), ('OPEN', 'Ali', '240.00'))
+        url = f"/api/v1/billing/follow-ups/{task['id']}/record/"
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.post(url, {'outcome': 'WILL_PAY', 'channel': 'CALL'}, format='json').status_code, 403)
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post(url, {'outcome': 'PROMISED', 'channel': 'WHATSAPP'}, format='json').status_code, 400)
+        done = self.client.post(url, {'outcome': 'PROMISED', 'channel': 'WHATSAPP', 'promised_date': '2099-01-05', 'note': 'Selepas gaji'}, format='json').data
+        self.assertEqual((done['state'], done['outcome_label'], done['contacted_by']), ('DONE', 'Berjanji bayar pada tarikh', 'supervisor'))
+        invoice.status, invoice.balance_due = 'PAID', 0
+        invoice.save()
+        self.assertEqual(self.client.get('/api/v1/billing/follow-ups/').data[0]['state'], 'PAID')
+        self.assertEqual(self.client.post(url, {'outcome': 'WILL_PAY', 'channel': 'CALL'}, format='json').status_code, 400)

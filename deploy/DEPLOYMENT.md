@@ -116,6 +116,17 @@ Management does these in the app, once:
 3. **Settings > Slot & bilik:** add the classrooms and check the time slots.
 4. **Settings > Pakej yuran / Diskaun:** check the fee packages and add Darjah 1-4 when ready.
 5. **Teachers and Timetable:** add the teachers (with their own phone and bank details) and the classes.
+6. **Data induk > Senarai semak harian:** check the office's daily checklist items (Kaunter harian).
+
+### Scheduled jobs (optional)
+
+The screens do this work when they are opened, so nothing breaks without a schedule. If days can pass without
+anyone opening Ringkasan or Yuran & resit, schedule these once a day (for example with `crontab -e` as root):
+
+```
+15 1 1 * * bash /opt/annur/deploy/manage.sh generate_monthly_invoices   # 1st of the month: monthly invoices
+30 7 * * * bash /opt/annur/deploy/manage.sh week5_followups             # daily: week-5 fee follow-ups for Supervisor
+```
 
 ## Backups
 

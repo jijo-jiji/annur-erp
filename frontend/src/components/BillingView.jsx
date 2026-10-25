@@ -23,6 +23,7 @@ import WhatsAppButton from './WhatsAppButton';
 import { AttachmentList, uploadError } from './Attachments';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
+import Week5FollowUps from './Week5FollowUps';
 
 const STATUS_BADGE = {
   PAID: <Badge tone="green">Dibayar</Badge>,
@@ -389,6 +390,7 @@ function ArrearsPanel({ cases, role, openInvoices, onPay }) {
 
   return (
     <div className="space-y-6">
+      <Week5FollowUps role={role} />
       {cases.length > 0 && (
         <Card>
           <div className="flex items-start gap-3 border-b border-gray-200 bg-amber-50/60 px-5 py-3.5 text-sm text-amber-900">
@@ -467,7 +469,7 @@ function ArrearsPanel({ cases, role, openInvoices, onPay }) {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-3.5">
           <div>
             <h2 className="text-[15px] font-semibold text-gray-900">Senarai tertunggak & susulan bayaran</h2>
-            <p className="mt-0.5 text-[13px] text-gray-500">Susulan minggu 2 hingga 5: butang Peringatan membuka WhatsApp dengan mesej mengikut minggu dan merekodkannya.</p>
+            <p className="mt-0.5 text-[13px] text-gray-500">Susulan minggu 2 hingga 4 oleh kaunter: butang Peringatan membuka WhatsApp dengan mesej mengikut minggu dan merekodkannya. Yuran yang masih belum dibayar pada minggu 5 menjadi tugasan Supervisor (di atas).</p>
           </div>
           <Button
             size="sm"

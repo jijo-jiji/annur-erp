@@ -91,6 +91,24 @@ class ChangeRequest(models.Model):
         return f"{self.kind} {self.action} {self.target_label} ({self.status})"
 
 
+class Notification(models.Model):
+    """One message in a person's bell (Phase E): something waits for them, or something they asked for was decided.
+    `link` is the page that deals with it; `key` stops the same notice reaching the same person twice."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notifications')
+    kind = models.CharField(max_length=40, blank=True)
+    title = models.CharField(max_length=200)
+    body = models.CharField(max_length=300, blank=True)
+    link = models.CharField(max_length=200, blank=True)
+    key = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [models.Index(fields=['user', 'read_at'])]
+        constraints = [models.UniqueConstraint(fields=['user', 'key'], condition=~models.Q(key=''), name='notification_once_per_key')]
+
+
 class DailyChecklist(models.Model):
     """The office's daily checklist (Data induk: Senarai semak harian Admin). Staff tick items through the day;
     Supervisor checks the day once. `ticks` holds what was ticked, by code: {code: {label, by, at, note}}."""

@@ -25,6 +25,8 @@ from students.results import ResultSubmissionViewSet, StudentExamResultViewSet, 
 from billing.views import DiscountViewSet, InvoiceViewSet, PaymentReceiptViewSet, calculate_fees
 from billing.counter import cash_close, cash_close_history, cash_close_return, cash_close_verify
 from core.checklist import checklist, checklist_check, checklist_tick
+from core.notification_views import notifications, notifications_read
+from billing.followups import follow_up_record, follow_ups
 from expenses.views import VendorViewSet, PaymentVoucherViewSet
 from core.attachments import AttachmentViewSet
 from core.change_request_views import ChangeRequestViewSet
@@ -116,6 +118,10 @@ urlpatterns = [
     path('api/v1/checklist/', checklist),
     path('api/v1/checklist/tick/', checklist_tick),
     path('api/v1/checklist/check/', checklist_check),
+    path('api/v1/notifications/', notifications),
+    path('api/v1/notifications/read/', notifications_read),
+    path('api/v1/billing/follow-ups/', follow_ups),
+    path('api/v1/billing/follow-ups/<int:pk>/record/', follow_up_record),
 ]
 
 if not settings.PRODUCTION:

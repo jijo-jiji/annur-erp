@@ -46,6 +46,8 @@ class PaymentVoucher(models.Model):
     tier_level = models.CharField(max_length=20, choices=TIER_CHOICES, default='TIER_1')
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='DRAFT')
     prepared_by = models.CharField(max_length=100, default='Admin')
+    # the login that prepared it, so the decision can be sent to that person (vouchers made before this have none)
+    prepared_by_user = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     approved_by = models.CharField(max_length=100, blank=True)
     approval_comment = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

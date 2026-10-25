@@ -70,6 +70,7 @@ function buildNotices(data, role) {
   (counter?.unclosed_days || []).forEach((d) => add(1, 'red', `Kaunter ${date(d)} belum ditutup`, 'counter', 'Tutup kaunter', 'Ada resit pada hari itu', `#/counter?date=${d}`));
   add(counter?.returned, 'red', `${counter?.returned} tutup kaunter dikembalikan untuk dikira semula`, 'counter', 'Kira semula');
   if (approver) add(counter?.to_verify, 'amber', `${counter?.to_verify} tutup kaunter menunggu semakan anda`, 'counter', 'Semak');
+  if (approver) add(approvals.fee_followups_open, 'amber', `${approvals.fee_followups_open} yuran perlu dihubungi (minggu 5)`, 'billing', 'Hubungi', 'Belum dibayar selepas peringatan minggu 2 hingga 4', '#/billing?tab=arrears');
   add(approvals.registrations_pending, 'amber', `${approvals.registrations_pending} pendaftaran pelajar menunggu kelulusan`, 'students', approver ? 'Luluskan' : 'Lihat', undefined, '#/students?tab=approvals');
   // these students, with the same rule the number uses
   add(approvals.monthly_invoices_pending, 'amber', `${approvals.monthly_invoices_pending} pelajar aktif belum ada invois ${monthLabel(CURRENT_MONTH)}`, 'billing', 'Jana invois', undefined,

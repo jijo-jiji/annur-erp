@@ -10,6 +10,7 @@ import { loadThresholds, useThresholds } from './lib/thresholds';
 import LoginView from './components/LoginView';
 import { ChangePasswordModal, ForcedPasswordChange } from './components/ChangePassword';
 import CommandPalette from './components/CommandPalette';
+import NotificationBell from './components/NotificationBell';
 import StudentRegistrationView from './components/StudentRegistrationView';
 import StudentProfileView from './components/StudentProfileView';
 import BillingView from './components/BillingView';
@@ -150,6 +151,7 @@ function Shell() {
             <Search className="size-5" />
           </button>
         )}
+        <NotificationBell align="right" />
       </header>
 
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">

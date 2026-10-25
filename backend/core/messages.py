@@ -43,6 +43,10 @@ TEMPLATES = {
         'Notis tunggakan bulan lepas', 'Yuran & resit > Susulan, baki bulan lepas', BILL,
         'Assalamualaikum {parent}, notis tunggakan yuran {centre} bagi {student}: baki {balance} (invois {invoice}, {title}). '
         'Mohon hubungi kaunter untuk penyelesaian. Terima kasih.{bank}', ('balance',)),
+    'reminder_week5': _t(
+        'Susulan yuran minggu 5', 'Yuran & resit > Tunggakan & susulan, tugasan minggu 5 (Supervisor)', BILL,
+        'Assalamualaikum {parent}, saya dari {centre}. Yuran {student} bagi {title} (invois {invoice}) berbaki {balance} dan masih '
+        'belum dijelaskan. Boleh kami tahu bila bayaran dapat dibuat, atau ada apa-apa yang boleh kami bantu? Terima kasih.{bank}', ('balance',)),
     'arrears_warning': _t(
         'Amaran tunggakan', 'Yuran & resit > Tunggakan', [
             PARENT, STUDENT, ('months', 'Bulan yang tertunggak', 'September dan Oktober 2026'), ('amount', 'Jumlah tertunggak', 'RM 240.00'),

@@ -292,6 +292,9 @@ export const billingApi = {
   verifyClose: (day, note = '') => request('/billing/cash-close/verify/', { method: 'POST', body: JSON.stringify({ date: day, note }) }),
   returnClose: (day, note) => request('/billing/cash-close/return/', { method: 'POST', body: JSON.stringify({ date: day, note }) }),
   closeHistory: (month) => request(`/billing/cash-close/history/?month=${month}`),
+  // Week 5: unpaid monthly fees for Supervisor to follow up, and what the parent said
+  followUps: () => request('/billing/follow-ups/'),
+  recordFollowUp: (id, data) => request(`/billing/follow-ups/${id}/record/`, { method: 'POST', body: JSON.stringify(data) }),
   calculateFees: (levelCategory, subjectCount, isNewStudent) => request('/billing/calculate-fees/', {
     method: 'POST',
     body: JSON.stringify({
@@ -461,6 +464,13 @@ export const dashboardApi = {
 };
 
 // Changes to setup data (subjects, ...): Admin proposes, Supervisor / Management decides
+// The bell: the signed-in person's own notifications (what waits for them, decisions on what they asked)
+export const notificationsApi = {
+  list: () => request('/notifications/'),
+  read: (ids) => request('/notifications/read/', { method: 'POST', body: JSON.stringify({ ids }) }),
+  readAll: () => request('/notifications/read/', { method: 'POST', body: JSON.stringify({ all: true }) }),
+};
+
 // The office's daily checklist: tick items through the day; Supervisor checks the day once
 export const checklistApi = {
   get: (day) => request(`/checklist/${day ? `?date=${day}` : ''}`),

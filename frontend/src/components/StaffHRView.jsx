@@ -44,7 +44,7 @@ export default function StaffHRView({ role }) {
   const { staff, leaveRequests, staffAction, refreshStaff } = useApp();
   const isApprover = role === 'SUPERVISOR' || role === 'MANAGEMENT';
   const isManagement = role === 'MANAGEMENT';
-  const [tab, setTab] = useState('attendance');
+  const [tab, setTab] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'attendance');
   const [me, setMe] = useState(undefined); // undefined = loading, null = not linked to a staff record
   const [viewStaff, setViewStaff] = useState('');
   const [month, setMonth] = useState(todayISO().slice(0, 7));
