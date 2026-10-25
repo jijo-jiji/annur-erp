@@ -6,13 +6,15 @@ from academic.models import ClassTimetable, ClassRescheduleLog, TimetableChange
 from billing.models import Invoice, PaymentReceipt
 from business_config.models import DynamicMasterData
 from expenses.models import PaymentVoucher
-from students.models import Student, StudentExamResult, StudentEvent, ClassWaitlist, Lead
+from students.models import Student, StudentExamResult, ClassWaitlist
 from academic.drilldown import capacity_state
-from expenses.drilldown import COUNTED_STATUSES
-from students.drilldown import REGISTERED_STATUSES, STAY_BUCKETS, stay_days, stay_key, uninvoiced_students
+from billing.drilldown import invoices_matching, receipts_matching
+from expenses.drilldown import COUNTED_STATUSES, vouchers_matching
+from students.drilldown import REGISTERED_STATUSES, STAY_BUCKETS, events_matching, leads_matching, stay_days, stay_key, uninvoiced_students
 from students.views import attendance_rates
+from teachers.drilldown import paid_sessions, teachers_matching
 from teachers.staff import alerts as staff_alerts
-from teachers.models import Teacher, TeacherAttendance, LeaveRequest, TeacherRateIncrement, TeacherPayment
+from teachers.models import Teacher, LeaveRequest, TeacherRateIncrement, TeacherPayment
 from . import change_requests, grades, thresholds
 from .models import ChangeRequest
 from .permissions import ADMIN, MANAGEMENT
@@ -132,7 +134,7 @@ def build_dashboard(role, today=None, user=None):
     collected_today = receipts.filter(payment_date=today).aggregate(t=Sum('amount_paid'))['t']
     collected_month = receipts.filter(payment_date__gte=month_start, payment_date__lt=next_month).aggregate(t=Sum('amount_paid'))['t']
     collected_prev = receipts.filter(payment_date__gte=prev_start, payment_date__lt=month_start).aggregate(t=Sum('amount_paid'))['t']
-    outstanding = Invoice.objects.filter(status__in=['UNPAID', 'PARTIAL', 'OVERDUE']).aggregate(t=Sum('balance_due'))['t']
+    outstanding = invoices_matching({'status': 'OUTSTANDING'}).aggregate(t=Sum('balance_due'))['t']
     collection_status = [
         {'status': row['status'], 'count': row['n'], 'billed': money(row['billed']), 'balance': money(row['balance'])}
         for row in Invoice.objects.values('status').annotate(n=Count('id'), billed=Sum('total_payable'), balance=Sum('balance_due'))
@@ -141,15 +143,12 @@ def build_dashboard(role, today=None, user=None):
         date__gte=month_start, date__lt=next_month, status__in=COUNTED_PV_STATUSES
     ).aggregate(t=Sum('amount'))['t']
 
-    teachers = Teacher.objects.filter(is_active=True)
-    permits_expiring = []
-    for t in teachers.exclude(teaching_permit_expiry=None).order_by('teaching_permit_expiry'):
-        days_left = (t.teaching_permit_expiry - today).days
-        if days_left <= limits['permit_warning_days']:
-            permits_expiring.append({
-                'code': t.teacher_code, 'name': t.full_name,
-                'expiry': t.teaching_permit_expiry, 'days_left': days_left,
-            })
+    # Each count is the length of the list its figure opens (teachers/drilldown.py)
+    teachers = teachers_matching({'status': 'ACTIVE'}, today, limits['permit_warning_days'])
+    permits_expiring = [{
+        'code': t.teacher_code, 'name': t.full_name,
+        'expiry': t.teaching_permit_expiry, 'days_left': (t.teaching_permit_expiry - today).days,
+    } for t in teachers_matching({'status': 'ACTIVE', 'permit': 'EXPIRING'}, today, limits['permit_warning_days']).order_by('teaching_permit_expiry')]
 
     pending_pv = PaymentVoucher.objects.filter(status__in=['PENDING_SUPERVISOR', 'PENDING_MANAGEMENT']).select_related('vendor')
     if role == MANAGEMENT:
@@ -187,10 +186,11 @@ def build_dashboard(role, today=None, user=None):
         'teacher_pay_to_verify': TeacherPayment.objects.filter(status='DRAFT').count() if role != ADMIN else 0,
         'teacher_pay_to_approve': TeacherPayment.objects.filter(status='VERIFIED').count() if role != ADMIN else 0,
         'teacher_pay_to_record': TeacherPayment.objects.filter(status='APPROVED').count() if role != ADMIN else 0,
-        'lead_followups_due': Lead.objects.exclude(status__in=Lead.CLOSED_STAGES).filter(next_follow_up__lte=today).count(),
+        'lead_followups_due': leads_matching({'due': '1'}, today).count(),
     }
 
-    attendance_window = attendance_rates(today - timedelta(days=limits['attendance_window_days']), today)
+    attendance_start = today - timedelta(days=limits['attendance_window_days'])
+    attendance_window = attendance_rates(attendance_start, today)
     attendance_present = sum(r['present'] for r in attendance_window)
     attendance_total = sum(r['total'] for r in attendance_window)
 
@@ -236,6 +236,8 @@ def build_dashboard(role, today=None, user=None):
         },
         'attendance': {
             'window_days': limits['attendance_window_days'],
+            'start': attendance_start,
+            'end': today,
             'rate': round(attendance_present / attendance_total * 100, 1) if attendance_total else None,
             'present': attendance_present,
             'total': attendance_total,
@@ -262,7 +264,7 @@ def build_dashboard(role, today=None, user=None):
             'permanent': teachers.filter(teacher_type='PERMANENT').count(),
             'replacement': teachers.filter(teacher_type='REPLACEMENT').count(),
             'permits_expiring': permits_expiring,
-            'permits_missing': teachers.filter(teaching_permit_expiry=None).count(),
+            'permits_missing': teachers_matching({'status': 'ACTIVE', 'permit': 'MISSING'}, today, limits['permit_warning_days']).count(),
         },
         # Staff alerts: contract ending within a month and birthdays this week (not shown to Admin)
         'staff': staff_alerts(today) if role != ADMIN else {'contracts_ending': [], 'birthdays': []},
@@ -305,8 +307,9 @@ def result_improvement():
 
 
 def build_reports(year):
-    receipts = PaymentReceipt.objects.filter(payment_date__year=year).select_related('student')
-    invoices = Invoice.objects.filter(billing_month__year=year)
+    # The same definitions the lists behind each figure use (billing/drilldown.py, expenses/drilldown.py)
+    receipts = receipts_matching({'year': year}).select_related('student')
+    invoices = invoices_matching({'year': year})
 
     months = [{'month': m, 'billed': 0.0, 'collected': 0.0, 'walk_in_collected': 0.0, 'expenses': 0.0} for m in range(1, 13)]
     for inv in invoices.values('billing_month__month').annotate(t=Sum('total_payable')):
@@ -324,7 +327,7 @@ def build_reports(year):
         by_form[form]['students'].add(r.student_id)
         by_level[grades.level_of(form)] += money(r.amount_paid)
 
-    vouchers = PaymentVoucher.objects.filter(date__year=year, status__in=COUNTED_PV_STATUSES)
+    vouchers = vouchers_matching({'status': 'COUNTED', 'year': year})
     for pv in vouchers.values('date__month').annotate(t=Sum('amount')):
         months[pv['date__month'] - 1]['expenses'] = money(pv['t'])
 
@@ -333,11 +336,9 @@ def build_reports(year):
     # Teacher sessions from attendance: the teacher present, or the replacement who covered
     teacher_rows = defaultdict(lambda: {'sessions': 0, 'allowance': 0.0})
     teacher_info = {t.id: t for t in Teacher.objects.all()}
-    for a in TeacherAttendance.objects.filter(date__year=year):
-        taught_by = a.replacement_teacher_id if a.status == 'REPLACED' else (a.teacher_id if a.status == 'PRESENT' else None)
-        if taught_by:
-            teacher_rows[taught_by]['sessions'] += 1
-            teacher_rows[taught_by]['allowance'] += money(a.allowance_earned)
+    for a in paid_sessions({'year': year}):  # the list a teacher's row opens (teachers/drilldown.py)
+        teacher_rows[a.paid_teacher_id]['sessions'] += 1
+        teacher_rows[a.paid_teacher_id]['allowance'] += money(a.allowance_earned)
     teacher_payments = sorted(({
         'code': teacher_info[tid].teacher_code,
         'name': teacher_info[tid].full_name,
@@ -358,7 +359,7 @@ def build_reports(year):
 
     # Drop reasons (subject drops and students who left), labelled from master data
     reason_labels = dict(DynamicMasterData.objects.filter(category='14_drop_reason').values_list('code', 'label'))
-    drops = StudentEvent.objects.filter(event_type__in=['DROP_SUBJECT', 'TERMINATE'], event_date__year=year)
+    drops = events_matching({'type': 'DROP_SUBJECT,TERMINATE', 'start': f'{year}-01-01', 'end': f'{year}-12-31'})  # Laporan sejarah, same filters
     drop_reasons = [
         {'code': r['reason_code'], 'label': reason_labels.get(r['reason_code'], r['reason_code'] or 'Tidak dinyatakan'),
          'subject_drops': r['subj'], 'students_left': r['left']}
@@ -401,7 +402,7 @@ def build_reports(year):
             'total_billed': sum(m['billed'] for m in months),
             'total_collected': total_collected,
             'walk_in_collected': sum(m['walk_in_collected'] for m in months),
-            'outstanding': money(Invoice.objects.filter(status__in=['UNPAID', 'PARTIAL', 'OVERDUE']).aggregate(t=Sum('balance_due'))['t']),
+            'outstanding': money(invoices_matching({'status': 'OUTSTANDING'}).aggregate(t=Sum('balance_due'))['t']),
             'by_form': [
                 {'form': f, 'label': grades.label(f), 'amount': by_form[f]['amount'],
                  'students': len(by_form[f]['students']),
@@ -420,9 +421,7 @@ def build_reports(year):
                 {'category': row['category'], 'amount': money(row['t']), 'count': row['n']}
                 for row in vouchers.values('category').annotate(t=Sum('amount'), n=Count('id')).order_by('-t')
             ],
-            'pending_total': money(PaymentVoucher.objects.filter(
-                date__year=year, status__in=['PENDING_SUPERVISOR', 'PENDING_MANAGEMENT']
-            ).aggregate(t=Sum('amount'))['t']),
+            'pending_total': money(vouchers_matching({'status': 'PENDING', 'year': year}).aggregate(t=Sum('amount'))['t']),
         },
         'teacher_payments': teacher_payments,
         'academic': {

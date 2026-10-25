@@ -58,7 +58,10 @@ class ClassTimetableViewSet(viewsets.ModelViewSet):
     def matching(self, request):
         """The classes a dashboard figure counts (see academic/drilldown.py)."""
         classes = drilldown.classes_matching(request.query_params)
-        return Response({'count': len(classes), 'ids': [c.id for c in classes]})
+        return Response({
+            'count': len(classes), 'ids': [c.id for c in classes],
+            'enrolled': sum(c.enrolled_count for c in classes), 'seats': sum(c.max_seats for c in classes),
+        })
 
     def _request_change(self, action_name, instance=None, data=None):
         by = display_name(self.request.user)

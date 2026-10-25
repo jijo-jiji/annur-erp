@@ -3,8 +3,11 @@ import { CalendarDays, Download, Lock } from 'lucide-react';
 import { teacherPayApi } from '../api/client';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
+import { navigate } from '../lib/nav';
 import { dateLong, monthLabel, rm, todayISO } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
+import { describeSessionFilters, SESSION_FILTERS, useDrill, useMatching } from '../lib/drilldown';
+import DrilldownBar from './DrilldownBar';
 import { Badge, Button, Card, CardHeader, cx, EmptyState, filterClass, inputClass, PageHeader, Table, Td, Th, useToast } from './ui';
 
 const STATUSES = [
@@ -15,9 +18,59 @@ const STATUSES = [
 ];
 const cell = cx(inputClass, 'min-w-28 py-1.5');
 
+// Opened from Laporan > Bayaran guru: the sessions a teacher was paid for, which the figure there adds up
+export default function TeacherAttendanceView({ role }) {
+  const drill = useDrill(SESSION_FILTERS);
+  return drill ? <PaidSessions drill={drill} role={role} /> : <DailyRecord role={role} />;
+}
+
+function PaidSessions({ drill, role }) {
+  const { teachers } = useStore();
+  const showPay = can(role, 'teachers.pay');
+  const matched = useMatching(drill, teacherPayApi.paid); // { count, rows, allowance }, or null while it is on its way
+  const rows = matched?.rows ?? [];
+  const name = (code) => {
+    const t = teachers.find((x) => x.code === code);
+    return t ? `Cikgu ${t.name}` : code;
+  };
+  return (
+    <>
+      <PageHeader title="Kehadiran guru" description="Sesi kelas yang dibayar kepada guru: guru yang mengajar, atau guru ganti yang mengajar." />
+      <DrilldownBar
+        chips={describeSessionFilters(drill.filters, { teacher: name })}
+        result={matched}
+        expect={drill.expect}
+        unit={drill.unit}
+        src={drill.src}
+        noun="sesi"
+        onClear={() => navigate('teacher-attendance')}
+      />
+      <Card>
+        {!matched ? <p className="py-10 text-center text-sm text-gray-500">Memuatkan…</p> : rows.length === 0 ? <EmptyState title="Tiada sesi dibayar dalam tempoh ini" /> : (
+          <Table>
+            <thead>
+              <tr><Th>Tarikh</Th><Th>Kelas</Th><Th>Peranan</Th>{showPay && <Th className="text-right">Elaun</Th>}</tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <Td className="whitespace-nowrap">{dateLong(r.date)}</Td>
+                  <Td className="font-medium text-gray-900">{r.class_code}</Td>
+                  <Td>{r.role}{r.for_teacher && <span className="text-gray-500"> · menggantikan {r.for_teacher}</span>}</Td>
+                  {showPay && <Td className="text-right tnum">{rm(r.amount)}</Td>}
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+    </>
+  );
+}
+
 // One row per class on the chosen date: teacher in charge, present / absent / replaced / cancelled,
 // reason and replacement teacher. Teacher pay is worked out from these records.
-export default function TeacherAttendanceView({ role }) {
+function DailyRecord({ role }) {
   const { teachers } = useStore();
   const notify = useToast();
   const [day, setDay] = useState(todayISO());

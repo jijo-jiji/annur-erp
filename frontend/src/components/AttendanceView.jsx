@@ -7,7 +7,11 @@ import { useStore } from '../store';
 import { classLabel, preferredContact, timetableDay } from '../lib/domain';
 import { dateLong, initials, timeRange, todayISO, waLink } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
-import { Avatar, Badge, Button, Card, CardHeader, cx, EmptyState, filterClass, inputClass, PageHeader, Textarea, useToast, WhatsAppIcon } from './ui';
+import { navigate } from '../lib/nav';
+import { attendanceHref, ATTENDANCE_FILTERS, describeAttendanceFilters, useDrill, useMatching } from '../lib/drilldown';
+import { THRESHOLDS } from '../lib/thresholds';
+import DrilldownBar from './DrilldownBar';
+import { Avatar, Badge, Button, Card, CardHeader, cx, EmptyState, filterClass, inputClass, PageHeader, Table, Td, Textarea, Th, useToast, WhatsAppIcon } from './ui';
 
 const addDays = (iso, n) => {
   const d = new Date(`${iso}T00:00:00`);
@@ -15,7 +19,80 @@ const addDays = (iso, n) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+// Opened from a rate on Ringkasan or Laporan: the attendance it is made from, class by class, or one class's sessions
 export default function AttendanceView() {
+  const drill = useDrill(ATTENDANCE_FILTERS);
+  return drill ? <AttendanceHistory drill={drill} /> : <TakeAttendance />;
+}
+
+// What the figure was made from: every class's rate over the period, or the sessions of one class
+async function loadHistory(f) {
+  const summary = await attendanceApi.summary(f.from, f.to, f.class_id);
+  const sessions = f.class_id ? await attendanceApi.sessions({ start: f.from, end: f.to, class_id: f.class_id }) : [];
+  return { count: f.class_id ? sessions.length : summary.classes.length, ids: [], rate: summary.rate, classes: summary.classes, sessions };
+}
+
+function AttendanceHistory({ drill }) {
+  const { classes, subjects, students } = useStore();
+  const f = drill.filters;
+  const matched = useMatching(drill, loadHistory);
+  const klass = f.class_id ? classes.find((c) => String(c.id) === String(f.class_id)) : null;
+  const label = klass ? classLabel(klass, subjects) : null;
+  const studentName = (code) => students.find((s) => s.id === code)?.name ?? code;
+  return (
+    <>
+      <PageHeader title="Kedatangan pelajar" description="Kedatangan yang telah direkod, daripada angka yang dipilih." />
+      <DrilldownBar
+        chips={describeAttendanceFilters(f, { klass: () => label ?? `Kelas ${f.class_id}` })}
+        result={matched}
+        expect={drill.expect}
+        unit={drill.unit}
+        src={drill.src}
+        noun={f.class_id ? 'sesi' : 'kelas'}
+        onClear={() => navigate('attendance')}
+      />
+      <Card>
+        {!matched ? <p className="py-10 text-center text-sm text-gray-500">Memuatkan…</p> : f.class_id ? (
+          matched.sessions.length === 0 ? <EmptyState title="Tiada kedatangan direkod bagi kelas ini dalam tempoh ini" /> : (
+            <Table>
+              <thead><tr><Th>Tarikh</Th><Th className="text-right">Hadir</Th><Th>Tidak hadir</Th><Th className="text-right">Lewat</Th><Th className="w-0"><span className="sr-only">Buka</span></Th></tr></thead>
+              <tbody>
+                {matched.sessions.map((s) => (
+                  <tr key={s.id}>
+                    <Td className="whitespace-nowrap font-medium text-gray-900">{dateLong(s.date)}</Td>
+                    <Td className="text-right tnum">{s.roster.length - s.absent.length}/{s.roster.length}</Td>
+                    <Td className="text-gray-700">{s.absent.length ? s.absent.map(studentName).join(', ') : '—'}</Td>
+                    <Td className="text-right tnum">{s.late.length || '—'}</Td>
+                    <Td><a href={`#/attendance?class=${s.class_id}&date=${s.date}`} className="text-sm font-medium text-brand-700 hover:underline">Buka</a></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )
+        ) : matched.classes.length === 0 ? <EmptyState title="Tiada kedatangan direkod dalam tempoh ini" /> : (
+          <Table>
+            <thead><tr><Th>Kelas</Th><Th className="text-right">Sesi</Th><Th className="text-right">Kehadiran</Th><Th className="text-right">Kadar</Th></tr></thead>
+            <tbody>
+              {matched.classes.map((r) => {
+                const open = attendanceHref({ class_id: r.class_id, from: f.from, to: f.to }, { src: drill.src, expect: r.rate, unit: 'rate' });
+                return (
+                  <tr key={r.class_id}>
+                    <Td><a href={open} className="font-medium text-gray-900 hover:text-brand-700 hover:underline">{r.class_code}</a></Td>
+                    <Td className="text-right tnum">{r.sessions}</Td>
+                    <Td className="text-right tnum">{r.present}/{r.total}</Td>
+                    <Td className={cx('text-right font-medium tnum', r.rate !== null && r.rate < THRESHOLDS.low_attendance_pct && 'text-red-700')}>{r.rate === null ? '—' : `${r.rate}%`}</Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+    </>
+  );
+}
+
+function TakeAttendance() {
   const { classes, subjects, teachers, attendance } = useStore();
   const query = new URLSearchParams(window.location.hash.split('?')[1]);
   const [day, setDay] = useState(query.get('date') ?? todayISO());

@@ -8,7 +8,7 @@ import { date, DAY_LABEL, FORMS, formLabel, formShort, initials, rm, STREAM_LABE
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
-import { describeStudentFilters, STUDENT_FILTERS, useDrill, useMatching } from '../lib/drilldown';
+import { describeHistoryFilters, describeStudentFilters, HISTORY_FILTERS, STUDENT_FILTERS, useDrill, useMatching } from '../lib/drilldown';
 import DrilldownBar from './DrilldownBar';
 import { can } from '../lib/permissions';
 import { downloadCsv } from '../lib/csv';
@@ -47,7 +47,8 @@ function StudentsHome({ role, canEdit }) {
 
   // Opened from a figure on Ringkasan or Laporan: the address carries the filter (see lib/drilldown.js)
   const drill = useDrill(STUDENT_FILTERS);
-  const shownTab = drill ? 'list' : tab;
+  const historyDrill = useDrill(HISTORY_FILTERS); // the history rows a figure on Laporan counts
+  const shownTab = drill ? 'list' : historyDrill ? 'history' : tab;
 
   return (
     <>
@@ -65,7 +66,7 @@ function StudentsHome({ role, canEdit }) {
       <Tabs
         className="mb-4"
         value={shownTab}
-        onChange={(t) => { setTab(t); if (drill) navigate('students'); }}
+        onChange={(t) => { setTab(t); if (drill || historyDrill) navigate('students'); }}
         items={[
           { value: 'list', label: 'Senarai' },
           { value: 'approvals', label: 'Kelulusan', count: pending.length },
@@ -78,7 +79,7 @@ function StudentsHome({ role, canEdit }) {
       {shownTab === 'list' && <StudentList drill={drill} />}
       {shownTab === 'approvals' && <Approvals role={role} pending={pending} />}
       {shownTab === 'waitlist' && <WaitingList role={role} />}
-      {shownTab === 'history' && <HistoryReport />}
+      {shownTab === 'history' && <HistoryReport drill={historyDrill} />}
       {shownTab === 'gallery' && <FeedbackGallery canDelete={can(role, 'students.approve')} />}
       {shownTab === 'promote' && can(role, 'students.promote') && <PromotionPanel />}
     </>
@@ -444,27 +445,48 @@ function weekStart() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function HistoryReport() {
+function HistoryReport({ drill }) {
   const { getMasterOptions } = useApp();
   const today = todayISO();
   const [range, setRange] = useState({ start: today, end: today });
   const [type, setType] = useState('');
   const [rows, setRows] = useState([]);
+  const [ready, setReady] = useState(false); // the rows shown are the answer for the current filters
   const reasons = Object.fromEntries(getMasterOptions('14_drop_reason').map((r) => [r.value, r.label]));
+  const f = drill?.filters;
 
-  const load = useCallback(() => {
-    const params = { start: range.start, end: range.end };
-    if (type) params.type = type;
-    studentsApi.history(params).then(setRows).catch(() => setRows([]));
-  }, [range, type]);
-  useEffect(() => { load(); }, [load]);
+  // Opened from a figure on Laporan: the filters come from the address, not from the controls below
+  useEffect(() => {
+    let current = true;
+    setReady(false);
+    const params = drill
+      ? Object.fromEntries(Object.entries({ type: f.events, start: f.from, end: f.to, reason: f.reason }).filter(([, v]) => v))
+      : { start: range.start, end: range.end, ...(type ? { type } : {}) };
+    studentsApi.history(params)
+      .then((r) => { if (current) { setRows(r); setReady(true); } })
+      .catch(() => { if (current) { setRows([]); setReady(true); } });
+    return () => { current = false; };
+  }, [range, type, drill]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const presets = [['Hari ini', today, today], ['Minggu ini', weekStart(), today], ['Bulan ini', `${today.slice(0, 8)}01`, today]];
   const detail = (e) => [e.class_label, reasons[e.reason_code] || e.reason_code, e.reason_text, e.description, e.hold_until && `hingga ${date(e.hold_until)}`].filter(Boolean).join(' · ');
 
   return (
+    <>
+    {drill && (
+      <DrilldownBar
+        chips={describeHistoryFilters(f, { reason: (code) => reasons[code] })}
+        result={ready ? { count: rows.length } : null}
+        expect={drill.expect}
+        unit={drill.unit}
+        src={drill.src}
+        noun="rekod"
+        onClear={() => navigate('students?tab=history')}
+      />
+    )}
     <Card>
       <div className="flex flex-wrap items-end gap-3 border-b border-gray-200 p-4">
+        {!drill && <>
         <Segmented
           value={presets.find(([, s, e]) => s === range.start && e === range.end)?.[0] ?? ''}
           onChange={(name) => { const p = presets.find((x) => x[0] === name); setRange({ start: p[1], end: p[2] }); }}
@@ -478,17 +500,20 @@ function HistoryReport() {
             <option key={t.value} value={t.value}>{t.label}</option>
           ))}
         </Select>
+        </>}
         <Button
           size="sm"
           icon={Download}
           className="ml-auto"
-          onClick={() => downloadCsv(`sejarah-pelajar-${range.start}-${range.end}.csv`, ['Tarikh', 'Pelajar', 'ID', 'Peristiwa', 'Butiran', 'Tindakan', 'Direkod oleh'],
+          onClick={() => downloadCsv(`sejarah-pelajar-${drill ? f.from : range.start}-${drill ? f.to : range.end}.csv`, ['Tarikh', 'Pelajar', 'ID', 'Peristiwa', 'Butiran', 'Tindakan', 'Direkod oleh'],
             rows.map((e) => [e.event_date, e.student_name, e.student_code, e.event_label, detail(e), e.action, e.recorded_by]))}
         >
           CSV
         </Button>
       </div>
-      {rows.length === 0 ? (
+      {!ready ? (
+        <p className="py-10 text-center text-sm text-gray-500">Memuatkan…</p>
+      ) : rows.length === 0 ? (
         <EmptyState title="Tiada rekod dalam tempoh ini" />
       ) : (
         <Table>
@@ -519,6 +544,7 @@ function HistoryReport() {
         </Table>
       )}
     </Card>
+    </>
   );
 }
 

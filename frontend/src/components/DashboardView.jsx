@@ -4,7 +4,7 @@ import { BarChart3, CalendarClock, Check, ChevronRight, UserPlus, Wallet } from 
 import { dashboardApi } from '../api/client';
 import { routeOf } from '../context/AppContext';
 import { can } from '../lib/permissions';
-import { classesHref, invoicesHref, monthEnd, monthKey, receiptsHref, studentsHref, voucherHref, vouchersHref } from '../lib/drilldown';
+import { attendanceHref, classesHref, invoicesHref, leadsHref, monthEnd, monthKey, receiptsHref, studentsHref, teachersHref, voucherHref, vouchersHref } from '../lib/drilldown';
 import { CURRENT_MONTH, date, DAY_LABEL, monthLabel, rm } from '../lib/format';
 import { Donut, STATUS_COLORS } from './Donut';
 import { BarChart, HBarList, Legend, SERIES_COLORS } from './charts';
@@ -62,14 +62,16 @@ function buildNotices(data, role) {
     add(approvals.vouchers_pending_management, 'red', `${approvals.vouchers_pending_management} baucar melebihi ${ringgit(THRESHOLDS.voucher_tier2)} menunggu kelulusan anda`, 'expenses', 'Semak', undefined,
       vouchersHref({ status: 'PENDING_MANAGEMENT' }, { expect: approvals.vouchers_pending_management }));
   }
-  attendance.low_classes.forEach((c) => add(1, 'red', `Kehadiran ${c.class_code} ${c.rate}% dalam ${attendance.window_days} hari lepas`, 'attendance', 'Lihat', `${c.present}/${c.total} kehadiran`));
+  attendance.low_classes.forEach((c) => add(1, 'red', `Kehadiran ${c.class_code} ${c.rate}% dalam ${attendance.window_days} hari lepas`, 'attendance', 'Lihat', `${c.present}/${c.total} kehadiran`,
+    attendanceHref({ class_id: c.class_id, from: attendance.start, to: attendance.end }, { expect: c.rate, unit: 'rate' })));
   add(approvals.registrations_pending, 'amber', `${approvals.registrations_pending} pendaftaran pelajar menunggu kelulusan`, 'students', approver ? 'Luluskan' : 'Lihat', undefined, '#/students?tab=approvals');
   // these students, with the same rule the number uses
   add(approvals.monthly_invoices_pending, 'amber', `${approvals.monthly_invoices_pending} pelajar aktif belum ada invois ${monthLabel(CURRENT_MONTH)}`, 'billing', 'Jana invois', undefined,
     studentsHref({ uninvoiced: data.today.slice(0, 7) }, { expect: approvals.monthly_invoices_pending }));
   add(finance.outstanding > 0 ? 1 : 0, 'amber', `Tunggakan yuran ${rm(finance.outstanding)}`, 'billing', 'Susulan', undefined,
     invoicesHref({ status: 'OUTSTANDING' }, { expect: finance.outstanding, unit: 'balance' }));
-  add(approvals.lead_followups_due, 'amber', `${approvals.lead_followups_due} prospek perlu susulan`, 'leads', 'Hubungi', 'Lebih seminggu sejak tindakan terakhir');
+  add(approvals.lead_followups_due, 'amber', `${approvals.lead_followups_due} prospek perlu susulan`, 'leads', 'Hubungi', 'Tarikh susulan hari ini atau lepas',
+    leadsHref({ due: '1' }, { expect: approvals.lead_followups_due }));
   add(classes.full.length, 'amber', `${classes.full.length} kelas penuh`, 'timetable', 'Lihat jadual', undefined, classesHref({ capacity: 'full' }, { expect: classes.full.length }));
   // Change requests: what waits for this role, what the user asked, and decisions not yet read; each links to its page
   const requestNotices = (byKind, tone, text, action) => Object.entries(byKind || {}).forEach(([kind, n]) => {
@@ -89,7 +91,8 @@ function buildNotices(data, role) {
     (staff?.contracts_ending || []).forEach((c) => add(1, c.days_left < 0 ? 'red' : 'amber',
       `Kontrak ${c.name} ${c.days_left < 0 ? `tamat ${-c.days_left} hari lepas` : `tamat dalam ${c.days_left} hari`}`, 'staff_hr', 'Lihat', date(c.contract_end)));
     teachers.permits_expiring.forEach((p) => add(1, p.days_left < 0 ? 'red' : 'amber',
-      `Permit mengajar ${p.name} ${p.days_left < 0 ? 'telah luput' : `luput dalam ${p.days_left} hari`}`, 'teachers', 'Lihat', date(p.expiry)));
+      `Permit mengajar ${p.name} ${p.days_left < 0 ? 'telah luput' : `luput dalam ${p.days_left} hari`}`, 'teachers', 'Lihat', date(p.expiry),
+      teachersHref({ code: p.code }, { expect: 1 })));
     (staff?.birthdays || []).forEach((b) => add(1, 'blue', `Hari lahir ${b.name} ${b.days_left === 0 ? 'hari ini' : `dalam ${b.days_left} hari`}`, 'staff_hr', 'Lihat'));
   } else {
     const waiting = approvals.vouchers_pending_supervisor + approvals.vouchers_pending_management;
@@ -118,7 +121,7 @@ function ActionList({ items, limit }) {
   const [all, setAll] = useState(false);
   const shown = limit && !all ? items.slice(0, limit) : items;
   return (
-    <Card>
+    <Card id="perlu-tindakan" className="scroll-mt-4">
       <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3.5">
         <h2 className="text-[15px] font-semibold text-gray-900">Perlu tindakan</h2>
         <span className="text-[13px] text-gray-500">{items.length ? `${items.length} perkara` : 'Semua beres'}</span>
@@ -198,7 +201,7 @@ export default function DashboardView({ role }) {
   const lastMonth = thisMonthNo === 1 ? monthKey(thisYear - 1, 12) : monthKey(thisYear, thisMonthNo - 1);
   const collectedIn = (month, amount) => receiptsHref({ month }, { expect: amount, unit: 'total' });
   // A link to the students a figure counts; `expect` is the number the figure shows
-  const sh = (filters, expect) => studentsHref(filters, { from: 'ringkasan', expect });
+  const sh = (filters, expect) => studentsHref(filters, { expect });
   const hintLink = (href, text) => <a href={href} className="relative z-10 hover:text-brand-700 hover:underline">{text}</a>;
   const approver = role !== 'ADMIN';
   const management = role === 'MANAGEMENT';
@@ -231,6 +234,8 @@ export default function DashboardView({ role }) {
       value={attendance.rate === null ? '—' : `${attendance.rate}%`}
       hint={attendance.total ? `${attendance.present}/${attendance.total} kehadiran` : 'Belum direkodkan'}
       tone={attendance.rate !== null && attendance.rate < attendance.threshold ? 'red' : undefined}
+      // the classes the rate is made from, with each class's own rate
+      href={attendance.rate === null ? undefined : attendanceHref({ from: attendance.start, to: attendance.end }, { expect: attendance.rate, unit: 'rate' })}
     />
   );
 
@@ -333,14 +338,22 @@ export default function DashboardView({ role }) {
         <>
           <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat label="Pelajar baharu bulan ini" value={students.new_this_month} href={sh({ joined: thisMonth }, students.new_this_month)} hint={growthHint(students.new_growth_pct, `Bulan lepas: ${students.new_last_month}`)} />
-            <Stat label="Guru aktif" value={data.teachers.active} hint={`${data.teachers.permanent} tetap · ${data.teachers.replacement} ganti`} />
+            <Stat label="Guru aktif" value={data.teachers.active} href={teachersHref({ status: 'ACTIVE' }, { expect: data.teachers.active })} hint={`${data.teachers.permanent} tetap · ${data.teachers.replacement} ganti`} />
             <Stat
               label="Permit hampir / telah luput"
               value={data.teachers.permits_expiring.length}
-              hint={data.teachers.permits_missing > 0 ? `${data.teachers.permits_missing} guru tiada tarikh permit` : undefined}
+              href={data.teachers.permits_expiring.length ? teachersHref({ status: 'ACTIVE', permit: 'EXPIRING' }, { expect: data.teachers.permits_expiring.length }) : undefined}
+              hint={data.teachers.permits_missing > 0
+                ? hintLink(teachersHref({ status: 'ACTIVE', permit: 'MISSING' }, { expect: data.teachers.permits_missing }), `${data.teachers.permits_missing} guru tiada tarikh permit`)
+                : undefined}
               tone={data.teachers.permits_expiring.length ? 'red' : undefined}
             />
-            <Stat label="Perkara perlu tindakan" value={notices.length} />
+            <Stat
+              label="Perkara perlu tindakan"
+              value={notices.length}
+              href="#/dashboard"
+              onOpen={(e) => { e.preventDefault(); document.getElementById('perlu-tindakan')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+            />
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">

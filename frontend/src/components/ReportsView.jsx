@@ -4,6 +4,7 @@ import { dashboardApi } from '../api/client';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
 import { formLabel, rm } from '../lib/format';
+import { attendanceHref, classesHref, historyHref, invoicesHref, monthEnd, monthKey, receiptsHref, sessionsHref, studentsHref, vouchersHref } from '../lib/drilldown';
 import { downloadCsv } from '../lib/csv';
 import { BarChart, HBarList, Legend, SERIES_COLORS } from './charts';
 import { Badge, Button, Card, CardHeader, cx, EmptyState, PageHeader, Stat, Table, Tabs, Td, Th } from './ui';
@@ -15,6 +16,22 @@ function CsvButton({ onClick }) {
   return <Button size="sm" icon={Download} onClick={onClick} className="no-print">Excel</Button>;
 }
 
+// A figure that opens the records behind it (a figure of nothing has nothing to open)
+function Fig({ href, children }) {
+  if (!href) return children;
+  return <a href={href} className="rounded hover:text-brand-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">{children}</a>;
+}
+
+// A whole row that opens the records behind it
+function RowLink({ href, className, children }) {
+  if (!href) return <div className={className}>{children}</div>;
+  return <a href={href} className={cx(className, 'block hover:bg-gray-50')}>{children}</a>;
+}
+
+// The address of the list behind a figure, or nothing when the figure is nothing. `expect` is the number the figure
+// shows, `unit` which total of the list it should equal (see lib/drilldown.js)
+const link = (make, filters, expect, unit) => (Number(expect) > 0 ? make(filters, { src: 'laporan', expect, unit }) : undefined);
+
 // Share of a total, as labelled bars with the amount on the right
 function ShareList({ rows, empty = 'Tiada kutipan pada tahun ini.' }) {
   if (!rows.length) return <p className="text-sm text-gray-500">{empty}</p>;
@@ -22,10 +39,10 @@ function ShareList({ rows, empty = 'Tiada kutipan pada tahun ini.' }) {
     <ul className="space-y-3">
       {rows.map((r) => (
         <li key={r.label} className="text-sm">
-          <div className="flex justify-between gap-3">
+          <RowLink href={r.href} className="flex justify-between gap-3 rounded">
             <span className="text-gray-800">{r.label}</span>
             <span className="whitespace-nowrap font-medium text-gray-900 tnum">{rm(r.amount)} <span className="font-normal text-gray-500">({r.pct}%)</span></span>
-          </div>
+          </RowLink>
           <div className="mt-1 h-2 overflow-hidden rounded-full bg-gray-100">
             <div className="h-full rounded-full bg-brand-500" style={{ width: `${r.pct}%` }} />
           </div>
@@ -57,12 +74,16 @@ export default function ReportsView({ role }) {
     const map = {};
     for (const c of classes) {
       const name = subjects.find((s) => s.code === c.subject)?.name ?? c.subject ?? '—';
-      map[name] ??= { enrolled: 0, cap: 0 };
+      map[name] ??= { enrolled: 0, cap: 0, code: c.subject };
       map[name].enrolled += c.enrolled;
       map[name].cap += c.max;
     }
     return Object.entries(map)
-      .map(([label, v]) => ({ label, value: v.cap ? Math.round((v.enrolled / v.cap) * 100) : 0, hint: `${v.enrolled}/${v.cap} kerusi`, enrolled: v.enrolled, cap: v.cap }))
+      .map(([label, v]) => ({
+        label, value: v.cap ? Math.round((v.enrolled / v.cap) * 100) : 0, hint: `${v.enrolled}/${v.cap} kerusi`, enrolled: v.enrolled, cap: v.cap,
+        // the classes of the subject, whose seats the bar adds up
+        href: v.code && v.enrolled > 0 ? classesHref({ subject: v.code }, { src: 'laporan', expect: v.enrolled, unit: 'enrolled' }) : undefined,
+      }))
       .sort((a, b) => b.value - a.value);
   }, [classes, subjects]);
 
@@ -116,14 +137,15 @@ export default function ReportsView({ role }) {
       {data && tab === 'sales' && (
         <>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat label={`Jumlah dibilkan ${data.year}`} value={rm(data.sales.total_billed)} />
+            <Stat label={`Jumlah dibilkan ${data.year}`} value={rm(data.sales.total_billed)} href={link(invoicesHref, { year: data.year }, data.sales.total_billed, 'billed')} />
             <Stat
               label="Jumlah dikutip"
               value={rm(data.sales.total_collected)}
+              href={link(receiptsHref, { year: data.year }, data.sales.total_collected, 'total')}
               hint={data.sales.total_billed ? `${Math.round((data.sales.total_collected / data.sales.total_billed) * 100)}% daripada dibilkan` : undefined}
             />
-            <Stat label="Tunggakan semasa" value={rm(data.sales.outstanding)} tone={data.sales.outstanding > 0 ? 'red' : undefined} />
-            <Stat label="Kutipan walk-in" value={rm(data.sales.walk_in_collected)} />
+            <Stat label="Tunggakan semasa" value={rm(data.sales.outstanding)} tone={data.sales.outstanding > 0 ? 'red' : undefined} href={link(invoicesHref, { status: 'OUTSTANDING' }, data.sales.outstanding, 'balance')} />
+            <Stat label="Kutipan walk-in" value={rm(data.sales.walk_in_collected)} href={link(receiptsHref, { year: data.year, walk_in: '1' }, data.sales.walk_in_collected, 'total')} />
           </div>
 
           <Card className="mt-6">
@@ -139,7 +161,17 @@ export default function ReportsView({ role }) {
               }
             />
             <div className="p-5">
-              <BarChart data={data.sales.months.map((m) => ({ label: MONTHS[m.month - 1], values: m }))} series={finSeries} format={rmShort} />
+              <BarChart
+                data={data.sales.months.map((m) => ({ label: MONTHS[m.month - 1], values: m }))}
+                series={finSeries}
+                format={rmShort}
+                hrefFor={(d, key, v) => {
+                  const month = monthKey(data.year, d.values.month);
+                  if (key === 'billed') return invoicesHref({ month }, { src: 'laporan', expect: v, unit: 'billed' });
+                  if (key === 'collected') return receiptsHref({ month }, { src: 'laporan', expect: v, unit: 'total' });
+                  return vouchersHref({ status: 'COUNTED', month }, { src: 'laporan', expect: v, unit: 'total' });
+                }}
+              />
             </div>
             <Table>
               <thead>
@@ -152,14 +184,15 @@ export default function ReportsView({ role }) {
                 {data.sales.months.filter((m) => m.billed || m.collected || m.expenses).map((m) => {
                   const rate = m.billed ? Math.round((m.collected / m.billed) * 100) : null;
                   const surplus = m.collected - m.expenses;
+                  const month = monthKey(data.year, m.month);
                   return (
                     <tr key={m.month}>
                       <Td className="font-medium text-gray-900">{MONTHS[m.month - 1]} {data.year}</Td>
-                      <Td className="text-right tnum">{rm(m.billed)}</Td>
-                      <Td className="text-right tnum">{rm(m.collected)}</Td>
+                      <Td className="text-right tnum"><Fig href={link(invoicesHref, { month }, m.billed, 'billed')}>{rm(m.billed)}</Fig></Td>
+                      <Td className="text-right tnum"><Fig href={link(receiptsHref, { month }, m.collected, 'total')}>{rm(m.collected)}</Fig></Td>
                       <Td className={cx('text-right tnum', rate !== null && rate < 90 && 'text-amber-700')}>{rate === null ? '—' : `${rate}%`}</Td>
-                      <Td className="text-right tnum">{rm(m.walk_in_collected)}</Td>
-                      <Td className="text-right tnum">{rm(m.expenses)}</Td>
+                      <Td className="text-right tnum"><Fig href={link(receiptsHref, { month, walk_in: '1' }, m.walk_in_collected, 'total')}>{rm(m.walk_in_collected)}</Fig></Td>
+                      <Td className="text-right tnum"><Fig href={link(vouchersHref, { status: 'COUNTED', month }, m.expenses, 'total')}>{rm(m.expenses)}</Fig></Td>
                       <Td className={cx('text-right font-medium tnum', surplus < 0 && 'text-red-700')}>{rm(surplus)}</Td>
                     </tr>
                   );
@@ -171,28 +204,36 @@ export default function ReportsView({ role }) {
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card>
               <CardHeader title="Hasil mengikut tingkatan" description="Berdasarkan kutipan resit" />
-              <div className="p-5"><ShareList rows={data.sales.by_form.map((f) => ({ label: `${f.label} (${f.students} pelajar)`, amount: f.amount, pct: f.pct }))} /></div>
+              <div className="p-5"><ShareList rows={data.sales.by_form.map((f) => ({ label: `${f.label} (${f.students} pelajar)`, amount: f.amount, pct: f.pct, href: link(receiptsHref, { year: data.year, form: f.form }, f.amount, 'total') }))} /></div>
             </Card>
             <Card>
               <CardHeader title="Hasil mengikut peringkat" description="Menengah atas, menengah rendah dan sekolah rendah" />
-              <div className="p-5"><ShareList rows={data.sales.by_level.map((l) => ({ label: l.label, amount: l.amount, pct: l.pct }))} /></div>
+              <div className="p-5"><ShareList rows={data.sales.by_level.map((l) => ({ label: l.label, amount: l.amount, pct: l.pct, href: link(receiptsHref, { year: data.year, level: l.level }, l.amount, 'total') }))} /></div>
             </Card>
             <Card>
               <CardHeader
                 title="Perbelanjaan mengikut kategori"
-                description={data.expenses.pending_total > 0 ? `${rm(data.expenses.pending_total)} lagi menunggu kelulusan` : 'Baucar disahkan atau diluluskan'}
+                description={data.expenses.pending_total > 0
+                  ? <>{rm(data.expenses.pending_total)} lagi <Fig href={link(vouchersHref, { status: 'PENDING', year: data.year }, data.expenses.pending_total, 'total')}>menunggu kelulusan</Fig></>
+                  : 'Baucar disahkan atau diluluskan'}
                 actions={<CsvButton onClick={() => downloadCsv(`perbelanjaan-${data.year}.csv`, ['Kategori', 'Bil. baucar', 'Jumlah'],
                   data.expenses.by_category.map((c) => [c.category, c.count, c.amount]))} />}
               />
               {data.expenses.by_category.length === 0 ? <p className="p-5 text-sm text-gray-500">Tiada perbelanjaan.</p> : (
                 <ul className="divide-y divide-gray-100 text-sm">
                   {data.expenses.by_category.map((c) => (
-                    <li key={c.category} className="flex justify-between gap-3 px-5 py-2.5">
-                      <span className="text-gray-800">{c.category} <span className="text-gray-400">({c.count})</span></span>
-                      <span className="font-medium tnum">{rm(c.amount)}</span>
+                    <li key={c.category}>
+                      <RowLink href={link(vouchersHref, { status: 'COUNTED', year: data.year, category: c.category }, c.amount, 'total')} className="flex justify-between gap-3 px-5 py-2.5">
+                        <span className="text-gray-800">{c.category} <span className="text-gray-400">({c.count})</span></span>
+                        <span className="font-medium tnum">{rm(c.amount)}</span>
+                      </RowLink>
                     </li>
                   ))}
-                  <li className="flex justify-between gap-3 px-5 py-2.5 font-semibold"><span>Jumlah</span><span className="tnum">{rm(data.expenses.total)}</span></li>
+                  <li>
+                    <RowLink href={link(vouchersHref, { status: 'COUNTED', year: data.year }, data.expenses.total, 'total')} className="flex justify-between gap-3 px-5 py-2.5 font-semibold">
+                      <span>Jumlah</span><span className="tnum">{rm(data.expenses.total)}</span>
+                    </RowLink>
+                  </li>
                 </ul>
               )}
             </Card>
@@ -215,7 +256,7 @@ export default function ReportsView({ role }) {
                     <Td className="font-medium text-gray-900">{r.category} {!r.monthly_budget && <Badge tone="amber" className="ml-1">Tiada bajet</Badge>}</Td>
                     <Td className="text-right tnum">{rm(r.monthly_budget)}</Td>
                     <Td className="text-right tnum">{rm(r.budget_to_date)}</Td>
-                    <Td className="text-right font-medium tnum">{rm(r.actual)}</Td>
+                    <Td className="text-right font-medium tnum"><Fig href={link(vouchersHref, { status: 'COUNTED', year: data.year, category: r.category }, r.actual, 'total')}>{rm(r.actual)}</Fig></Td>
                     <Td className={cx('text-right font-medium tnum', r.variance < 0 ? 'text-red-700' : 'text-brand-700')}>{r.variance < 0 ? '−' : '+'}{rm(Math.abs(r.variance))}</Td>
                   </tr>
                 ))}
@@ -244,9 +285,9 @@ export default function ReportsView({ role }) {
                   <tr key={t.code}>
                     <Td className="font-medium text-gray-900">{t.name} <span className="font-normal text-gray-400">· {t.code}</span></Td>
                     <Td>{t.type === 'PERMANENT' ? 'Tetap' : 'Sambilan'}</Td>
-                    <Td className="text-right tnum">{t.sessions}</Td>
+                    <Td className="text-right tnum"><Fig href={link(sessionsHref, { teacher: t.code, year: data.year }, t.sessions)}>{t.sessions}</Fig></Td>
                     <Td className="text-right tnum">{rm(t.rate)}</Td>
-                    <Td className="text-right font-medium tnum">{rm(t.allowance)}</Td>
+                    <Td className="text-right font-medium tnum"><Fig href={link(sessionsHref, { teacher: t.code, year: data.year }, t.allowance, 'allowance')}>{rm(t.allowance)}</Fig></Td>
                   </tr>
                 ))}
               </tbody>
@@ -292,12 +333,12 @@ export default function ReportsView({ role }) {
 
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
             {[
-              ['Pelajar ditangguh', data.academic.on_hold, 'pelajar-ditangguh.csv'],
-              ['Pelajar tidak aktif', data.academic.inactive, 'pelajar-tidak-aktif.csv'],
-            ].map(([title, list, file]) => (
+              ['Pelajar ditangguh', data.academic.on_hold, 'pelajar-ditangguh.csv', 'ON_HOLD'],
+              ['Pelajar tidak aktif', data.academic.inactive, 'pelajar-tidak-aktif.csv', 'INACTIVE'],
+            ].map(([title, list, file, status]) => (
               <Card key={title}>
                 <CardHeader
-                  title={`${title} (${list.length})`}
+                  title={<>{title} (<Fig href={link(studentsHref, { status }, list.length)}>{list.length}</Fig>)</>}
                   actions={list.length > 0 && <CsvButton onClick={() => downloadCsv(file, ['ID', 'Nama', 'Tingkatan', 'Telefon', 'Telefon penjaga'],
                     list.map((s) => [s.student_id, s.full_name, s.form_level, s.phone_number, s.parent1_phone]))} />}
                 />
@@ -320,13 +361,20 @@ export default function ReportsView({ role }) {
                 {data.drop_reasons.length === 0 ? <p className="text-sm text-gray-500">Tiada rekod gugur subjek atau berhenti.</p> : (
                   <HBarList
                     labelWidth="12rem"
-                    rows={data.drop_reasons.map((r) => ({ label: r.label, value: r.subject_drops + r.students_left, hint: `${r.subject_drops} subjek · ${r.students_left} pelajar` }))}
+                    rows={data.drop_reasons.map((r) => ({
+                      label: r.label, value: r.subject_drops + r.students_left, hint: `${r.subject_drops} subjek · ${r.students_left} pelajar`,
+                      href: historyHref({ events: 'DROP_SUBJECT,TERMINATE', from: `${data.year}-01-01`, to: `${data.year}-12-31`, reason: r.code || 'NONE' },
+                        { src: 'laporan', expect: r.subject_drops + r.students_left }),
+                    }))}
                   />
                 )}
                 <div className="mt-5 grid grid-cols-12 gap-1 text-center text-[11px] text-gray-500">
                   {MONTHS.map((m, i) => (
                     <div key={m}>
-                      <div className="font-semibold text-gray-900 tnum">{data.drops_by_month[i] + data.left_by_month[i] || '—'}</div>
+                      <div className="font-semibold text-gray-900 tnum">
+                        <Fig href={link(historyHref, { events: 'DROP_SUBJECT,TERMINATE', from: `${data.year}-${String(i + 1).padStart(2, '0')}-01`, to: monthEnd(data.year, i + 1) },
+                          data.drops_by_month[i] + data.left_by_month[i])}>{data.drops_by_month[i] + data.left_by_month[i] || '—'}</Fig>
+                      </div>
                       {m}
                     </div>
                   ))}
@@ -382,14 +430,18 @@ export default function ReportsView({ role }) {
               <Table>
                 <thead><tr><Th>Kelas</Th><Th className="text-right">Sesi</Th><Th className="text-right">Kehadiran</Th><Th className="text-right">Kadar</Th></tr></thead>
                 <tbody>
-                  {data.attendance.map((r) => (
-                    <tr key={r.class_id}>
-                      <Td className="font-medium text-gray-900">{r.class_code}</Td>
-                      <Td className="text-right tnum">{r.sessions}</Td>
-                      <Td className="text-right tnum">{r.present}/{r.total}</Td>
-                      <Td className={cx('text-right font-medium tnum', r.rate < 70 && 'text-red-700')}>{r.rate}%</Td>
-                    </tr>
-                  ))}
+                  {data.attendance.map((r) => {
+                    // that class's recorded sessions for the year, which the rate is worked out from
+                    const open = attendanceHref({ class_id: r.class_id, from: `${data.year}-01-01`, to: `${data.year}-12-31` }, { src: 'laporan', expect: r.rate, unit: 'rate' });
+                    return (
+                      <tr key={r.class_id}>
+                        <Td className="font-medium text-gray-900"><Fig href={open}>{r.class_code}</Fig></Td>
+                        <Td className="text-right tnum">{r.sessions}</Td>
+                        <Td className="text-right tnum"><Fig href={open}>{r.present}/{r.total}</Fig></Td>
+                        <Td className={cx('text-right font-medium tnum', r.rate < 70 && 'text-red-700')}><Fig href={open}>{r.rate}%</Fig></Td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </Table>
             )}

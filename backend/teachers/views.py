@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.utils.dateparse import parse_date, parse_time
 from core import numbering, pdf
 from core.permissions import MANAGEMENT, APPROVER_ROLES, display_name, get_role, require_role
-from . import payroll
+from . import drilldown, payroll
 from . import staff as staff_hr
 from .models import (
     Teacher, TeacherAttendance, TeacherComplaint, TeacherRateIncrement, TeacherPayment,
@@ -25,6 +25,12 @@ class TeacherViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Teacher.objects.all().prefetch_related('subjects_qualified').order_by('teacher_type', 'teacher_code')
     serializer_class = TeacherSerializer
     write_roles = APPROVER_ROLES
+
+    @action(detail=False, methods=['get'])
+    def matching(self, request):
+        """The teachers a dashboard figure counts (see teachers/drilldown.py)."""
+        codes = list(drilldown.teachers_matching(request.query_params).order_by('teacher_code').values_list('teacher_code', flat=True))
+        return Response({'count': len(codes), 'ids': codes})
 
 class TeacherComplaintViewSet(viewsets.ModelViewSet):
     queryset = TeacherComplaint.objects.all().select_related('teacher')
@@ -103,6 +109,28 @@ class TeacherAttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                 if row['record']:
                     row['record'].pop('amount', None)
         return Response({'date': on, 'closed': closed_reason(on), 'classes': classes})
+
+    @action(detail=False, methods=['get'])
+    def paid(self, request):
+        """The sessions a teacher was paid for in a year or month, with what they add up to (see teachers/drilldown.py).
+        Admin does not see pay, so the amounts are left out for Admin."""
+        approver = get_role(request.user) in APPROVER_ROLES
+        rows, total = [], 0.0
+        for a in drilldown.paid_sessions(request.query_params):
+            covering = a.status == 'REPLACED'
+            taught_by = a.replacement_teacher if covering else a.teacher
+            row = {
+                'id': a.id, 'date': a.date, 'class_code': a.class_label, 'teacher_code': taught_by.teacher_code, 'teacher': taught_by.full_name,
+                'role': 'Guru ganti' if covering else 'Guru kelas', 'for_teacher': a.teacher.full_name if covering else '',
+            }
+            total += float(a.allowance_earned)
+            if approver:
+                row['amount'] = float(a.allowance_earned)
+            rows.append(row)
+        out = {'count': len(rows), 'ids': [r['id'] for r in rows], 'rows': rows}
+        if approver:
+            out['allowance'] = total
+        return Response(out)
 
     @action(detail=False, methods=['get'])
     def summary(self, request):

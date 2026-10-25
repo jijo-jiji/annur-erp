@@ -1,11 +1,23 @@
 # Dashboard and report drill-down
 
-**Status:** step 1 (student figures) and step 2 (money, vouchers, classes) are built and tested. Step 3 (Laporan, and
-the teacher and attendance figures) is next. Two changes from the first plan, found while building:
+**Status:** all three steps are built and tested: step 1 (student figures), step 2 (money, vouchers, classes) and
+step 3 (Laporan, teachers and permits, attendance, prospect follow-ups). Changes from the first plan, found while building:
 - "Subjek mengikut tingkatan" slices open **Pelajar** (the active students of that tingkatan taking the subject), not
   Jadual kelas: the figure counts students, so the student list is the one that adds up to it.
-- "Guru aktif", "Permit hampir / telah luput" and "Kehadiran 30 hari lepas" move to step 3: their lists are the
-  Guru & elaun filters and the attendance history, which Laporan also needs.
+- "Elaun direkod" on Laporan > Bayaran guru opens **Kehadiran guru** (the sessions the teacher was paid for), like
+  "Sesi", not Gaji guru. The allowance is the sum of those sessions' pay; Gaji guru holds monthly payments that are
+  worked out later and can be adjusted, so it would not add up to the figure.
+- The sessions and attendance lists are new views on their screens, opened only from a figure: *Kehadiran guru*
+  (`teacher` + `year`/`month`) and *Kedatangan pelajar* (`from` + `to`, and `class_id` for one class). The
+  attendance rate opens the classes it is made from, each with its own rate, and a class opens its sessions.
+- "Sebab gugur subjek" bars and the month counts open *Laporan sejarah* with the reason and period already set
+  (`events`, `from`, `to`, `reason`).
+- The "Kadar pengisian" subject bars compare seats: the list is the classes of the subject and the bar shows the seats
+  they hold ("terisi"), because the percentage itself is not a total of anything.
+- Lists whose rows are not already in the browser (teacher sessions, class attendance, history) come from the same
+  endpoint that checks the figure; the others filter what the screen already holds by the ids the server returns.
+- Backend tests: `students/tests.py` (steps 1 and 2) and `students/tests_reports.py` (step 3) check that every figure
+  equals the length or total of the list it opens; `frontend/e2e/drilldown*.spec.js` click each kind of link.
 
 **The request:** every figure on *Ringkasan* (Ringkas and Terperinci) and *Laporan* opens the list behind it, so a
 number can be checked by looking at the records. Clicking "Jumlah pelajar" shows the students.

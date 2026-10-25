@@ -129,13 +129,13 @@ export function Badge({ tone = 'neutral', dot, className, children }) {
 
 // A figure. With `href` it opens the list behind it: the whole card is the link, and any links inside `hint`
 // (a second figure) sit above it so they stay clickable.
-export function Stat({ label, value, hint, tone, href }) {
+export function Stat({ label, value, hint, tone, href, onOpen }) {
   return (
     <Card className={cx('relative px-5 py-4', href && 'transition-colors hover:border-brand-300 hover:bg-gray-50/70 focus-within:ring-2 focus-within:ring-brand-600/25')}>
       <p className="text-[13px] font-medium text-gray-500">{label}</p>
       <p className={cx('mt-1.5 text-2xl font-semibold tracking-tight tnum', tone === 'red' ? 'text-red-700' : 'text-gray-900')}>
         {href ? (
-          <a href={href} aria-label={`${label}: ${value}`} className="rounded after:absolute after:inset-0 after:content-[''] focus:outline-none">{value}</a>
+          <a href={href} onClick={onOpen} aria-label={`${label}: ${value}`} className="rounded after:absolute after:inset-0 after:content-[''] focus:outline-none">{value}</a>
         ) : value}
       </p>
       {hint && <p className="mt-1 text-[13px] text-gray-500">{hint}</p>}

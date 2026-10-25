@@ -243,6 +243,12 @@ class LeadViewSet(viewsets.ModelViewSet):
             qs = qs.filter(enquiry_date__lte=get_date(p['end'], 'end'))
         return qs
 
+    @action(detail=False, methods=['get'])
+    def matching(self, request):
+        """The prospects a dashboard figure counts (see students/drilldown.py)."""
+        ids = list(drilldown.leads_matching(request.query_params).order_by('id').values_list('id', flat=True))
+        return Response({'count': len(ids), 'ids': ids})
+
     def perform_create(self, serializer):
         on = serializer.validated_data.get('enquiry_date') or date.today()
         by = display_name(self.request.user)
@@ -333,19 +339,8 @@ class StudentEventViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = StudentEventSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        p = self.request.query_params
-        if p.get('student'):
-            qs = qs.filter(student_id=p['student'])
-        if p.get('type'):
-            qs = qs.filter(event_type__in=p['type'].split(','))
-        start = get_date(p.get('start'), 'start')
-        end = get_date(p.get('end'), 'end')
-        if start:
-            qs = qs.filter(event_date__gte=start)
-        if end:
-            qs = qs.filter(event_date__lte=end)
-        return qs
+        # the same filters the figures on Laporan count with (students/drilldown.py)
+        return drilldown.events_matching(self.request.query_params)
 
 
 class ClassWaitlistViewSet(viewsets.ReadOnlyModelViewSet):
@@ -541,7 +536,11 @@ def attendance_rates(start, end, class_ids=None):
 def attendance_summary(request):
     end = get_date(request.query_params.get('end'), 'end', date.today())
     start = get_date(request.query_params.get('start'), 'start', end.replace(day=1))
-    rows = attendance_rates(start, end)
+    class_id = request.query_params.get('class_id')  # one class, for the figure on a class's own row
+    try:
+        rows = attendance_rates(start, end, [int(class_id)] if class_id else None)
+    except ValueError:
+        raise ValidationError({'class_id': 'Kelas tidak sah.'})
     present = sum(r['present'] for r in rows)
     total = sum(r['total'] for r in rows)
     return Response({

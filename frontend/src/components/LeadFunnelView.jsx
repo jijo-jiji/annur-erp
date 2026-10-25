@@ -6,7 +6,9 @@ import { CENTRE } from '../lib/config';
 import { THRESHOLDS, useThresholds } from '../lib/thresholds';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
+import { describeLeadFilters, LEAD_FILTERS, useDrill, useMatching } from '../lib/drilldown';
 import { clock, date, daysAgoISO, FORMS, formLabel, formShort, todayISO, waLink } from '../lib/format';
+import DrilldownBar from './DrilldownBar';
 import { Donut } from './Donut';
 import { downloadCsv } from '../lib/csv';
 import { HBarList } from './charts';
@@ -340,6 +342,9 @@ export default function LeadFunnelView() {
   useThresholds(); // the board window and the stage names are settings
   const [filters, setFilters] = useState({ source: '', form: '', campaign: '', start: '', end: '' });
   const [dueOnly, setDueOnly] = useState(false);
+  // Opened from the follow-ups figure on Ringkasan: the server says which prospects it counts
+  const drill = useDrill(LEAD_FILTERS);
+  const matched = useMatching(drill, leadsApi.matching);
   const [tab, setTab] = useState('board');
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -370,8 +375,8 @@ export default function LeadFunnelView() {
     && (!filters.campaign || l.campaign === filters.campaign)
     && (!filters.start || l.enquiry_date >= filters.start)
     && (!filters.end || l.enquiry_date <= filters.end)
-    && (!dueOnly || isDue(l))
-  )), [leads, filters, dueOnly]);
+    && (drill ? Boolean(matched?.ids.has(l.id)) : (!dueOnly || isDue(l)))
+  )), [leads, filters, dueOnly, drill, matched]);
 
   // Figures come from the server with the same filters; refetched whenever a lead changes
   useEffect(() => {
@@ -439,6 +444,17 @@ export default function LeadFunnelView() {
         <Stat label="Tidak berminat" value={stats?.lost ?? '—'} hint="Ditutup tanpa pendaftaran" />
       </div>
 
+      {drill && (
+        <DrilldownBar
+          chips={describeLeadFilters(drill.filters)}
+          result={matched}
+          expect={drill.expect}
+          unit={drill.unit}
+          src={drill.src}
+          noun="prospek"
+          onClear={() => navigate('leads')}
+        />
+      )}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <select aria-label="Sumber" value={filters.source} onChange={(e) => setFilter({ source: e.target.value })} className={filterClass}>
           <option value="">Semua sumber</option>
@@ -454,7 +470,7 @@ export default function LeadFunnelView() {
         </select>
         <label className="flex items-center gap-2 text-sm text-gray-600">Dari <input type="date" value={filters.start} onChange={(e) => setFilter({ start: e.target.value })} className={filterClass} /></label>
         <label className="flex items-center gap-2 text-sm text-gray-600">Hingga <input type="date" value={filters.end} onChange={(e) => setFilter({ end: e.target.value })} className={filterClass} /></label>
-        <Checkbox label="Susulan tertunggak sahaja" checked={dueOnly} onChange={(e) => setDueOnly(e.target.checked)} />
+        {!drill && <Checkbox label="Susulan tertunggak sahaja" checked={dueOnly} onChange={(e) => setDueOnly(e.target.checked)} />}
       </div>
 
       {tab === 'board' && (

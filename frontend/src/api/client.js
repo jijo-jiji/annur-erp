@@ -169,6 +169,8 @@ export const leadsApi = {
   }),
   activities: (id) => request(`/students/leads/${id}/activities/`),
   stats: (params = {}) => request(`/students/leads/stats/?${new URLSearchParams(params)}`),
+  // The prospects a dashboard figure counts: { count, ids } (same rule as the figure)
+  matching: (params = {}) => request(`/students/leads/matching/?${new URLSearchParams(params)}`),
 };
 
 // 3. Students API
@@ -219,7 +221,9 @@ export const attendanceApi = {
     method: 'POST',
     body: JSON.stringify(data),
   }),
-  summary: (start, end) => request(`/attendance/summary/?start=${start}&end=${end}`),
+  summary: (start, end, classId) => request(`/attendance/summary/?${new URLSearchParams(Object.entries({ start, end, class_id: classId }).filter(([, v]) => v))}`),
+  // The recorded sessions of a period (one class with class_id): who was on the roster, absent and late
+  sessions: (params = {}) => request(`/attendance/sessions/?${new URLSearchParams(params)}`),
 };
 
 // 4. Billing API
@@ -331,6 +335,8 @@ export const teacherPayApi = {
   }),
   summary: (month) => request(`/teachers/attendance/summary/?month=${month}`),
   attendance: (params = {}) => request(`/teachers/attendance/?${new URLSearchParams(params)}`),
+  // The sessions a teacher was paid for in a year or month, with the allowance they add up to (Laporan > Bayaran guru)
+  paid: (params = {}) => request(`/teachers/attendance/paid/?${new URLSearchParams(params)}`),
   payments: (params = {}) => request(`/teachers/payments/?${new URLSearchParams(params)}`),
   calculate: (month) => request('/teachers/payments/calculate/', { method: 'POST', body: JSON.stringify({ month }) }),
   // adjust / verify / approve / reject / mark_paid
@@ -340,6 +346,8 @@ export const teacherPayApi = {
 
 export const staffApi = {
   getTeachers: () => request('/teachers/teachers/'),
+  // The teachers a dashboard figure counts: { count, ids } (teacher codes; same rule as the figure)
+  matchingTeachers: (params = {}) => request(`/teachers/teachers/matching/?${new URLSearchParams(params)}`),
   getComplaints: () => request('/teachers/complaints/'),
   createComplaint: (data) => request('/teachers/complaints/', {
     method: 'POST',

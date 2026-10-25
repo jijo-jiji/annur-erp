@@ -7,7 +7,7 @@ and a test checks that every student figure equals the length of the list it ope
 from datetime import date, timedelta
 from django.db.models import Q
 from rest_framework.exceptions import ValidationError
-from .models import Student
+from .models import Lead, Student, StudentEvent
 
 # Registered students (approved). PENDING and REJECTED registrations are not counted as students yet.
 REGISTERED_STATUSES = ('ACTIVE', 'ON_HOLD', 'TERMINATED')
@@ -38,6 +38,16 @@ def month_range(text, field):
     except (TypeError, ValueError):
         raise ValidationError({field: 'Bulan tidak sah (gunakan TTTT-BB).'})
     return first, (first + timedelta(days=32)).replace(day=1)
+
+
+def year_range(text, field):
+    """'2026' -> (1 January 2026, 1 January 2027)"""
+    try:
+        year = int(text)
+        first = date(year, 1, 1)
+    except (TypeError, ValueError):
+        raise ValidationError({field: 'Tahun tidak sah.'})
+    return first, date(year + 1, 1, 1)
 
 
 def parse_day(text, field):
@@ -72,6 +82,41 @@ def uninvoiced_students(month_first):
     invoiced = Invoice.objects.filter(billing_month=month_first).exclude(invoice_type='OTHER').values('student_id')
     return (Student.objects.filter(status='ACTIVE', student_type='MONTHLY', enrolled_classes__isnull=False)
             .exclude(id__in=invoiced).distinct())
+
+
+def events_matching(params):
+    """Student history (Laporan sejarah): the report, and the figures on Laporan that count its rows.
+
+    student  one student's history (their id)
+    type     one or more event types, comma separated (for example DROP_SUBJECT,TERMINATE)
+    start, end  YYYY-MM-DD, inclusive
+    reason   a drop-reason code; NONE for events where no reason was given"""
+    qs = StudentEvent.objects.select_related('student')
+    if params.get('student'):
+        qs = qs.filter(student_id=params['student'])
+    if params.get('type'):
+        types = params['type'].split(',')
+        if set(types) - {code for code, _ in StudentEvent.TYPE_CHOICES}:
+            raise ValidationError({'type': 'Jenis peristiwa tidak dikenali.'})
+        qs = qs.filter(event_type__in=types)
+    if params.get('start'):
+        qs = qs.filter(event_date__gte=parse_day(params['start'], 'start'))
+    if params.get('end'):
+        qs = qs.filter(event_date__lte=parse_day(params['end'], 'end'))
+    if params.get('reason'):
+        qs = qs.filter(reason_code='' if params['reason'] == NO_CATEGORY else params['reason'])
+    return qs
+
+
+def leads_matching(params, today=None):
+    """Prospects (Pertanyaan & prospek).
+
+    due   1: still open, with a follow-up date of today or earlier"""
+    today = today or date.today()
+    qs = Lead.objects.all()
+    if params.get('due'):
+        qs = qs.exclude(status__in=Lead.CLOSED_STAGES).filter(next_follow_up__lte=today)
+    return qs
 
 
 def students_matching(params, today=None):

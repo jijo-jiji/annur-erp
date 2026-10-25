@@ -8,7 +8,9 @@ import { navigate } from '../lib/nav';
 import { classLabel } from '../lib/domain';
 import { CURRENT_MONTH, date, DAY_LABEL, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
+import { describeTeacherFilters, TEACHER_FILTERS, useDrill, useMatching } from '../lib/drilldown';
 import { THRESHOLDS } from '../lib/thresholds';
+import DrilldownBar from './DrilldownBar';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
 import { Avatar, Badge, Button, Card, CardHeader, Checkbox, EmptyState, PageHeader, SearchInput, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon } from './ui';
@@ -70,7 +72,11 @@ export default function TeachersView({ role }) {
   const { teachers, classes, subjects, submitChangeRequest, days: DAYS } = useStore();
   const { refreshTeachers, refreshAllData } = useApp();
   const notify = useToast();
-  const [view, setView] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'directory');
+  const [tab, setView] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'directory');
+  // Opened from a figure on Ringkasan: the address carries the filter, and the server says which teachers it counts
+  const drill = useDrill(TEACHER_FILTERS);
+  const matched = useMatching(drill, staffApi.matchingTeachers);
+  const view = drill ? 'directory' : tab;
   const [type, setType] = useState('ALL');
   const [inactive, setInactive] = useState(false);
   const [q, setQ] = useState('');
@@ -120,7 +126,7 @@ export default function TeachersView({ role }) {
   const active = teachers.filter((t) => t.active);
   const needle = q.trim().toLowerCase();
   const rows = teachers
-    .filter((t) => t.active !== inactive && (type === 'ALL' || t.type === type) && (!needle || `${t.name} ${t.code} ${t.subjects}`.toLowerCase().includes(needle)))
+    .filter((t) => (drill ? Boolean(matched?.ids.has(t.code)) : t.active !== inactive && (type === 'ALL' || t.type === type)) && (!needle || `${t.name} ${t.code} ${t.subjects}`.toLowerCase().includes(needle)))
     .sort((a, b) => a.name.localeCompare(b.name));
   const count = (kind) => active.filter((t) => t.type === kind).length;
   const monthlyTotal = active.reduce((a, t) => a + taught(t.code).length * WEEKS_PER_MONTH * (t.rate || 0), 0);
@@ -163,7 +169,7 @@ export default function TeachersView({ role }) {
       <Tabs
         className="mb-4"
         value={view}
-        onChange={setView}
+        onChange={(v) => { setView(v); if (drill) navigate('teachers'); }}
         items={[
           { value: 'directory', label: 'Direktori', count: active.length },
           { value: 'assigned', label: 'Kelas ditugaskan' },
@@ -184,7 +190,19 @@ export default function TeachersView({ role }) {
               <Stat label="Purata kadar guru sambilan" value={rm(avgRate('REPLACEMENT'))} hint="setiap sesi" />
             </div>
           )}
+          {drill && (
+            <DrilldownBar
+              chips={describeTeacherFilters(drill.filters, { teacher: (code) => { const t = teachers.find((x) => x.code === code); return t ? `Cikgu ${t.name}` : code; } })}
+              result={matched}
+              expect={drill.expect}
+              unit={drill.unit}
+              src={drill.src}
+              noun="guru"
+              onClear={() => navigate('teachers')}
+            />
+          )}
           <div className="mb-4 flex flex-wrap items-center gap-3">
+            {!drill && <>
             <Tabs
               value={type}
               onChange={setType}
@@ -195,6 +213,7 @@ export default function TeachersView({ role }) {
               ]}
             />
             <Checkbox label={`Tidak aktif (${teachers.length - active.length})`} checked={inactive} onChange={(e) => setInactive(e.target.checked)} />
+            </>}
             <SearchInput icon={Search} value={q} onChange={setQ} placeholder="Cari guru atau subjek" className="w-full sm:ml-auto sm:w-72" />
           </div>
 
