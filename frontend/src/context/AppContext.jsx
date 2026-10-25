@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   authApi, tokenStore, masterDataApi, leadsApi, studentsApi, billingApi, expensesApi,
   academicApi, staffApi, dashboardApi, configApi
@@ -52,9 +52,15 @@ export function AppProvider({ children, notify }) {
     notify?.(message, type, options);
   }, [notify]);
 
+  // Counts the prospect changes made on this screen. The full load below applies its lists only when the slowest
+  // request is back, so a prospect saved or moved meanwhile would be overwritten by the older list; when this count
+  // moved during the load, the prospects are fetched again instead.
+  const leadEdits = useRef(0);
+
   // Initial Load from Django REST backend
   const refreshAllData = useCallback(async () => {
     setIsLoading(true);
+    const leadEditsAtStart = leadEdits.current;
     try {
       const [
         masterRes, studentsRes, leadsRes, invoicesRes, receiptsRes,
@@ -84,7 +90,10 @@ export function AppProvider({ children, notify }) {
 
       if (masterRes.status === 'fulfilled') { setMasterData(masterRes.value || []); setGradeScale(masterRes.value || []); }
       if (studentsRes.status === 'fulfilled') setStudents(studentsRes.value || []);
-      if (leadsRes.status === 'fulfilled') setLeads(leadsRes.value || []);
+      if (leadsRes.status === 'fulfilled') {
+        if (leadEdits.current === leadEditsAtStart) setLeads(leadsRes.value || []);
+        else leadsApi.getAll().then(setLeads).catch(() => {});
+      }
       if (invoicesRes.status === 'fulfilled') setInvoices(invoicesRes.value || []);
       if (receiptsRes.status === 'fulfilled') setReceipts(receiptsRes.value || []);
       if (vouchersRes.status === 'fulfilled') setVouchers(vouchersRes.value || []);
@@ -268,6 +277,7 @@ export function AppProvider({ children, notify }) {
   const createLead = async (leadPayload) => {
     try {
       const newLead = await leadsApi.create(leadPayload);
+      leadEdits.current += 1;
       setLeads((prev) => [newLead, ...prev]);
       showToast(`Lead baru berjaya ditambah: ${newLead.student_name}`);
       return newLead;
@@ -281,6 +291,7 @@ export function AppProvider({ children, notify }) {
   const leadAction = async (leadId, name, data, successMessage) => {
     try {
       const updated = await leadsApi.action(leadId, name, data);
+      leadEdits.current += 1;
       setLeads((prev) => prev.map((l) => (l.id === leadId ? updated : l)));
       if (successMessage) showToast(successMessage);
       return updated;
@@ -294,6 +305,7 @@ export function AppProvider({ children, notify }) {
   const updateLead = async (leadId, data) => {
     try {
       const updated = await leadsApi.update(leadId, data);
+      leadEdits.current += 1;
       setLeads((prev) => prev.map((l) => (l.id === leadId ? updated : l)));
       showToast(`Maklumat lead ${updated.student_name} disimpan.`);
       return updated;
