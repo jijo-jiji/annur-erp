@@ -47,11 +47,13 @@ function canDecide(role, v) {
 
 const VENDOR_REASON = { name: 'note', label: 'Sebab permohonan', type: 'textarea', required: true, hint: 'Pengurusan akan melihat sebab ini semasa membuat keputusan.' };
 
-function vendorFields(editing) {
+// What a supplier provides (Data induk 25): it also suggests the category of a new voucher to them
+function vendorFields(editing, supplyTypes = []) {
   return [
     { name: 'vendor_name', label: 'Nama pembekal', required: true },
-    { name: 'vendor_id', label: 'No. SSM / ID pembekal', required: true },
-    { name: 'tin_number', label: 'No. cukai (TIN)' },
+    { name: 'vendor_id', label: 'Kod syarikat', required: editing, hint: editing ? undefined : 'Kosongkan untuk kod automatik (cth. VND-0001).' },
+    { name: 'supply_type', label: 'Jenis bekalan', type: 'select', placeholder: 'Pilih jenis bekalan', options: supplyTypes.map((o) => ({ value: o.value, label: o.label })) },
+    { name: 'tin_number', label: 'No. cukai (TIN)', hint: 'Pilihan' },
     { name: 'pic_name', label: 'Pegawai dihubungi (PIC)' },
     { name: 'phone_number', label: 'Telefon' },
     { name: 'address', label: 'Alamat', type: 'textarea' },
@@ -62,13 +64,16 @@ function vendorFields(editing) {
 }
 
 const vendorInitial = (v = {}) => ({
-  vendor_name: v.vendor_name || '', vendor_id: v.vendor_id || '', tin_number: v.tin_number || '', pic_name: v.pic_name || '',
+  vendor_name: v.vendor_name || '', vendor_id: v.vendor_id || '', supply_type: v.supply_type || '', tin_number: v.tin_number || '', pic_name: v.pic_name || '',
   phone_number: v.phone_number || '', address: v.address || '', bank_name: v.bank_name || '', bank_account: v.bank_account || '',
   status: v.status || 'ACTIVE', note: '',
 });
 
 export default function PaymentVoucherView({ role }) {
   const { vouchers, vendors, approveVoucher, rejectVoucher, submitVendor } = useStore();
+  const { getMasterOptions } = useApp();
+  const supplyTypes = getMasterOptions('25_supply_type');
+  const supplyLabel = (code) => supplyTypes.find((o) => o.value === code)?.label;
   const { refreshAllData, showToast } = useApp();
   const [tab, setTab] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'all');
   const [creating, setCreating] = useState(false);
@@ -152,7 +157,7 @@ export default function PaymentVoucherView({ role }) {
           {vendors.length === 0 ? <EmptyState icon={Building2} title="Tiada pembekal berdaftar" /> : (
             <Table>
               <thead>
-                <tr><Th>Pembekal</Th><Th>No. SSM / ID</Th><Th>No. cukai (TIN)</Th><Th>Telefon</Th><Th>Bank</Th><Th>Status</Th>{canManageVendors && <Th className="text-right"><span className="sr-only">Tindakan</span></Th>}</tr>
+                <tr><Th>Pembekal</Th><Th>Kod syarikat</Th><Th>Jenis bekalan</Th><Th>Telefon</Th><Th>Bank</Th><Th>Status</Th>{canManageVendors && <Th className="text-right"><span className="sr-only">Tindakan</span></Th>}</tr>
               </thead>
               <tbody>
                 {vendors.map((v) => (
@@ -161,8 +166,11 @@ export default function PaymentVoucherView({ role }) {
                       <p className="font-medium text-gray-900">{v.vendor_name}</p>
                       {v.pic_name && <p className="text-[13px] text-gray-500">PIC: {v.pic_name}</p>}
                     </Td>
-                    <Td className="text-gray-700">{v.vendor_id}</Td>
-                    <Td className="text-gray-700">{v.tin_number || '—'}</Td>
+                    <Td className="text-gray-700">
+                      {v.vendor_id}
+                      {v.tin_number && <p className="text-[13px] text-gray-500">TIN {v.tin_number}</p>}
+                    </Td>
+                    <Td className="text-gray-700">{supplyLabel(v.supply_type) || '—'}</Td>
                     <Td className="whitespace-nowrap text-gray-700">{v.phone_number || '—'}</Td>
                     <Td className="text-gray-700">{[v.bank_name, v.bank_account].filter(Boolean).join(' ') || '—'}</Td>
                     <Td>
@@ -186,7 +194,7 @@ export default function PaymentVoucherView({ role }) {
             requests={vendorRequests}
             reload={loadVendorRequests}
             onApplied={refreshAllData}
-            editFields={(r) => vendorFields(r.action === 'UPDATE')}
+            editFields={(r) => vendorFields(r.action === 'UPDATE', supplyTypes)}
             editInitial={(r) => ({ ...vendorInitial(vendors.find((v) => v.id === r.target_id)), ...r.payload })}
           />
         )}
@@ -231,7 +239,7 @@ export default function PaymentVoucherView({ role }) {
                       <p className="text-[13px] text-gray-500">{[v.category, v.subcategory].filter(Boolean).join(' · ')}</p>
                     </Td>
                     <Td className="hidden max-w-sm text-gray-700 lg:table-cell">{v.description}</Td>
-                    <Td className="text-right font-medium tnum">{rm(v.amount)}</Td>
+                    <Td className={`text-right font-medium tnum ${v.amount >= THRESHOLDS.voucher_tier1 ? 'text-red-700' : ''}`} title={v.amount >= THRESHOLDS.voucher_tier1 ? `${ringgit(THRESHOLDS.voucher_tier1)} dan ke atas: perlu kelulusan` : undefined}>{rm(v.amount)}</Td>
                     <Td>
                       <Badge tone={STATUS[v.rawStatus]?.tone}>{STATUS[v.rawStatus]?.label ?? v.rawStatus}</Badge>
                       {v.approvedBy && <p className="mt-1 text-xs text-gray-500">oleh {v.approvedBy}</p>}
@@ -276,7 +284,7 @@ export default function PaymentVoucherView({ role }) {
           description={vendorDirect ? 'Pembekal ini boleh digunakan serta-merta.' : 'Pembekal ini boleh digunakan selepas diluluskan oleh Pengurusan.'}
           submitLabel={vendorDirect ? 'Tambah pembekal' : 'Hantar permohonan'}
           initial={vendorInitial()}
-          fields={[...vendorFields(false), ...(vendorDirect ? [] : [VENDOR_REASON])]}
+          fields={[...vendorFields(false, supplyTypes), ...(vendorDirect ? [] : [VENDOR_REASON])]}
           onSubmit={({ note, ...values }) => saveVendor('CREATE', null, values, note)}
           onClose={() => setVendorDialog(null)}
         />
@@ -287,7 +295,7 @@ export default function PaymentVoucherView({ role }) {
           description={vendorDirect ? 'Perubahan berkuat kuasa serta-merta.' : 'Perubahan berkuat kuasa selepas diluluskan oleh Pengurusan. Maklumat bank sangat penting, nyatakan sebab dengan jelas.'}
           submitLabel={vendorDirect ? 'Simpan' : 'Hantar permohonan'}
           initial={{ ...vendorInitial(vendorDialog.vendor), note: '' }}
-          fields={[...vendorFields(true), ...(vendorDirect ? [] : [VENDOR_REASON])]}
+          fields={[...vendorFields(true, supplyTypes), ...(vendorDirect ? [] : [VENDOR_REASON])]}
           onSubmit={({ note, ...values }) => saveVendor('UPDATE', vendorDialog.vendor.id, values, note)}
           onClose={() => setVendorDialog(null)}
         />
@@ -299,20 +307,33 @@ export default function PaymentVoucherView({ role }) {
 function CreateModal({ onClose, onCreated }) {
   const { vendors, addVoucher } = useStore();
   const { getMasterOptions } = useApp();
-  // Categories come from master data so budget reports can match them
+  // Categories come from master data so budget reports can match them; the voucher keeps the codes
   const categories = getMasterOptions('18_expense_cat');
-  const [f, setF] = useState({ vendorPk: '', category: '', subcategory: '', method: 'ONLINE_TRANSFER', ref: '', amount: '', date: todayISO(), description: '', remarks: '' });
+  const supplyTypes = getMasterOptions('25_supply_type');
+  const [f, setF] = useState({ vendorPk: '', categoryCode: '', subcategoryCode: '', method: 'ONLINE_TRANSFER', ref: '', amount: '', date: todayISO(), description: '', remarks: '' });
   const [busy, setBusy] = useState(false);
   const set = (patch) => setF((p) => ({ ...p, ...patch }));
   const amount = Number(f.amount);
-  const category = categories.find((c) => c.label === f.category);
-  const subcategories = getMasterOptions('19_expense_subcat').filter((s) => !category || s.meta?.cat === category.value);
+  const category = categories.find((c) => c.value === f.categoryCode);
+  // Only the subcategories of the chosen category; none until a category is chosen
+  const subcategories = category ? getMasterOptions('19_expense_subcat').filter((s) => s.meta?.cat === category.value) : [];
+  const subcategory = subcategories.find((s) => s.value === f.subcategoryCode);
+
+  // A supplier's type suggests the category, unless one has been chosen already
+  const pickVendor = (pk) => {
+    const vendor = vendors.find((v) => String(v.id) === String(pk));
+    const suggested = supplyTypes.find((o) => o.value === vendor?.supply_type)?.meta?.cat;
+    set({ vendorPk: pk, ...(!f.categoryCode && suggested && categories.some((c) => c.value === suggested) ? { categoryCode: suggested, subcategoryCode: '' } : {}) });
+  };
 
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     try {
-      onCreated(await addVoucher({ ...f, vendorPk: Number(f.vendorPk), amount }));
+      onCreated(await addVoucher({
+        ...f, vendorPk: Number(f.vendorPk), amount,
+        category: category?.label || '', subcategory: subcategory?.label || '',
+      }));
     } catch {
       setBusy(false);
     }
@@ -334,23 +355,30 @@ function CreateModal({ onClose, onCreated }) {
       }
     >
       <form id="pv-form" onSubmit={submit} className="space-y-4">
-        <Select label="Penerima bayaran" required value={f.vendorPk} onChange={(e) => set({ vendorPk: e.target.value })} hint="Pembekal baharu ditambah oleh supervisor dalam tab Pembekal.">
+        <Select label="Penerima bayaran" required value={f.vendorPk} onChange={(e) => pickVendor(e.target.value)} hint="Pembekal baharu ditambah oleh supervisor dalam tab Pembekal.">
           <option value="">Pilih pembekal</option>
           {vendors.filter((v) => (v.status || 'ACTIVE') === 'ACTIVE').map((v) => (
             <option key={v.id} value={v.id}>{v.vendor_name}</option>
           ))}
         </Select>
         <div className="grid grid-cols-2 gap-3">
-          <Select label="Kategori" required value={f.category} onChange={(e) => set({ category: e.target.value, subcategory: '' })}>
+          <Select label="Kategori" required value={f.categoryCode} onChange={(e) => set({ categoryCode: e.target.value, subcategoryCode: '' })}>
             <option value="">Pilih kategori</option>
             {categories.map((c) => (
-              <option key={c.value} value={c.label}>{c.label}</option>
+              <option key={c.value} value={c.value}>{c.label}</option>
             ))}
           </Select>
-          <Select label="Subkategori" value={f.subcategory} onChange={(e) => set({ subcategory: e.target.value })}>
-            <option value="">Tiada</option>
+          <Select
+            label="Subkategori"
+            required={subcategories.length > 0}
+            disabled={!category || subcategories.length === 0}
+            value={f.subcategoryCode}
+            onChange={(e) => set({ subcategoryCode: e.target.value })}
+            hint={!category ? 'Pilih kategori dahulu.' : subcategories.length === 0 ? 'Kategori ini tiada subkategori.' : undefined}
+          >
+            <option value="">{subcategories.length ? 'Pilih subkategori' : 'Tiada'}</option>
             {subcategories.map((c) => (
-              <option key={c.value} value={c.label}>{c.label}</option>
+              <option key={c.value} value={c.value}>{c.label}</option>
             ))}
           </Select>
           <Select label="Kaedah bayaran" value={f.method} onChange={(e) => set({ method: e.target.value })}>
@@ -370,7 +398,9 @@ function CreateModal({ onClose, onCreated }) {
             onChange={(e) => set({ amount: e.target.value })}
           />
         </div>
-        {amount > 0 && <p className="rounded-md bg-gray-50 px-3 py-2 text-[13px] text-gray-700">{tierText()[voucherTier(amount)]}</p>}
+        {amount > 0 && (
+          <p className={`rounded-md px-3 py-2 text-[13px] ${voucherTier(amount) > 1 ? 'bg-red-50 text-red-800' : 'bg-gray-50 text-gray-700'}`}>{tierText()[voucherTier(amount)]}</p>
+        )}
         <Textarea label="Perkara / tujuan bayaran" required rows={2} value={f.description} onChange={(e) => set({ description: e.target.value })} />
         <Input label="Catatan" value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} />
       </form>

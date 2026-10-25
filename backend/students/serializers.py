@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Student, StudentExamResult, Lead, LeadActivity, StudentEvent, ClassWaitlist, StudentFeedback
+from .models import Student, Lead, LeadActivity, StudentEvent, ClassWaitlist, StudentFeedback
 from academic.serializers import ClassTimetableSerializer
 from core import grades
 
@@ -12,6 +12,7 @@ class StudentSerializer(serializers.ModelSerializer):
     waiting_for = serializers.SerializerMethodField()
     # Only meaningful while waiting for approval: what the Supervisor cannot approve without
     registration_gaps = serializers.SerializerMethodField()
+    resubmit_class_ids = serializers.SerializerMethodField()
 
     class Meta:
         model = Student
@@ -19,7 +20,7 @@ class StudentSerializer(serializers.ModelSerializer):
         # Status and classes change only through the lifecycle actions (approve, enroll, drop, hold, ...)
         read_only_fields = (
             'status', 'registration_comment', 'registration_decided_by', 'on_hold_until', 'left_date',
-            'credit_balance', 'enrolled_classes',
+            'credit_balance', 'enrolled_classes', 'previous_student_id',
         )
 
     def validate_form_level(self, value):
@@ -29,6 +30,13 @@ class StudentSerializer(serializers.ModelSerializer):
         from .services import registration_gaps
         return registration_gaps(obj) if obj.status == 'PENDING' else []
 
+    def get_resubmit_class_ids(self, obj):
+        # The classes of a rejected registration, offered again when it is sent back
+        if obj.status != 'REJECTED':
+            return []
+        from .services import last_class_choices
+        return last_class_choices(obj)
+
     def get_standing_discount_name(self, obj):
         return str(obj.standing_discount) if obj.standing_discount_id else None
 
@@ -37,15 +45,6 @@ class StudentSerializer(serializers.ModelSerializer):
             {'id': w.id, 'class_id': w.timetable_class_id, 'class_code': w.timetable_class.class_code}
             for w in obj.waitlist_entries.all() if w.status == 'WAITING'
         ]
-
-
-class StudentExamResultSerializer(serializers.ModelSerializer):
-    subject_code = serializers.CharField(source='subject.code', read_only=True)
-    subject_name = serializers.CharField(source='subject.name', read_only=True)
-
-    class Meta:
-        model = StudentExamResult
-        fields = '__all__'
 
 
 class StudentEventSerializer(serializers.ModelSerializer):

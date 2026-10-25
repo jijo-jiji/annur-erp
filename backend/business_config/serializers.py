@@ -6,6 +6,11 @@ class SubjectMasterSerializer(serializers.ModelSerializer):
         model = SubjectMaster
         fields = '__all__'
 
+    def validate_category(self, value):
+        if value and not DynamicMasterData.objects.filter(category='26_subject_category', code=value, status='APPROVED').exists():
+            raise serializers.ValidationError('Kategori subjek ini tidak dijumpai.')
+        return value  # empty: the model puts the subject in the group of its stream
+
 class PricingTierSerializer(serializers.ModelSerializer):
     class Meta:
         model = PricingTier

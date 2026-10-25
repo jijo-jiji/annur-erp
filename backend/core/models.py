@@ -108,6 +108,7 @@ class Attachment(models.Model):
         ('VOUCHER', 'Lampiran Baucar'),
         ('VOUCHER_SIGNATURE', 'Tandatangan Penerima'),
         ('HANDOUT', 'Fail Nota / Modul'),
+        ('RESULT_SLIP', 'Slip Keputusan Peperiksaan'),
     ]
     DOC_TYPES = [
         ('IC', 'Salinan Kad Pengenalan'),

@@ -5,10 +5,11 @@ import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
-import { date, monthLabel, rm, todayISO, waLink } from '../lib/format';
+import { date, monthLabel, rm, todayISO } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, DescriptionList, EmptyState, filterClass, Modal, PageHeader, Stat, Table, Td, Th, useToast, WhatsAppIcon } from './ui';
+import WhatsAppButton from './WhatsAppButton';
 
 const STATUS_TONE = { DRAFT: 'neutral', VERIFIED: 'blue', APPROVED: 'green', REJECTED: 'red', PAID: 'green' };
 const METHODS = [
@@ -39,9 +40,9 @@ function Payslip({ payment: p, onClose }) {
       footer={
         <>
           {['APPROVED', 'PAID'].includes(p.status) && p.teacher_phone && (
-            <Button as="a" href={waLink(p.teacher_phone, payslipText(p, sessions))} target="_blank" rel="noreferrer">
+            <WhatsAppButton phone={p.teacher_phone} recipient={`Cikgu ${p.teacher_name}`} message={payslipText(p, sessions)}>
               <WhatsAppIcon /> Hantar slip
-            </Button>
+            </WhatsAppButton>
           )}
           <Button
             variant="primary"

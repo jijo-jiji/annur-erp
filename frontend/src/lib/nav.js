@@ -28,7 +28,7 @@ export const NAV_ITEMS = [
   { id: 'parent-qr', label: 'Pendaftaran QR', icon: QrCode, perm: 'qr.view', group: 'Pendaftaran' },
   { id: 'timetable', label: 'Jadual kelas', icon: CalendarDays, perm: 'timetable.view', group: 'Akademik' },
   { id: 'attendance', label: 'Kedatangan pelajar', icon: ClipboardCheck, perm: 'attendance.take', group: 'Akademik' },
-  { id: 'results', label: 'Keputusan ujian', icon: Award, perm: 'results.view', group: 'Akademik' },
+  { id: 'results', label: 'Keputusan peperiksaan', icon: Award, perm: 'results.view', group: 'Akademik' },
   { id: 'reschedules', label: 'Batal & ganti kelas', icon: CalendarClock, perm: 'reschedules.view', group: 'Akademik' },
   { id: 'handouts', label: 'Nota & modul', icon: BookOpen, perm: 'handouts.view', group: 'Akademik' },
   { id: 'teachers', label: 'Guru & elaun', icon: GraduationCap, perm: 'teachers.view', group: 'Guru', labelWithout: ['teachers.pay', 'Guru'] },

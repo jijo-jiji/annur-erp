@@ -1,8 +1,9 @@
 from django.db import models
 
 class Vendor(models.Model):
-    vendor_id = models.CharField(max_length=30, unique=True)
+    vendor_id = models.CharField(max_length=30, unique=True)  # the centre's company code for the supplier (no SSM needed)
     vendor_name = models.CharField(max_length=150)
+    supply_type = models.CharField(max_length=60, blank=True)  # code from master data 25_supply_type
     pic_name = models.CharField(max_length=100, blank=True)
     phone_number = models.CharField(max_length=30, blank=True)
     address = models.TextField(blank=True)
@@ -34,6 +35,9 @@ class PaymentVoucher(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.SET_NULL, null=True, blank=True)
     category = models.CharField(max_length=100)
     subcategory = models.CharField(max_length=100, blank=True)
+    # Codes of master data 18_expense_cat / 19_expense_subcat; the labels above are kept as they were when saved
+    category_code = models.CharField(max_length=60, blank=True)
+    subcategory_code = models.CharField(max_length=60, blank=True)
     payment_method = models.CharField(max_length=50, default='ONLINE_TRANSFER')
     ref_number = models.CharField(max_length=100, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)

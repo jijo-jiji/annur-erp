@@ -95,7 +95,31 @@ export const filesApi = {
   },
 };
 
+// Endpoints the public forms use without signing in
+export const publicApi = {
+  subjects: (form = '') => request(`/public/subjects/?${new URLSearchParams({ form })}`),
+  // School results form (#/keputusan): the student code and the last 4 digits of the IC prove who it is
+  checkResults: (studentCode, icLast4) => request('/public/results/check/', {
+    method: 'POST', body: JSON.stringify({ student_code: studentCode, ic_last4: icLast4 }),
+  }),
+  sendResults: async (fields, slip) => {
+    const form = new FormData();
+    Object.entries(fields).forEach(([k, v]) => form.append(k, typeof v === 'object' ? JSON.stringify(v) : v));
+    if (slip) form.append('slip', slip);
+    const res = await fetch(`${BASE_URL}/public/results/`, { method: 'POST', body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.detail || (res.status === 413 ? 'Fail terlalu besar.' : `Penghantaran gagal (${res.status})`));
+      err.data = data;
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  },
+};
+
 // 0. Authentication API
+
 export const authApi = {
   login: (username, password) => request('/auth/login/', {
     method: 'POST',
@@ -211,6 +235,18 @@ export const studentsApi = {
   addResult: (data) => request('/students/results/', {
     method: 'POST',
     body: JSON.stringify(data),
+  }),
+  // One student's results for one school exam: rows [{ subject, mark, grade }]; an empty row removes that result
+  saveResultGrid: (studentPk, year, term, rows) => request('/students/results/grid/', {
+    method: 'POST', body: JSON.stringify({ student: studentPk, year, term, rows }),
+  }),
+  // Results sent on the public form, waiting for staff to check them
+  resultSubmissions: (status = '') => request(`/students/result-submissions/?${new URLSearchParams(status ? { status } : {})}`),
+  approveSubmission: (id, rows, note = '') => request(`/students/result-submissions/${id}/approve/`, {
+    method: 'POST', body: JSON.stringify({ rows, note }),
+  }),
+  rejectSubmission: (id, note) => request(`/students/result-submissions/${id}/reject/`, {
+    method: 'POST', body: JSON.stringify({ note }),
   }),
 };
 

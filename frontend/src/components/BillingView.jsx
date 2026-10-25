@@ -12,13 +12,14 @@ import {
   addMonths, arrearsCases, invoiceBalance, invoiceStatus, monthlyFee, preferredContact,
 } from '../lib/domain';
 import {
-  CURRENT_MONTH, date, formLabel, monthLabel, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, rm, tierGroupLabel, todayISO, waLink,
+  CURRENT_MONTH, date, formLabel, monthLabel, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, rm, tierGroupLabel, todayISO,
 } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import {
   Badge, Button, Card, Checkbox, EmptyState, Input, Modal, PageHeader, SearchInput, Segmented, Select, Stat, Table, Tabs, Td, Textarea, Th,
   useToast, WhatsAppIcon,
 } from './ui';
+import WhatsAppButton from './WhatsAppButton';
 
 const STATUS_BADGE = {
   PAID: <Badge tone="green">Dibayar</Badge>,
@@ -255,7 +256,7 @@ export default function BillingView({ role }) {
                         {inv.discount > 0 && <p className="text-xs text-gray-500">diskaun {rm(inv.discount)}</p>}
                         {inv.creditApplied > 0 && <p className="text-xs text-gray-500">kredit {rm(inv.creditApplied)}</p>}
                       </Td>
-                      <Td className="hidden text-right tnum md:table-cell">{invoiceBalance(inv) ? rm(invoiceBalance(inv)) : '—'}</Td>
+                      <Td className={`hidden text-right tnum md:table-cell ${invoiceBalance(inv) && st !== 'PARTIAL' ? 'font-medium text-red-700' : ''}`}>{invoiceBalance(inv) ? rm(invoiceBalance(inv)) : '—'}</Td>
                       <Td>{STATUS_BADGE[st]}</Td>
                       <Td className="whitespace-nowrap text-right">
                         {st !== 'PAID'
@@ -403,19 +404,18 @@ function ArrearsPanel({ cases, role, openInvoices, onPay }) {
                     </Td>
                     <Td className="text-gray-700">{overdue.map((i) => monthLabel(i.month)).join(', ')}</Td>
                     <Td className="text-right font-medium text-red-700 tnum">{rm(amount)}</Td>
-                    <Td className="whitespace-nowrap">{warned ? <Badge tone="blue">Amaran {date(warned)}</Badge> : <Badge>Belum diberi amaran</Badge>}</Td>
+                    <Td className="whitespace-nowrap">{warned ? <Badge tone="blue">Amaran {date(warned)}</Badge> : <Badge tone="red">Belum diberi amaran</Badge>}</Td>
                     <Td className="whitespace-nowrap text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          as="a"
+                        <WhatsAppButton
                           size="sm"
-                          href={waLink(contact.phone, msg)}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={() => warnArrears(s.id).then(() => notify('Amaran direkodkan.', 'info')).catch(() => {})}
+                          phone={contact.phone}
+                          message={msg}
+                          recipient={contact.name}
+                          onSent={() => warnArrears(s.id).then(() => notify('Amaran direkodkan.', 'info')).catch(() => {})}
                         >
                           <WhatsAppIcon className="size-3.5" /> Amaran
-                        </Button>
+                        </WhatsAppButton>
                         {s.status === 'ACTIVE' && can(role, 'students.approve') && (
                           <Button
                             size="sm"
@@ -499,16 +499,15 @@ function ArrearsPanel({ cases, role, openInvoices, onPay }) {
                     </Td>
                     <Td className="whitespace-nowrap text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          as="a"
+                        <WhatsAppButton
                           size="sm"
-                          href={waLink(contact.phone, reminderMessage(inv, contact, inv.studentName))}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={() => invoiceAction(inv.no, 'remind').catch(() => {})}
+                          phone={contact.phone}
+                          message={reminderMessage(inv, contact, inv.studentName)}
+                          recipient={contact.name}
+                          onSent={() => invoiceAction(inv.no, 'remind').catch(() => {})}
                         >
                           <WhatsAppIcon className="size-3.5" /> Peringatan
-                        </Button>
+                        </WhatsAppButton>
                         {can(role, 'billing.record') && (
                           <Button size="sm" variant="primary" onClick={() => onPay(inv)}>
                             Rekod bayaran
@@ -895,9 +894,9 @@ function ReceiptActions({ receipt: r, hideActions }) {
   return (
     <>
       {!hideActions && contact?.phone && (
-        <Button as="a" href={waLink(contact.phone, message)} target="_blank" rel="noreferrer">
+        <WhatsAppButton phone={contact.phone} message={message} recipient={contact.name}>
           <WhatsAppIcon /> Hantar kepada penjaga
-        </Button>
+        </WhatsAppButton>
       )}
       <Button icon={Printer} onClick={() => window.print()}>
         Cetak

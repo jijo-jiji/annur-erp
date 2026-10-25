@@ -36,6 +36,8 @@ const CATEGORIES = [
   { id: '22_lead_campaign', name: 'Kempen prospek' },
   { id: '23_lead_action', name: 'Tindakan susulan prospek' },
   { id: '24_lost_reason', name: 'Sebab prospek tidak berminat' },
+  { id: '25_supply_type', name: 'Jenis bekalan' },
+  { id: '26_subject_category', name: 'Kategori subjek' },
 ];
 const STATUS = {
   APPROVED: { label: 'Aktif', tone: 'green' },
@@ -44,7 +46,7 @@ const STATUS = {
 };
 
 // Lists nothing in the program reads: they are kept in the database but not shown, so nobody edits a list that has no effect
-const UNUSED = ['2_interested_sub', '4_student_type', '5_grade', '8_active_sub', '9_walkin_sub', '11_academic_grade', '12_academic_sub',
+const UNUSED = ['2_interested_sub', '4_student_type', '5_grade', '8_active_sub', '9_walkin_sub', '10_exam_type', '11_academic_grade', '12_academic_sub',
   '15_teacher_type', '16_teacher_sub', '17_teacher_grade', '20_vendor', '21_payment_method'];
 const BAND_CATEGORY = '13_mark_band';
 

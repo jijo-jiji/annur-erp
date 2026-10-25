@@ -65,6 +65,7 @@ def roster(on):
             'class_id': c.id,
             'class_code': c.class_code,
             'subject': c.subject.name,
+            'subject_id': c.subject_id,  # lets the page put teachers of the same subject first as a substitute
             'form_level': c.form_level,
             'time': f"{c.slot.start_time}-{c.slot.end_time}",
             'room': c.classroom.name if c.classroom else None,

@@ -22,6 +22,7 @@ function toStudent(s, discountCodes) {
   return {
     pk: s.id,
     id: s.student_id,
+    previousId: s.previous_student_id || '', // the code before the HQ-YY0000 renumbering
     name: s.full_name,
     ic: s.ic_number,
     form: s.form_level,
@@ -85,6 +86,7 @@ function toTeacher(t) {
     name: teacherName(t.full_name),
     type: t.teacher_type,
     subjects: (t.subjects_qualified_details || []).map((s) => s.name).join(', '),
+    subjectIds: t.subjects_qualified || [],
     phone: t.phone_number,
     email: t.email,
     rate: t.rate_per_session === undefined ? null : num(t.rate_per_session), // hidden from Admin by the server
@@ -99,7 +101,7 @@ function toTeacher(t) {
   };
 }
 
-const toSubject = (s) => ({ pk: s.id, code: s.code, name: s.name, level: s.level_category, stream: s.stream, active: s.is_active });
+const toSubject = (s) => ({ pk: s.id, code: s.code, name: s.name, level: s.level_category, stream: s.stream, category: s.category, active: s.is_active });
 
 function toInvoice(i) {
   const discount = num(i.discount_amount);
@@ -234,28 +236,11 @@ function toSettings(rows) {
   return out;
 }
 
-// Exam results are stored per student and subject; screens show them per exam and class
-function toExamResults(rows, classes, students) {
-  const exams = {};
-  const marks = {}; // exam -> subjectPk -> studentPk -> mark
-  for (const r of rows) {
-    if (r.mark === null || r.mark === undefined) continue;
-    const date = r.exam_date || '';
-    if (!exams[r.exam_name] || date > exams[r.exam_name].date) exams[r.exam_name] = { id: r.exam_name, name: r.exam_name, date };
-    ((marks[r.exam_name] ??= {})[r.subject] ??= {})[r.student] = r.mark;
-  }
-  const results = [];
-  for (const exam of Object.values(exams)) {
-    for (const c of classes) {
-      const bySubject = marks[exam.id]?.[c.subjectPk];
-      if (!bySubject) continue;
-      const classMarks = {};
-      for (const s of students) if (s.classes.includes(c.id) && bySubject[s.pk] !== undefined) classMarks[s.id] = bySubject[s.pk];
-      if (Object.keys(classMarks).length) results.push({ examId: exam.id, classId: c.id, marks: classMarks });
-    }
-  }
-  return { exams: Object.values(exams).sort((a, b) => a.date.localeCompare(b.date)), results };
-}
+// School exam results, one row per student, year, term and subject (see lib/results.js)
+const toResult = (r) => ({
+  pk: r.id, studentPk: r.student, subjectPk: r.subject, subjectCode: r.subject_code, subjectName: r.subject_name,
+  year: r.year, term: r.term, mark: r.mark, grade: r.grade, form: r.form_level, source: r.source, recordedBy: r.recorded_by,
+});
 
 // ---- Provider ------------------------------------------------------------------
 
@@ -324,7 +309,7 @@ export function StoreProvider({ children }) {
       settings: toSettings(settingRows),
       discounts: discountRows.map(toDiscount),
       attendance: sessionRows.map((s) => ({ classId: s.class_id, date: s.date, absent: s.absent, late: s.late, roster: s.roster, takenBy: s.taken_by, note: s.note, notes: s.notes })),
-      ...toExamResults(resultRows, classes, students),
+      results: resultRows.map(toResult),
       grades,
       timeSlots: app.timeSlots,
       // The days the centre opens: days with a class or an active slot, in the centre's week order
@@ -417,6 +402,7 @@ export function StoreProvider({ children }) {
       addVoucher(pv) {
         return app.createVoucher({
           vendor: pv.vendorPk, date: pv.date, category: pv.category, subcategory: pv.subcategory || '',
+          category_code: pv.categoryCode || '', subcategory_code: pv.subcategoryCode || '',
           payment_method: pv.method || 'ONLINE_TRANSFER', ref_number: pv.ref || '', amount: pv.amount,
           items_description: pv.description, remarks: pv.remarks || '',
         });
@@ -445,12 +431,17 @@ export function StoreProvider({ children }) {
         }), { reloads: ['attendance'] });
       },
 
-      // record: { classId, examName, examDate, marks: {code: mark} }
+      // A tuition class's results for one school exam: { classId, year, term, marks: {code: mark, or a grade for SPM} }
       saveResults(record) {
         return act(() => request('/students/results/bulk/', {
           method: 'POST',
-          body: JSON.stringify({ class_id: record.classId, exam_name: record.examName, exam_date: record.examDate, marks: record.marks }),
+          body: JSON.stringify({ class_id: record.classId, year: record.year, term: record.term, marks: record.marks }),
         }), { reloads: ['results'] });
+      },
+
+      // One student's results for one school exam, all subjects at once
+      saveResultGrid({ studentPk, year, term, rows }) {
+        return act(() => studentsApi.saveResultGrid(studentPk, year, term, rows), { reloads: ['results'] });
       },
 
       // Any kind of setup change by request (categories, ...): who waits and who decides is decided by the server

@@ -2,6 +2,7 @@ from datetime import date
 from django.db import models
 from academic.models import ClassTimetable
 from business_config.models import SubjectMaster
+from . import exam_terms
 
 class Student(models.Model):
     TYPE_CHOICES = [
@@ -21,6 +22,7 @@ class Student(models.Model):
         ('REJECTED', 'Pendaftaran Ditolak'),
     ]
     student_id = models.CharField(max_length=30, unique=True)
+    previous_student_id = models.CharField(max_length=30, blank=True, db_index=True)  # the code before renumbering, still searchable
     full_name = models.CharField(max_length=150)
     ic_number = models.CharField(max_length=20)
     student_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='MONTHLY')
@@ -87,20 +89,59 @@ class Student(models.Model):
         return f"[{self.student_id}] {self.full_name} ({self.form_level})"
 
 class StudentExamResult(models.Model):
+    """A school exam result: one per student, year, term (students.exam_terms) and subject."""
+    SOURCE_CHOICES = [('STAFF', 'Kakitangan'), ('PARENT', 'Borang ibu bapa / pelajar')]
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='exam_results')
-    exam_name = models.CharField(max_length=100)  # exam type label from master data 10_exam_type
+    year = models.PositiveSmallIntegerField()
+    term = models.CharField(max_length=20, choices=exam_terms.CHOICES)
+    exam_name = models.CharField(max_length=100)  # the term's label, kept for reports and exports
     form_level = models.CharField(max_length=10, blank=True)  # form at the time of the exam
     subject = models.ForeignKey(SubjectMaster, on_delete=models.CASCADE)
-    grade = models.CharField(max_length=10) # A+, A, B, C, etc.
+    grade = models.CharField(max_length=10, blank=True)  # A+, A, B, C, etc.
     mark = models.IntegerField(null=True, blank=True)
-    exam_date = models.DateField(null=True, blank=True)
+    exam_date = models.DateField(null=True, blank=True)  # the term's usual date when not given
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='STAFF')
+    recorded_by = models.CharField(max_length=150, blank=True)
     date_recorded = models.DateField(auto_now_add=True)
 
     class Meta:
-        ordering = ['exam_date', 'id']
+        ordering = ['year', 'exam_date', 'id']
+        constraints = [models.UniqueConstraint(fields=['student', 'year', 'term', 'subject'], name='one_result_per_term_and_subject')]
+
+    def save(self, *args, **kwargs):
+        self.exam_name = exam_terms.label(self.term)
+        if not self.exam_date:
+            self.exam_date = exam_terms.nominal_date(self.year, self.term)
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.student.full_name} - {self.subject.code}: {self.grade}"
+        return f"{self.student.full_name} - {self.subject.code} {self.year} {self.term}: {self.grade}"
+
+
+class ResultSubmission(models.Model):
+    """School exam results sent by a parent or student on the public form (#/keputusan). Nothing is saved to the
+    student's results until staff review it; approving copies the rows into StudentExamResult."""
+    STATUS_CHOICES = [('PENDING', 'Menunggu semakan'), ('APPROVED', 'Diluluskan'), ('REJECTED', 'Ditolak')]
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='result_submissions')
+    year = models.PositiveSmallIntegerField()
+    term = models.CharField(max_length=20, choices=exam_terms.CHOICES)
+    form_level = models.CharField(max_length=10, blank=True)
+    rows = models.JSONField(default=list)  # [{subject: id, mark: int | None, grade: str}]
+    submitted_by = models.CharField(max_length=120)
+    relation = models.CharField(max_length=30, blank=True)
+    phone = models.CharField(max_length=30, blank=True)
+    note = models.TextField(blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    reviewed_by = models.CharField(max_length=150, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.student.student_id} {self.year} {self.term} ({self.status})"
 
 class Lead(models.Model):
     # j-status.doc: the 8 conversion stages, in order. LOST sits outside the funnel.
@@ -210,6 +251,7 @@ class StudentEvent(models.Model):
         ('REGISTERED', 'Didaftarkan'),
         ('APPROVED', 'Pendaftaran Diluluskan'),
         ('REJECTED', 'Pendaftaran Ditolak'),
+        ('RESUBMITTED', 'Dihantar Semula'),
         ('ADD_SUBJECT', 'Tambah Subjek'),
         ('DROP_SUBJECT', 'Gugur Subjek'),
         ('CHANGE_CLASS', 'Tukar Kelas'),

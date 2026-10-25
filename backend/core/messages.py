@@ -11,7 +11,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from .models import MessageTemplate, SettingEvent
-from .permissions import MANAGEMENT, display_name, require_role
+from .permissions import MANAGEMENT, SUPERVISOR, display_name, require_role
 
 CENTRE = ('centre', 'Nama pusat', 'Pusat Tuisyen An Nur')
 BRANCH = ('branch', 'Cawangan', 'Telipot')
@@ -83,7 +83,7 @@ TEMPLATES = {
         'Assalamualaikum {parent}, makluman daripada {centre} berkenaan {student}.'),
     'registered': _t(
         'Pendaftaran melalui borang QR', 'Borang pendaftaran ibu bapa, dihantar kepada pusat', [
-            PARENT, STUDENT, ('student_id', 'ID pelajar', 'AN-2026-014')],
+            PARENT, STUDENT, ('student_id', 'ID pelajar', 'HQ-260014')],
         'Assalamualaikum. Saya {parent} telah mendaftar {student} ({student_id}) melalui borang QR.', ('student',), public=True),
     'payslip': _t(
         'Slip gaji guru', 'Gaji guru, slip gaji, butang WhatsApp', [
@@ -134,8 +134,9 @@ def messages_public(request):
 
 @api_view(['PUT', 'DELETE'])
 def message_detail(request, key):
-    """Management edits one message's wording (PUT) or puts the original back (DELETE)."""
-    require_role(request, MANAGEMENT)
+    """Supervisor or Management edits one message's wording (PUT) or puts the original back (DELETE).
+    Every change is kept in the settings history with who made it."""
+    require_role(request, SUPERVISOR, MANAGEMENT)
     if key not in TEMPLATES:
         raise NotFound('Mesej tidak dijumpai.')
     spec = TEMPLATES[key]

@@ -34,7 +34,7 @@ export default function CommandPalette({ role, onClose }) {
 
     const studentHits = students
       .filter((s) =>
-        [s.name, s.id, s.ic, s.school, s.parent1?.name, s.parent1?.phone, s.parent2?.name, s.parent2?.phone].some((v) => norm(v).includes(needle)),
+        [s.name, s.id, s.previousId, s.ic, s.school, s.parent1?.name, s.parent1?.phone, s.parent2?.name, s.parent2?.phone].some((v) => norm(v).includes(needle)),
       )
       .slice(0, 6)
       .map((s) => ({

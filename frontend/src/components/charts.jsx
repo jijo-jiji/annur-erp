@@ -152,7 +152,8 @@ export function HBarList({ rows, format = (v) => v, max: fixedMax, danger, label
 }
 
 // Small line chart for a score trend (0–100). points: [{ label, value }]
-export function TrendChart({ points, height = 120, suffix = '' }) {
+// compare: an optional second line (e.g. the class average) as values in the same order, drawn dashed and lighter
+export function TrendChart({ points, compare, compareLabel = 'Purata kelas', height = 120, suffix = '' }) {
   const [hover, setHover] = useState(null);
   const [ref, W] = useWidth(0);
   const H = height;
@@ -160,10 +161,12 @@ export function TrendChart({ points, height = 120, suffix = '' }) {
   const valid = points.filter((p) => p.value != null);
   const x = (i) => pad.l + (points.length === 1 ? (W - pad.l - pad.r) / 2 : (i / (points.length - 1)) * (W - pad.l - pad.r));
   const y = (v) => pad.t + (1 - v / 100) * (H - pad.t - pad.b);
-  const path = points
-    .map((p, i) => (p.value == null ? null : `${x(i)},${y(p.value)}`))
+  const line = (values) => values
+    .map((v, i) => (v == null ? null : `${x(i)},${y(v)}`))
     .filter(Boolean)
     .join(' L');
+  const path = line(points.map((p) => p.value));
+  const comparePath = compare ? line(compare) : '';
 
   return (
     <div ref={ref} className="relative w-full min-w-0" style={{ height: H }}>
@@ -177,6 +180,9 @@ export function TrendChart({ points, height = 120, suffix = '' }) {
             </text>
           </g>
         ))}
+        {compare && compare.filter((v) => v != null).length > 1 && (
+          <path d={`M${comparePath}`} fill="none" stroke="var(--color-gray-400)" strokeWidth="1.5" strokeDasharray="4 3" strokeLinejoin="round" />
+        )}
         {valid.length > 1 && <path d={`M${path}`} fill="none" stroke="var(--color-brand-600)" strokeWidth="2" strokeLinejoin="round" />}
         {points.map((p, i) => (
           <g key={p.label} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
@@ -196,6 +202,7 @@ export function TrendChart({ points, height = 120, suffix = '' }) {
         >
           {points[hover].label}: {points[hover].value}
           {suffix}
+          {compare?.[hover] != null && <span className="block text-gray-300">{compareLabel}: {compare[hover]}{suffix}</span>}
         </div>
       )}
     </div>

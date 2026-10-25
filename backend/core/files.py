@@ -20,6 +20,7 @@ VIDEO = {'.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm'}
 SIZE_SETTING = {
     'STUDENT_PHOTO': 'upload_photo_mb', 'STAFF_PHOTO': 'upload_photo_mb', 'FEEDBACK': 'upload_feedback_mb',
     'STAFF_DOC': 'upload_document_mb', 'VOUCHER': 'upload_document_mb', 'HANDOUT': 'upload_handout_mb',
+    'RESULT_SLIP': 'upload_document_mb',
 }
 RULES = {
     'STUDENT_PHOTO': {'types': IMAGE, 'single': True},
@@ -29,6 +30,7 @@ RULES = {
     'VOUCHER': {'types': {**PDF, **IMAGE}},
     'VOUCHER_SIGNATURE': {'types': {'.png': 'image/png'}, 'max': 1 * MB, 'single': True},
     'HANDOUT': {'types': {**PDF, **IMAGE, **OFFICE}, 'single': True},
+    'RESULT_SLIP': {'types': {**IMAGE, **PDF}, 'single': True},  # sent with the public results form
 }
 
 
@@ -89,11 +91,12 @@ def target(kind, object_id):
     """The record an attachment belongs to."""
     from academic.models import LessonHandout
     from expenses.models import PaymentVoucher
-    from students.models import Student, StudentFeedback
+    from students.models import ResultSubmission, Student, StudentFeedback
     from teachers.models import StaffMember
     model = {
         'STUDENT_PHOTO': Student, 'FEEDBACK': StudentFeedback, 'STAFF_PHOTO': StaffMember, 'STAFF_DOC': StaffMember,
         'VOUCHER': PaymentVoucher, 'VOUCHER_SIGNATURE': PaymentVoucher, 'HANDOUT': LessonHandout,
+        'RESULT_SLIP': ResultSubmission,
     }.get(kind)
     if model is None:
         raise ValidationError({'kind': 'Jenis lampiran tidak sah.'})
@@ -115,6 +118,8 @@ def check(user, action, kind, obj, attachment=None):
     reason = 'Anda tidak mempunyai kebenaran untuk fail ini.'
     if kind in ('STUDENT_PHOTO', 'FEEDBACK', 'HANDOUT'):
         allowed = action in ('view', 'upload') or approver
+    elif kind == 'RESULT_SLIP':
+        allowed = action == 'view' or approver  # it arrives with the public form; staff only look at it
     elif kind == 'STAFF_PHOTO':
         allowed = action == 'view' or approver or _own_staff(user, obj)
     elif kind == 'STAFF_DOC':

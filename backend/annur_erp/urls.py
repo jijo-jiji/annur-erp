@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from business_config.views import (
-    grade_list,
+    grade_list, public_subjects,
     SubjectMasterViewSet, PricingTierViewSet, BusinessSettingViewSet,
     TeacherRateSettingViewSet, DynamicMasterDataViewSet
 )
@@ -18,9 +18,10 @@ from academic.views import (
     ClassRescheduleLogViewSet, LessonHandoutViewSet
 )
 from students.views import (
-    StudentViewSet, LeadViewSet, StudentEventViewSet, ClassWaitlistViewSet, StudentExamResultViewSet, StudentFeedbackViewSet,
+    StudentViewSet, LeadViewSet, StudentEventViewSet, ClassWaitlistViewSet, StudentFeedbackViewSet,
     parent_self_register, attendance_roster, attendance_summary, attendance_sessions,
 )
+from students.results import ResultSubmissionViewSet, StudentExamResultViewSet, public_results_check, public_results_submit
 from billing.views import DiscountViewSet, InvoiceViewSet, PaymentReceiptViewSet, calculate_fees
 from expenses.views import VendorViewSet, PaymentVoucherViewSet
 from core.attachments import AttachmentViewSet
@@ -70,6 +71,7 @@ router.register(r'files', AttachmentViewSet)
 router.register(r'students/history', StudentEventViewSet)
 router.register(r'students/waitlist', ClassWaitlistViewSet)
 router.register(r'students/results', StudentExamResultViewSet)
+router.register(r'students/result-submissions', ResultSubmissionViewSet)
 
 # Billing
 router.register(r'billing/invoices', InvoiceViewSet)
@@ -95,6 +97,9 @@ urlpatterns = [
     path('api/v1/', include(router.urls)),
     path('api/v1/auth/users/', auth_users),
     path('api/v1/business-config/grades/', grade_list),
+    path('api/v1/public/subjects/', public_subjects),
+    path('api/v1/public/results/check/', public_results_check),
+    path('api/v1/public/results/', public_results_submit),
     path('api/v1/dashboard/summary/', dashboard_summary),
     path('api/v1/reports/summary/', reports_summary),
     path('api/v1/students/parent-self-register/', parent_self_register),

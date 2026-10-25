@@ -15,11 +15,11 @@ from core.permissions import APPROVER_ROLES, get_role, display_name, require_rol
 from . import drilldown, lead_import, leads, services
 from business_config.models import SubjectMaster
 from .models import (
-    Student, StudentExamResult, Lead, LeadActivity, StudentEvent, ClassWaitlist,
+    Student, Lead, LeadActivity, StudentEvent, ClassWaitlist,
     ClassAttendanceSession, StudentAttendance, StudentFeedback,
 )
 from .serializers import (
-    StudentSerializer, StudentExamResultSerializer, LeadSerializer, LeadActivitySerializer,
+    StudentSerializer, LeadSerializer, LeadActivitySerializer,
     StudentEventSerializer, ClassWaitlistSerializer, StudentFeedbackSerializer,
 )
 from billing.serializers import InvoiceSerializer
@@ -125,6 +125,14 @@ class StudentViewSet(viewsets.ModelViewSet):
         student = self.get_object()
         services.decide_registration(student, display_name(request.user), False, (request.data.get('comment') or '').strip())
         return self._respond(student)
+
+    @action(detail=True, methods=['post'])
+    def resubmit(self, request, pk=None):
+        """Send a rejected registration back for approval after the counter has corrected it."""
+        student = self.get_object()
+        classes = classes_from(request.data.get('class_ids'))
+        results = services.resubmit(student, display_name(request.user), classes, (request.data.get('note') or '').strip())
+        return self._respond(student, enrolment=results)
 
     @action(detail=True, methods=['post'])
     def enroll(self, request, pk=None):
@@ -372,58 +380,6 @@ class ClassWaitlistViewSet(viewsets.ReadOnlyModelViewSet):
         entry.resolved_by = display_name(request.user)
         entry.save(update_fields=['status', 'resolved_by'])
         return Response(self.get_serializer(entry).data)
-
-
-class StudentExamResultViewSet(viewsets.ModelViewSet):
-    queryset = StudentExamResult.objects.select_related('student', 'subject').all()
-    serializer_class = StudentExamResultSerializer
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        if self.request.query_params.get('student'):
-            qs = qs.filter(student_id=self.request.query_params['student'])
-        return qs
-
-    def perform_create(self, serializer):
-        student = serializer.validated_data['student']
-        serializer.save(
-            form_level=serializer.validated_data.get('form_level') or student.form_level,
-            exam_date=serializer.validated_data.get('exam_date') or date.today(),
-        )
-
-    @action(detail=False, methods=['post'])
-    def bulk(self, request):
-        """Save one exam's marks for a whole class: {class_id, exam_name, exam_date, marks: {student_code: mark}}.
-        A blank mark removes that student's result for the exam."""
-        cls = get_class(request.data.get('class_id'))
-        exam_name = (request.data.get('exam_name') or '').strip()
-        exam_date = get_date(request.data.get('exam_date'), 'exam_date')
-        if not exam_name or not exam_date:
-            raise ValidationError({'detail': 'Nama dan tarikh peperiksaan diperlukan.'})
-        students = {s.student_id: s for s in cls.students.all()}
-        saved = 0
-        with transaction.atomic():
-            for code, mark in (request.data.get('marks') or {}).items():
-                student = students.get(code)
-                if not student:
-                    raise ValidationError({'marks': f'Pelajar {code} tiada dalam kelas ini.'})
-                existing = StudentExamResult.objects.filter(student=student, subject=cls.subject, exam_name=exam_name)
-                if mark in (None, ''):
-                    existing.delete()
-                    continue
-                try:
-                    mark = int(mark)
-                except (TypeError, ValueError):
-                    raise ValidationError({'marks': f'Markah {code} tidak sah.'})
-                if not 0 <= mark <= 100:
-                    raise ValidationError({'marks': f'Markah {code} mesti antara 0 dan 100.'})
-                fields = {'mark': mark, 'grade': grade_for(mark), 'exam_date': exam_date, 'form_level': student.form_level}
-                if existing.exists():
-                    existing.update(**fields)
-                else:
-                    StudentExamResult.objects.create(student=student, subject=cls.subject, exam_name=exam_name, **fields)
-                saved += 1
-        return Response({'saved': saved})
 
 
 def _roster_students(cls):

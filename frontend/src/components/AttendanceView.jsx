@@ -5,13 +5,14 @@ import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { useStore } from '../store';
 import { classLabel, preferredContact, timetableDay } from '../lib/domain';
-import { dateLong, initials, timeRange, todayISO, waLink } from '../lib/format';
+import { dateLong, initials, timeRange, todayISO } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import { navigate } from '../lib/nav';
 import { attendanceHref, ATTENDANCE_FILTERS, describeAttendanceFilters, useDrill, useMatching } from '../lib/drilldown';
 import { THRESHOLDS } from '../lib/thresholds';
 import DrilldownBar from './DrilldownBar';
 import { Avatar, Badge, Button, Card, CardHeader, cx, EmptyState, filterClass, inputClass, PageHeader, Table, Td, Textarea, Th, useToast, WhatsAppIcon } from './ui';
+import WhatsAppButton from './WhatsAppButton';
 
 const addDays = (iso, n) => {
   const d = new Date(`${iso}T00:00:00`);
@@ -362,9 +363,9 @@ function Roster({ cls, day, teacher, onBack }) {
                         <p className="truncate text-sm font-medium text-gray-900">{s.name}</p>
                         <p className="text-[13px] text-gray-500">{p?.name || phone}</p>
                       </div>
-                      <Button as="a" size="sm" href={waLink(phone, msg)} target="_blank" rel="noreferrer">
+                      <WhatsAppButton size="sm" phone={phone} message={msg} recipient={p?.name}>
                         <WhatsAppIcon className="size-3.5" /> Maklum
-                      </Button>
+                      </WhatsAppButton>
                     </li>
                   );
                 })}

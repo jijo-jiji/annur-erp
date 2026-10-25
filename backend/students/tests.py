@@ -46,7 +46,7 @@ class RegistrationTests(Phase2Base):
     def test_registration_waits_for_approval_then_invoices_from_pricing(self):
         data = self.register(class_ids=[self.fz.id, self.kim.id])
         self.assertEqual(data['status'], 'PENDING')  # client cannot set status
-        self.assertTrue(data['student_id'].startswith(f'AN-{date.today().year}-'))
+        self.assertRegex(data['student_id'], rf'^HQ-{date.today().year % 100:02d}\d{{4}}$')
         self.assertEqual(Invoice.objects.count(), 0)
 
         self.assertEqual(self.client.post(f"/api/v1/students/students/{data['id']}/approve/").status_code, 403)
@@ -166,11 +166,10 @@ class LifecycleTests(Phase2Base):
 
     def test_results_entry(self):
         res = self.client.post('/api/v1/students/results/', {
-            'student': self.sid, 'exam_name': 'Percubaan SPM', 'subject': self.kim.subject_id,
-            'grade': 'D', 'mark': 45, 'exam_date': '2026-03-01',
+            'student': self.sid, 'year': 2026, 'term': 'PERCUBAAN_SPM', 'subject': self.kim.subject_id, 'mark': 45,
         }, format='json')
         self.assertEqual(res.status_code, 201, res.data)
-        self.assertEqual(res.data['form_level'], 'F5')
+        self.assertEqual((res.data['form_level'], res.data['grade'], res.data['exam_name']), ('F5', 'D', 'Percubaan SPM'))
 
 
 class BillingNumberTests(Phase2Base):
@@ -716,7 +715,7 @@ class LeadImportTests(Phase2Base):
         res = self.send(rows, commit=True)
         self.assertEqual(res.data['counts'], {'ok': 1, 'duplicate': 3, 'error': 0})
         self.assertIn('prospek LD-', res.data['rows'][0]['messages'][0])
-        self.assertIn('pelajar AN-', res.data['rows'][1]['messages'][0])
+        self.assertIn('pelajar HQ-', res.data['rows'][1]['messages'][0])
         self.assertIn('baris 3', res.data['rows'][3]['messages'][0])
         self.assertEqual(Lead.objects.count(), 2)
 

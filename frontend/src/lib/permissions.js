@@ -60,6 +60,7 @@ export const PERMISSIONS = {
     'settings.advanced', // fee packages, discounts, policies
     'settings.pricing',
     'settings.discounts',
+    'messages.manage', // the wording of the WhatsApp messages
   ],
   MANAGEMENT: [
     ...STAFF_COMMON,

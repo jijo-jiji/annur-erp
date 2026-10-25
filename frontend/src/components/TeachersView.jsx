@@ -6,14 +6,14 @@ import { useStore } from '../store';
 import { can } from '../lib/permissions';
 import { navigate } from '../lib/nav';
 import { classLabel } from '../lib/domain';
-import { CURRENT_MONTH, date, DAY_LABEL, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
+import { CURRENT_MONTH, date, DAY_LABEL, FORMS, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import { describeTeacherFilters, TEACHER_FILTERS, useDrill, useMatching } from '../lib/drilldown';
 import { THRESHOLDS } from '../lib/thresholds';
 import DrilldownBar from './DrilldownBar';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
-import { Avatar, Badge, Button, Card, CardHeader, Checkbox, EmptyState, PageHeader, SearchInput, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon } from './ui';
+import { Avatar, Badge, Button, Card, CardHeader, Checkbox, EmptyState, filterClass, PageHeader, SearchInput, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon } from './ui';
 
 const WEEKS_PER_MONTH = 4;
 const TEACHER_TYPES = [{ value: 'PERMANENT', label: 'Tetap (Permanent)' }, { value: 'REPLACEMENT', label: 'Sambilan (Part-time)' }];
@@ -78,6 +78,8 @@ export default function TeachersView({ role }) {
   const matched = useMatching(drill, staffApi.matchingTeachers);
   const view = drill ? 'directory' : tab;
   const [type, setType] = useState('ALL');
+  const [form, setForm] = useState('');
+  const [subject, setSubject] = useState(''); // subject pk
   const [inactive, setInactive] = useState(false);
   const [q, setQ] = useState('');
   const [complaints, setComplaints] = useState([]);
@@ -125,8 +127,16 @@ export default function TeachersView({ role }) {
   const taught = (code) => classes.filter((c) => c.teacher === code);
   const active = teachers.filter((t) => t.active);
   const needle = q.trim().toLowerCase();
+  // A teacher's tingkatan come from the classes they teach; a subject matches when they are qualified for it or teach it
+  const teachesForm = (t) => !form || taught(t.code).some((c) => c.form === form);
+  const teachesSubject = (t) => {
+    if (!subject) return true;
+    const subj = subjects.find((s) => s.pk === Number(subject));
+    return t.subjectIds.includes(Number(subject)) || taught(t.code).some((c) => c.subject === subj?.code);
+  };
   const rows = teachers
-    .filter((t) => (drill ? Boolean(matched?.ids.has(t.code)) : t.active !== inactive && (type === 'ALL' || t.type === type)) && (!needle || `${t.name} ${t.code} ${t.subjects}`.toLowerCase().includes(needle)))
+    .filter((t) => (drill ? Boolean(matched?.ids.has(t.code)) : t.active !== inactive && (type === 'ALL' || t.type === type) && teachesForm(t) && teachesSubject(t))
+      && (!needle || `${t.name} ${t.code} ${t.subjects}`.toLowerCase().includes(needle)))
     .sort((a, b) => a.name.localeCompare(b.name));
   const count = (kind) => active.filter((t) => t.type === kind).length;
   const monthlyTotal = active.reduce((a, t) => a + taught(t.code).length * WEEKS_PER_MONTH * (t.rate || 0), 0);
@@ -203,15 +213,19 @@ export default function TeachersView({ role }) {
           )}
           <div className="mb-4 flex flex-wrap items-center gap-3">
             {!drill && <>
-            <Tabs
-              value={type}
-              onChange={setType}
-              items={[
-                { value: 'ALL', label: 'Semua' },
-                { value: 'PERMANENT', label: 'Guru tetap', count: count('PERMANENT') },
-                { value: 'REPLACEMENT', label: 'Guru sambilan', count: count('REPLACEMENT') },
-              ]}
-            />
+            <select aria-label="Kategori guru" value={type} onChange={(e) => setType(e.target.value)} className={filterClass}>
+              <option value="ALL">Semua kategori</option>
+              <option value="PERMANENT">Guru tetap ({count('PERMANENT')})</option>
+              <option value="REPLACEMENT">Guru sambilan ({count('REPLACEMENT')})</option>
+            </select>
+            <select aria-label="Tingkatan" value={form} onChange={(e) => setForm(e.target.value)} className={filterClass}>
+              <option value="">Semua tingkatan</option>
+              {FORMS.filter((f) => classes.some((c) => c.form === f.id)).map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+            <select aria-label="Subjek" value={subject} onChange={(e) => setSubject(e.target.value)} className={filterClass}>
+              <option value="">Semua subjek</option>
+              {subjects.filter((s) => s.active).map((s) => <option key={s.pk} value={s.pk}>{s.name}</option>)}
+            </select>
             <Checkbox label={`Tidak aktif (${teachers.length - active.length})`} checked={inactive} onChange={(e) => setInactive(e.target.checked)} />
             </>}
             <SearchInput icon={Search} value={q} onChange={setQ} placeholder="Cari guru atau subjek" className="w-full sm:ml-auto sm:w-72" />

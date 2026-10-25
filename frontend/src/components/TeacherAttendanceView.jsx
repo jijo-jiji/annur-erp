@@ -18,6 +18,34 @@ const STATUSES = [
 ];
 const cell = cx(inputClass, 'min-w-28 py-1.5');
 
+// Roster times look like "15:00:00-16:30:00"
+const minutes = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+const overlaps = (a, b) => {
+  const [aStart, aEnd] = a.split('-').map(minutes);
+  const [bStart, bEnd] = b.split('-').map(minutes);
+  return aStart < bEnd && bStart < aEnd;
+};
+
+function SubstitutePicker({ row, options: { suitable, others }, warning, onChange }) {
+  const sambilan = (t) => (t.type === 'REPLACEMENT' ? ' (sambilan)' : '');
+  return (
+    <>
+      <select aria-label={`Guru ganti ${row.class_code}`} disabled={row.locked} value={row.replacement_teacher} onChange={(e) => onChange(e.target.value)} className={cell}>
+        <option value="">Pilih guru ganti</option>
+        <optgroup label={suitable.length ? `Sesuai: mengajar ${row.subject}, tiada kelas` : `Tiada guru ${row.subject} yang lapang`}>
+          {suitable.map(({ t }) => <option key={t.pk} value={t.pk}>Cikgu {t.name}{sambilan(t)}</option>)}
+        </optgroup>
+        <optgroup label="Guru lain">
+          {others.map(({ t, sameSubject, busy }) => (
+            <option key={t.pk} value={t.pk}>Cikgu {t.name} ({[!sameSubject && 'subjek lain', busy && 'ada kelas'].filter(Boolean).join(', ')})</option>
+          ))}
+        </optgroup>
+      </select>
+      {warning && <p role="status" className="mt-1 max-w-56 text-[13px] font-medium text-amber-700">{warning}</p>}
+    </>
+  );
+}
+
 // Opened from Laporan > Bayaran guru: the sessions a teacher was paid for, which the figure there adds up
 export default function TeacherAttendanceView({ role }) {
   const drill = useDrill(SESSION_FILTERS);
@@ -122,6 +150,26 @@ function DailyRecord({ role }) {
   };
   const update = (classId, patch) => setRows((prev) => prev.map((r) => (r.class_id === classId ? { ...r, ...patch } : r)));
 
+  // Substitutes: teachers of the same subject who have no other class at that time come first;
+  // anyone else can still be chosen, with a warning (the client's rule: warn, do not block)
+  const busyAt = (t, r) => rows.some((o) => o.class_id !== r.class_id && paidId(o) === t.pk && overlaps(o.time, r.time));
+  const substitutes = (r) => {
+    const all = active.filter((t) => t.pk !== r.teacher_id).map((t) => ({
+      t, sameSubject: t.subjectIds.includes(r.subject_id), busy: busyAt(t, r),
+    }));
+    const sambilanFirst = (a, b) => (a.t.type === 'REPLACEMENT' ? -1 : 1) - (b.t.type === 'REPLACEMENT' ? -1 : 1);
+    return {
+      suitable: all.filter((o) => o.sameSubject && !o.busy).sort(sambilanFirst),
+      others: all.filter((o) => !o.sameSubject || o.busy).sort((a, b) => a.busy - b.busy || b.sameSubject - a.sameSubject || sambilanFirst(a, b)),
+    };
+  };
+  const substituteWarning = (r) => {
+    const t = active.find((x) => x.pk === Number(r.replacement_teacher));
+    if (!t || r.locked) return '';
+    const issues = [!t.subjectIds.includes(r.subject_id) && `tidak mengajar ${r.subject}`, busyAt(t, r) && 'ada kelas lain pada masa ini'].filter(Boolean);
+    return issues.length ? `Cikgu ${t.name} ${issues.join(' dan ')}.` : '';
+  };
+
   const save = async () => {
     setSaving(true);
     try {
@@ -216,12 +264,12 @@ function DailyRecord({ role }) {
                   </Td>
                   <Td>
                     {r.status === 'REPLACED' && (
-                      <select aria-label={`Guru ganti ${r.class_code}`} disabled={r.locked} value={r.replacement_teacher} onChange={(e) => update(r.class_id, { replacement_teacher: e.target.value })} className={cell}>
-                        <option value="">Pilih guru ganti</option>
-                        {active.filter((t) => t.pk !== r.teacher_id)
-                          .sort((a, b) => (a.type === 'REPLACEMENT' ? -1 : 1) - (b.type === 'REPLACEMENT' ? -1 : 1))
-                          .map((t) => <option key={t.pk} value={t.pk}>Cikgu {t.name}{t.type === 'REPLACEMENT' ? ' (sambilan)' : ''}</option>)}
-                      </select>
+                      <SubstitutePicker
+                        row={r}
+                        options={substitutes(r)}
+                        warning={substituteWarning(r)}
+                        onChange={(value) => update(r.class_id, { replacement_teacher: value })}
+                      />
                     )}
                   </Td>
                   {showPay && (

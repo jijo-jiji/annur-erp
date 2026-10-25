@@ -1,4 +1,4 @@
-"""Sequential document numbers that restart per period (e.g. REC-2026-0001, PV26-0901)."""
+"""Sequential document numbers that restart per period (e.g. REC-2026-0001, PV26-0901), and student codes."""
 import re
 
 
@@ -18,8 +18,23 @@ def _prefix(name):
     return thresholds.value(name)
 
 
+# Student codes look like HQ-260001: the prefix, the two-digit year of registration, then one running number
+# across all students and all years, so the last four digits never repeat even when the year or prefix changes.
+STUDENT_CODE = re.compile(r'^[A-Z]{1,6}-\d{2}(\d{4,})$')
+
+
+def student_serial(code):
+    match = STUDENT_CODE.match(code or '')
+    return int(match.group(1)) if match else None
+
+
+def student_code(prefix, year, serial):
+    return f"{prefix}-{year % 100:02d}{serial:04d}"
+
+
 def student_id(model, on_date):
-    return next_number(model, 'student_id', f"{_prefix('prefix_student')}-{on_date.year}-", 3)
+    serials = (student_serial(code) for code in model.objects.values_list('student_id', flat=True))
+    return student_code(_prefix('prefix_student'), on_date.year, max((s for s in serials if s), default=0) + 1)
 
 
 def invoice_number(model, on_date):

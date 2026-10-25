@@ -14,6 +14,15 @@ from .models import ChangeRequest
 from .permissions import ALL_ROLES, APPROVER_ROLES, MANAGEMENT, ROLE_LABELS, display_name, get_role
 
 
+def master_label(category, code):
+    """Display name of a master-data code, for the list of changes."""
+    if not code:
+        return '—'
+    from business_config.models import DynamicMasterData
+    row = DynamicMasterData.objects.filter(category=category, code=code).first()
+    return row.label if row else str(code)
+
+
 class Handler:
     kind = ''
     fields = {}  # field -> label shown in the list of changes
@@ -132,7 +141,7 @@ class ModelHandler(Handler):
 
 class SubjectHandler(ModelHandler):
     kind = 'SUBJECT'
-    fields = {'code': 'Kod', 'name': 'Nama', 'level_category': 'Peringkat', 'stream': 'Aliran', 'is_active': 'Status'}
+    fields = {'code': 'Kod', 'name': 'Nama', 'level_category': 'Peringkat', 'stream': 'Aliran', 'category': 'Kategori', 'is_active': 'Status'}
     key_field = 'code'
     immutable = ('code',)
     noun = 'subjek'
@@ -166,6 +175,8 @@ class SubjectHandler(ModelHandler):
             return self.LEVELS.get(value, value)
         if field == 'stream':
             return self.STREAMS.get(value, value)
+        if field == 'category':
+            return master_label('26_subject_category', value)
         if field == 'is_active':
             return 'Aktif' if value else 'Tidak aktif'
         return super().display(field, value)
@@ -175,9 +186,9 @@ class VendorHandler(ModelHandler):
     """Vendor details (j-status.doc: Supervisor holds them, Management approves or rejects the detail)."""
     kind = 'VENDOR'
     fields = {
-        'vendor_id': 'No. SSM / ID', 'vendor_name': 'Nama pembekal', 'pic_name': 'PIC', 'phone_number': 'Telefon',
-        'address': 'Alamat', 'bank_name': 'Bank', 'bank_account': 'No. akaun bank', 'tin_number': 'No. cukai (TIN)',
-        'status': 'Status',
+        'vendor_id': 'Kod syarikat', 'vendor_name': 'Nama pembekal', 'supply_type': 'Jenis bekalan', 'pic_name': 'PIC',
+        'phone_number': 'Telefon', 'address': 'Alamat', 'bank_name': 'Bank', 'bank_account': 'No. akaun bank',
+        'tin_number': 'No. cukai (TIN)', 'status': 'Status',
     }
     proposers = APPROVER_ROLES
     approvers = (MANAGEMENT,)
@@ -194,9 +205,21 @@ class VendorHandler(ModelHandler):
 
     def normalise(self, data, creating):
         data = {k: (str(v).strip() if isinstance(v, str) else v) for k, v in data.items()}
+        if 'vendor_id' in data:
+            data['vendor_id'] = data['vendor_id'].upper()
         if creating:
             data.setdefault('status', 'ACTIVE')
+            if not data.get('vendor_id'):
+                data['vendor_id'] = self.next_code()
         return data
+
+    def next_code(self):
+        """VND-0001, VND-0002, ...: after the highest code in use or already asked for."""
+        from expenses.models import Vendor
+        used = list(Vendor.objects.values_list('vendor_id', flat=True))
+        used += [r.payload.get('vendor_id') or '' for r in ChangeRequest.objects.filter(kind=self.kind, action='CREATE', status='PENDING')]
+        numbers = [int(m.group(1)) for m in (re.match(r'^VND-(\d+)$', str(c)) for c in used) if m]
+        return f"VND-{max(numbers, default=0) + 1:04d}"
 
     def label(self, get):
         return f"{get('vendor_name')} ({get('vendor_id')})"
@@ -204,6 +227,8 @@ class VendorHandler(ModelHandler):
     def display(self, field, value):
         if field == 'status':
             return 'Aktif' if value == 'ACTIVE' else 'Tidak aktif'
+        if field == 'supply_type':
+            return master_label('25_supply_type', value)
         return str(value) if value not in (None, '') else '—'
 
 

@@ -35,5 +35,10 @@ def vouchers_matching(params):
     if params.get('to'):
         qs = qs.filter(date__lte=parse_day(params['to'], 'to'))
     if params.get('category'):
-        qs = qs.filter(category=params['category'])
+        # a category code, or a label (the budget table shows labels; older vouchers have no code)
+        from django.db.models import Q
+        from business_config.models import DynamicMasterData
+        wanted = params['category']
+        codes = {wanted} | set(DynamicMasterData.objects.filter(category='18_expense_cat', label=wanted).values_list('code', flat=True))
+        qs = qs.filter(Q(category_code__in=codes) | Q(category=wanted))
     return qs

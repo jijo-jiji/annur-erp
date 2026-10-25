@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { CheckCircle2, Copy, ExternalLink, Printer } from 'lucide-react';
-import { studentsApi } from '../api/client';
+import { publicApi, studentsApi } from '../api/client';
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { useStore } from '../store';
@@ -125,8 +125,6 @@ export default function ParentQRView() {
 // No login: the parent gives the student's details and the subjects they are interested in.
 // The counter then assigns classes and the registration goes to the Supervisor for approval.
 
-const SUBJECT_CHOICES = ['Bahasa Melayu', 'Bahasa Inggeris', 'Matematik', 'Matematik Tambahan', 'Sains', 'Fizik', 'Kimia', 'Biologi', 'Sejarah', 'Prinsip Perakaunan'];
-
 const EMPTY = {
   full_name: '', ic_number: '', form_level: 'F5', school_name: '', phone_number: '',
   parent1_name: '', parent1_phone: '', parent1_email: '', parent1_relation: 'Bapa',
@@ -139,7 +137,21 @@ export function ParentRegistrationForm() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
   const [error, setError] = useState('');
+  const [subjectGroups, setSubjectGroups] = useState(null); // the centre's subjects for this grade, by category
   const set = (patch) => setF((p) => ({ ...p, ...patch }));
+
+  useEffect(() => {
+    let live = true;
+    publicApi.subjects(f.form_level).then((groups) => {
+      if (!live) return;
+      setSubjectGroups(groups);
+      // a subject chosen for another grade is dropped when it is not offered for this one
+      const offered = new Set(groups.flatMap((g) => g.subjects.map((s) => s.name)));
+      setF((p) => ({ ...p, interested_subjects: p.interested_subjects.filter((n) => offered.has(n)) }));
+    }).catch(() => live && setSubjectGroups([]));
+    return () => { live = false; };
+  }, [f.form_level]);
+
   const toggleSubject = (name) => set({
     interested_subjects: f.interested_subjects.includes(name) ? f.interested_subjects.filter((x) => x !== name) : [...f.interested_subjects, name],
   });
@@ -243,21 +255,30 @@ export function ParentRegistrationForm() {
 
         <Card>
           <CardHeader title="Subjek diminati" description="Pilih subjek yang ingin diikuti. Waktu kelas disahkan oleh kaunter." />
-          <div className="flex flex-wrap gap-2 p-5">
-            {SUBJECT_CHOICES.map((name) => {
-              const on = f.interested_subjects.includes(name);
-              return (
-                <button
-                  type="button"
-                  key={name}
-                  onClick={() => toggleSubject(name)}
-                  aria-pressed={on}
-                  className={cx('rounded-md border px-3 py-2 text-sm font-medium transition-colors', on ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')}
-                >
-                  {name}
-                </button>
-              );
-            })}
+          <div className="space-y-4 p-5">
+            {subjectGroups === null && <p className="text-sm text-gray-500">Memuatkan subjek…</p>}
+            {subjectGroups?.length === 0 && <p className="text-sm text-gray-500">Tiada subjek ditawarkan untuk {formLabel(f.form_level)} buat masa ini. Kaunter akan menghubungi anda.</p>}
+            {subjectGroups?.map((group) => (
+              <fieldset key={group.code || 'other'}>
+                <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{group.label}</legend>
+                <div className="flex flex-wrap gap-2">
+                  {group.subjects.map(({ name }) => {
+                    const on = f.interested_subjects.includes(name);
+                    return (
+                      <button
+                        type="button"
+                        key={name}
+                        onClick={() => toggleSubject(name)}
+                        aria-pressed={on}
+                        className={cx('rounded-md border px-3 py-2 text-sm font-medium transition-colors', on ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')}
+                      >
+                        {name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ))}
           </div>
         </Card>
 

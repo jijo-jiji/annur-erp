@@ -67,10 +67,12 @@ const SUBJECT_STREAMS = [{ value: 'TERAS', label: 'Teras' }, { value: 'SAINS', l
 // Supervisor and Management changes apply at once and are recorded in the same list.
 function Subjects({ role }) {
   const { subjects, submitSubject } = useStore();
-  const { refreshAllData } = useApp();
+  const { refreshAllData, getMasterOptions } = useApp();
   const notify = useToast();
   const direct = isApprover(role);
   const { requests, load } = useChangeRequests('SUBJECT');
+  const categories = getMasterOptions('26_subject_category').sort((a, b) => (a.meta?.order ?? 999) - (b.meta?.order ?? 999) || a.label.localeCompare(b.label));
+  const categoryLabel = (code) => categories.find((c) => c.value === code)?.label ?? (code || '—');
   const [dialog, setDialog] = useState(null); // { type: 'add' } | { type: 'edit', subject } | { type: 'active', subject }
 
   const waiting = new Set(requests.filter((r) => r.status === 'PENDING' && r.action === 'UPDATE').map((r) => r.target_id));
@@ -87,6 +89,11 @@ function Subjects({ role }) {
   const reasonField = { name: 'note', label: 'Sebab permohonan', type: 'textarea', required: true, hint: 'Supervisor akan melihat sebab ini semasa membuat keputusan.' };
   const levelField = { name: 'level_category', label: 'Peringkat', type: 'select', required: true, options: SUBJECT_LEVELS };
   const streamField = { name: 'stream', label: 'Aliran', type: 'select', required: true, options: SUBJECT_STREAMS };
+  const categoryField = {
+    name: 'category', label: 'Kategori', type: 'select', required: true,
+    options: categories.map((c) => ({ value: c.value, label: c.label })),
+    hint: 'Kumpulan subjek pada borang pendaftaran. Senarai ini diurus dalam Data induk → Kategori subjek.',
+  };
 
   return (
     <div className="space-y-6">
@@ -103,6 +110,7 @@ function Subjects({ role }) {
               <Th>Nama</Th>
               <Th className="hidden sm:table-cell">Peringkat</Th>
               <Th className="hidden md:table-cell">Aliran</Th>
+              <Th className="hidden md:table-cell">Kategori</Th>
               <Th>Status</Th>
               <Th className="text-right"><span className="sr-only">Tindakan</span></Th>
             </tr>
@@ -114,6 +122,7 @@ function Subjects({ role }) {
                 <Td className={s.active ? 'text-gray-900' : ''}>{s.name}</Td>
                 <Td className="hidden sm:table-cell">{LEVEL_LABEL[s.level] ?? s.level}</Td>
                 <Td className="hidden md:table-cell">{STREAM_LABEL[s.stream] ?? s.stream}</Td>
+                <Td className="hidden md:table-cell">{categoryLabel(s.category)}</Td>
                 <Td>
                   {waiting.has(s.pk) ? <Badge tone="amber">Menunggu kelulusan</Badge> : s.active ? <Badge tone="green">Aktif</Badge> : <Badge>Tidak aktif</Badge>}
                 </Td>
@@ -138,14 +147,14 @@ function Subjects({ role }) {
         onApplied={refreshAllData}
         editFields={(r) => [
           ...(r.action === 'CREATE' ? [{ name: 'code', label: 'Kod', required: true, hint: 'Singkatan tanpa ruang, cth. EKON' }] : []),
-          { name: 'name', label: 'Nama subjek', required: true }, levelField, streamField,
+          { name: 'name', label: 'Nama subjek', required: true }, levelField, streamField, categoryField,
           ...(r.action === 'UPDATE' ? [{ name: 'is_active', label: 'Aktif', type: 'checkbox' }] : []),
         ]}
         editInitial={(r) => {
           const current = subjects.find((s) => s.pk === r.target_id);
           return {
-            code: '', name: '', level_category: 'UPPER_SEC', stream: 'TERAS', is_active: true,
-            ...(current ? { name: current.name, level_category: current.level, stream: current.stream, is_active: current.active } : {}),
+            code: '', name: '', level_category: 'UPPER_SEC', stream: 'TERAS', category: 'TERAS', is_active: true,
+            ...(current ? { name: current.name, level_category: current.level, stream: current.stream, category: current.category, is_active: current.active } : {}),
             ...r.payload,
           };
         }}
@@ -156,11 +165,11 @@ function Subjects({ role }) {
           title={direct ? 'Tambah subjek' : 'Mohon subjek baharu'}
           description={direct ? 'Subjek ini boleh digunakan serta-merta.' : 'Subjek ini boleh digunakan selepas diluluskan oleh Supervisor atau Pengurusan.'}
           submitLabel={direct ? 'Tambah subjek' : 'Hantar permohonan'}
-          initial={{ code: '', name: '', level_category: 'UPPER_SEC', stream: 'TERAS', note: '' }}
+          initial={{ code: '', name: '', level_category: 'UPPER_SEC', stream: 'TERAS', category: 'TERAS', note: '' }}
           fields={[
             { name: 'code', label: 'Kod', required: true, hint: 'Singkatan tanpa ruang, cth. EKON' },
             { name: 'name', label: 'Nama subjek', required: true, placeholder: 'cth. Ekonomi' },
-            levelField, streamField,
+            levelField, streamField, categoryField,
             ...(direct ? [] : [reasonField]),
           ]}
           onSubmit={({ note, ...values }) => submit('CREATE', null, { ...values, code: values.code.toUpperCase().replace(/\s/g, ''), is_active: true }, note)}
@@ -172,8 +181,8 @@ function Subjects({ role }) {
           title={`Ubah ${dialog.subject.code}`}
           description="Kod tidak boleh diubah kerana ia digunakan dalam rekod sedia ada."
           submitLabel={direct ? 'Simpan' : 'Hantar permohonan'}
-          initial={{ name: dialog.subject.name, level_category: dialog.subject.level, stream: dialog.subject.stream, note: '' }}
-          fields={[{ name: 'name', label: 'Nama subjek', required: true }, levelField, streamField, ...(direct ? [] : [reasonField])]}
+          initial={{ name: dialog.subject.name, level_category: dialog.subject.level, stream: dialog.subject.stream, category: dialog.subject.category || 'TERAS', note: '' }}
+          fields={[{ name: 'name', label: 'Nama subjek', required: true }, levelField, streamField, categoryField, ...(direct ? [] : [reasonField])]}
           onSubmit={({ note, ...values }) => submit('UPDATE', dialog.subject.pk, values, note)}
           onClose={() => setDialog(null)}
         />

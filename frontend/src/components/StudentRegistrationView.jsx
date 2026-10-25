@@ -3,8 +3,8 @@ import { ArrowLeft, Check, Clock, Download, Search, UserPlus, Users } from 'luci
 import { useStore } from '../store';
 import { useApp } from '../context/AppContext';
 import { studentsApi } from '../api/client';
-import { invoiceBalance, minSubjects, monthlyFee, preferredContact, schoolCategory, subjectsForForm } from '../lib/domain';
-import { date, DAY_LABEL, FORMS, formLabel, formShort, initials, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink } from '../lib/format';
+import { groupSubjects, invoiceBalance, minSubjects, monthlyFee, preferredContact, schoolCategory, subjectsForForm } from '../lib/domain';
+import { date, DAY_LABEL, FORMS, formLabel, formShort, initials, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
@@ -18,6 +18,7 @@ import {
   Avatar, Badge, Button, Card, CardHeader, Checkbox, cx, EmptyState, Input, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs, Td, Textarea, Th,
   useToast, WhatsAppIcon,
 } from './ui';
+import WhatsAppButton from './WhatsAppButton';
 
 const PAGE = 50;
 
@@ -114,7 +115,7 @@ function StudentList({ drill }) {
         if (form !== 'ALL' && s.form !== form) return false;
       }
       if (!needle) return true;
-      return [s.name, s.id, s.ic, s.school, s.parent1.name, s.parent1.phone, s.parent2?.phone].some((v) => v?.toLowerCase().includes(needle));
+      return [s.name, s.id, s.previousId, s.ic, s.school, s.parent1.name, s.parent1.phone, s.parent2?.phone].some((v) => v?.toLowerCase().includes(needle));
     });
   }, [students, q, form, status, drill, matched]);
 
@@ -163,6 +164,8 @@ function StudentList({ drill }) {
             { value: 'ACTIVE', label: `Aktif (${count('ACTIVE')})` },
             { value: 'ON_HOLD', label: `Ditangguh (${count('ON_HOLD')})` },
             { value: 'TERMINATED', label: `Berhenti (${count('TERMINATED')})` },
+            // rejected registrations wait here for the counter to correct and send them again
+            ...(count('REJECTED') ? [{ value: 'REJECTED', label: `Ditolak (${count('REJECTED')})` }] : []),
             { value: 'ALL', label: 'Semua' },
           ]}
         />}
@@ -223,16 +226,17 @@ function StudentList({ drill }) {
                   </Td>
                   <Td className={cx('hidden text-right tnum sm:table-cell', bal ? 'font-medium text-red-700' : 'text-gray-400')}>{bal ? rm(bal) : '—'}</Td>
                   <Td onClick={(e) => e.stopPropagation()}>
-                    <a
-                      href={waLink(contact.phone, fillMessage('parent_general', { parent: contact.name, centre: CENTRE.name, student: s.name }))}
-                      target="_blank"
-                      rel="noreferrer"
+                    <WhatsAppButton
+                      variant="ghost"
+                      phone={contact.phone}
+                      recipient={contact.name}
+                      message={fillMessage('parent_general', { parent: contact.name, centre: CENTRE.name, student: s.name })}
                       title="WhatsApp penjaga"
                       aria-label={`WhatsApp penjaga ${s.name}`}
-                      className="inline-flex size-8 items-center justify-center rounded-md hover:bg-gray-100"
+                      className="size-8 px-0"
                     >
                       <WhatsAppIcon />
-                    </a>
+                    </WhatsAppButton>
                   </Td>
                 </tr>
               );
@@ -552,7 +556,9 @@ function HistoryReport({ drill }) {
 
 export function ClassPicker({ form, value, onChange, waitlist = [], onWaitlistChange }) {
   const { subjects, classes, teachers } = useStore();
+  const { getMasterOptions } = useApp();
   const available = subjectsForForm(subjects, form, classes);
+  const groups = groupSubjects(available, getMasterOptions('26_subject_category'));
   const subjectOf = (id) => classes.find((c) => c.id === id)?.subject;
 
   const choose = (c) => {
@@ -579,63 +585,70 @@ export function ClassPicker({ form, value, onChange, waitlist = [], onWaitlistCh
   }
 
   return (
-    <div className="divide-y divide-gray-100">
-      {available.map((subj) => {
-        const options = classes.filter((c) => c.form === form && c.subject === subj.code);
-        return (
-          <div key={subj.code} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start">
-            <p className="w-44 shrink-0 pt-1.5 text-sm font-medium text-gray-900">{subj.name}</p>
-            <div className="flex flex-1 flex-wrap gap-2">
-              {options.map((c) => {
-                const selected = value.includes(c.id);
-                const waiting = waitlist.includes(c.id);
-                const full = c.enrolled >= c.max;
-                const seats = c.max - c.enrolled;
-                const teacher = teachers.find((t) => t.code === c.teacher)?.name;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => choose(c)}
-                    aria-pressed={selected || waiting}
-                    className={cx(
-                      'flex items-center gap-2 rounded-md border px-3 py-1.5 text-left text-[13px] transition-colors',
-                      selected && 'border-brand-600 bg-brand-50 ring-1 ring-brand-600',
-                      waiting && 'border-amber-500 bg-amber-50 ring-1 ring-amber-500',
-                      !selected && !waiting && 'border-gray-300 bg-white hover:border-gray-400',
-                    )}
-                  >
-                    <span
-                      className={cx(
-                        'flex size-4 shrink-0 items-center justify-center rounded-full border',
-                        selected ? 'border-brand-700 bg-brand-700 text-white' : waiting ? 'border-amber-600 bg-amber-500 text-white' : 'border-gray-300',
-                      )}
-                    >
-                      {selected && <Check className="size-3" strokeWidth={3} />}
-                      {waiting && <Clock className="size-3" strokeWidth={3} />}
-                    </span>
-                    <span>
-                      <span className="font-medium text-gray-900">
-                        {c.section} · {DAY_LABEL[c.day]} {timeRange(c.start, c.end)}
-                      </span>
-                      <span className={cx('block', waiting ? 'text-amber-800' : full ? 'text-red-700' : 'text-gray-500')}>
-                        {teacher ? `Cikgu ${teacher}` : 'Guru belum ditetapkan'} ·{' '}
-                        {waiting
-                          ? `Senarai menunggu (${c.waiting + 1})`
-                          : full
-                            ? onWaitlistChange
-                              ? `Penuh (${seats} kerusi): sertai senarai menunggu`
-                              : `Penuh (${c.enrolled}/${c.max})`
-                            : `${seats} kerusi kosong`}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+    <div className="space-y-4">
+      {groups.map((group) => (
+        <section key={group.code || 'other'}>
+          <h4 className="border-b border-gray-200 pb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">{group.label}</h4>
+          <div className="divide-y divide-gray-100">
+            {group.subjects.map((subj) => {
+              const options = classes.filter((c) => c.form === form && c.subject === subj.code);
+              return (
+                <div key={subj.code} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start">
+                  <p className="w-44 shrink-0 pt-1.5 text-sm font-medium text-gray-900">{subj.name}</p>
+                  <div className="flex flex-1 flex-wrap gap-2">
+                    {options.map((c) => {
+                      const selected = value.includes(c.id);
+                      const waiting = waitlist.includes(c.id);
+                      const full = c.enrolled >= c.max;
+                      const seats = c.max - c.enrolled;
+                      const teacher = teachers.find((t) => t.code === c.teacher)?.name;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => choose(c)}
+                          aria-pressed={selected || waiting}
+                          className={cx(
+                            'flex items-center gap-2 rounded-md border px-3 py-1.5 text-left text-[13px] transition-colors',
+                            selected && 'border-brand-600 bg-brand-50 ring-1 ring-brand-600',
+                            waiting && 'border-amber-500 bg-amber-50 ring-1 ring-amber-500',
+                            !selected && !waiting && 'border-gray-300 bg-white hover:border-gray-400',
+                          )}
+                        >
+                          <span
+                            className={cx(
+                              'flex size-4 shrink-0 items-center justify-center rounded-full border',
+                              selected ? 'border-brand-700 bg-brand-700 text-white' : waiting ? 'border-amber-600 bg-amber-500 text-white' : 'border-gray-300',
+                            )}
+                          >
+                            {selected && <Check className="size-3" strokeWidth={3} />}
+                            {waiting && <Clock className="size-3" strokeWidth={3} />}
+                          </span>
+                          <span>
+                            <span className="font-medium text-gray-900">
+                              {c.section} · {DAY_LABEL[c.day]} {timeRange(c.start, c.end)}
+                            </span>
+                            <span className={cx('block', waiting ? 'text-amber-800' : full ? 'text-red-700' : 'text-gray-500')}>
+                              {teacher ? `Cikgu ${teacher}` : 'Guru belum ditetapkan'} ·{' '}
+                              {waiting
+                                ? `Senarai menunggu (${c.waiting + 1})`
+                                : full
+                                  ? onWaitlistChange
+                                    ? `Penuh (${seats} kerusi): sertai senarai menunggu`
+                                    : `Penuh (${c.enrolled}/${c.max})`
+                                  : `${seats} kerusi kosong`}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
+        </section>
+      ))}
     </div>
   );
 }

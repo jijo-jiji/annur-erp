@@ -109,6 +109,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'login': os.environ.get('ANNUR_LOGIN_RATE', '10/min'),  # raised only by the end-to-end tests
         'public_register': '20/hour',
+        'public_results': '30/hour',  # the public school-results form (#/keputusan)
     },
     'DEFAULT_PAGINATION_CLASS': None,
 }

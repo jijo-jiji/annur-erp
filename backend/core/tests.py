@@ -1427,12 +1427,14 @@ class MessageTemplateTests(RoleTestBase):
             self.assertEqual(len(rows), 13)
             self.assertTrue(all(not r['customised'] and r['text'] == r['default'] for r in rows))
 
-    def test_only_management_edits_and_every_change_is_recorded(self):
+    def test_supervisor_and_management_edit_and_every_change_is_recorded(self):
         text = 'Assalamualaikum {parent}, peringatan yuran {student}: baki {balance}, tarikh akhir {due_date}.{bank}'
-        for role in (ADMIN, SUPERVISOR):
-            self.as_role(role)
-            self.assertEqual(self.client.put(self.URL + 'reminder_due/', {'text': text}, format='json').status_code, 403)
-            self.assertEqual(self.client.delete(self.URL + 'reminder_due/').status_code, 403)
+        self.as_role(ADMIN)  # the counter only adjusts a message before sending it, never the template
+        self.assertEqual(self.client.put(self.URL + 'reminder_due/', {'text': text}, format='json').status_code, 403)
+        self.assertEqual(self.client.delete(self.URL + 'reminder_due/').status_code, 403)
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.put(self.URL + 'parent_general/', {'text': 'Salam {parent}, {centre} di sini.'}, format='json').status_code, 200)
+        self.assertEqual(self.client.delete(self.URL + 'parent_general/').status_code, 200)
         self.as_role(MANAGEMENT)
         res = self.client.put(self.URL + 'reminder_due/', {'text': text}, format='json')
         self.assertEqual(res.status_code, 200, res.data)
@@ -1723,7 +1725,7 @@ class SettingDefaultsTests(RoleTestBase):
         self.assertEqual((numbering.receipt_number(PaymentReceipt, on), numbering.invoice_number(Invoice, on)), ('RSIT-2026-0001', 'BIL-2026-0001'))
         self.assertEqual(numbering.voucher_number(PaymentVoucher, on), 'BYR26-1001')
         from students.models import Student
-        self.assertEqual(numbering.student_id(Student, on), 'TN-2026-001')
+        self.assertEqual(numbering.student_id(Student, on), 'TN-260001')
 
     def test_lead_stage_names_follow_the_centre(self):
         self.as_role(MANAGEMENT)

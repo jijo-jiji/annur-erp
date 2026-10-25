@@ -350,11 +350,11 @@ def build_reports(year):
 
     # Latest result per student and subject; keep the weak ones
     latest = {}
-    for res in StudentExamResult.objects.select_related('student', 'subject').order_by('date_recorded', 'id'):
+    for res in StudentExamResult.objects.select_related('student', 'subject').order_by('year', 'exam_date', 'id'):
         latest[(res.student_id, res.subject_id)] = res
     at_risk = [{
         'student_id': r.student.student_id, 'name': r.student.full_name, 'form': r.student.form_level,
-        'subject': r.subject.name, 'exam': r.exam_name, 'grade': r.grade, 'mark': r.mark,
+        'subject': r.subject.name, 'exam': f"{r.exam_name} {r.year}", 'grade': r.grade, 'mark': r.mark,
     } for r in latest.values() if r.grade.upper().rstrip('+-') in LOW_GRADES and r.student.status == 'ACTIVE']
 
     # Drop reasons (subject drops and students who left), labelled from master data
@@ -375,11 +375,14 @@ def build_reports(year):
         target[e['event_date__month'] - 1] += 1
 
     # Budget vs actual: category budgets from master data 18_expense_cat (meta.budget per month)
-    budgets = {d.label: float(d.meta_info.get('budget') or 0)
-               for d in DynamicMasterData.objects.filter(category='18_expense_cat', status='APPROVED')}
+    # Vouchers are matched by category code, so a renamed category keeps its spending; older vouchers
+    # saved without a code are matched by label
+    cat_rows = list(DynamicMasterData.objects.filter(category='18_expense_cat', status='APPROVED'))
+    budgets = {d.label: float(d.meta_info.get('budget') or 0) for d in cat_rows}
+    label_of = {d.code: d.label for d in cat_rows}
     actual_by_cat = defaultdict(float)
-    for row in vouchers.values('category').annotate(t=Sum('amount')):
-        actual_by_cat[row['category']] = money(row['t'])
+    for row in vouchers.values('category_code', 'category').annotate(t=Sum('amount')):
+        actual_by_cat[label_of.get(row['category_code'], row['category'])] += money(row['t'])
     months_elapsed = 12 if year < date.today().year else (date.today().month if year == date.today().year else 0)
     budget_rows = [{
         'category': cat,

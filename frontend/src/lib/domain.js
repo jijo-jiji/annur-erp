@@ -25,6 +25,17 @@ export function subjectsForForm(subjects, form, classes = []) {
   return subjects.filter((s) => s.active && offered.has(s.code));
 }
 
+// Subjects grouped by category in the order the centre set (Data induk → Kategori subjek);
+// a subject whose category is not on the list goes under Lain-lain at the end
+export function groupSubjects(subjects, categories = []) {
+  const ordered = [...categories].sort((a, b) => (a.meta?.order ?? 999) - (b.meta?.order ?? 999) || a.label.localeCompare(b.label));
+  const known = new Set(ordered.map((c) => c.value));
+  const groups = ordered.map((c) => ({ code: c.value, label: c.label, subjects: subjects.filter((s) => s.category === c.value) }));
+  const rest = subjects.filter((s) => !known.has(s.category));
+  if (rest.length) groups.push({ code: '', label: 'Lain-lain', subjects: rest });
+  return groups.filter((g) => g.subjects.length);
+}
+
 // Fee package group of a grade, chosen in master data (grade list); empty when none has been set yet
 export function feeGroup(form, grades = []) {
   return grades.find((g) => g.code === form)?.fee_group || '';

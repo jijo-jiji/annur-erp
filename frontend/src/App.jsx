@@ -23,6 +23,7 @@ import DashboardView from './components/DashboardView';
 import ReportsView from './components/ReportsView';
 import ManagementConfigView from './components/ManagementConfigView';
 import ParentQRView, { ParentRegistrationForm } from './components/ParentQRView';
+import PublicResultsForm from './components/PublicResultsForm';
 import LeadFunnelView from './components/LeadFunnelView';
 import HandoutRepositoryView from './components/HandoutRepositoryView';
 import TeacherAttendanceView from './components/TeacherAttendanceView';
@@ -32,7 +33,7 @@ import MasterDataView from './components/MasterDataView';
 import { NAV_ITEMS, navigate, navItemsFor } from './lib/nav';
 import { can } from './lib/permissions';
 
-// "#/students/AN-2026-001?x=1" -> { base: 'students', param: 'AN-2026-001' }
+// "#/students/HQ-260001?x=1" -> { base: 'students', param: 'HQ-260001' }
 function readRoute() {
   const [path] = window.location.hash.replace(/^#\/?/, '').split('?');
   const [base = '', ...rest] = path.split('/');
@@ -101,11 +102,11 @@ function Shell() {
     return () => document.removeEventListener('keydown', onKey);
   }, [role]);
 
-  // Public page: parents arrive from the QR code, no login needed
-  if (route.base === 'daftar') {
+  // Public pages: parents arrive from a QR code or a link, no login needed
+  if (route.base === 'daftar' || route.base === 'keputusan') {
     return (
       <div className="min-h-dvh bg-gray-50 px-4 py-6 sm:py-10">
-        <ParentRegistrationForm />
+        {route.base === 'daftar' ? <ParentRegistrationForm /> : <PublicResultsForm />}
       </div>
     );
   }

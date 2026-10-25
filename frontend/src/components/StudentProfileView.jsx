@@ -14,11 +14,13 @@ import { fillMessage } from '../lib/messages';
 import { PhotoBox } from './Attachments';
 import { StudentFeedbackPanel } from './FeedbackViews';
 import { invoiceTitle, PaymentModal, ReceiptModal } from './BillingView';
-import { TrendChart } from './charts';
+import StudentResultsTab from './StudentResultsTab';
+import { latestSummary } from '../lib/results';
 import FormModal from './FormModal';
 import {
   Badge, Button, Card, CardHeader, DescriptionList, EmptyState, PageHeader, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon,
 } from './ui';
+import WhatsAppButton from './WhatsAppButton';
 
 const INVOICE_BADGE = {
   PAID: <Badge tone="green">Dibayar</Badge>,
@@ -30,7 +32,7 @@ const INVOICE_BADGE = {
 export default function StudentProfileView({ role, param }) {
   const store = useStore();
   const { getMasterOptions } = useApp();
-  const { students, classes, subjects, teachers, invoices, receipts, attendance, results, exams, discounts, settings, waitlist } = store;
+  const { students, classes, subjects, teachers, invoices, receipts, attendance, results, discounts, settings, waitlist } = store;
   const notify = useToast();
   const initialTab = new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'info';
   const [tab, setTab] = useState(initialTab);
@@ -39,7 +41,8 @@ export default function StudentProfileView({ role, param }) {
   const [dialog, setDialog] = useState(null); // { type, ...context }
   const [history, setHistory] = useState([]);
 
-  const s = students.find((x) => x.id === param);
+  // A link or bookmark with the code from before the renumbering still opens the student
+  const s = students.find((x) => x.id === param) || students.find((x) => x.previousId && x.previousId === param);
   const pk = s?.pk;
   const loadHistory = useCallback(() => {
     if (pk) studentsApi.history({ student: pk }).then(setHistory).catch(() => setHistory([]));
@@ -61,6 +64,8 @@ export default function StudentProfileView({ role, param }) {
   const canEdit = can(role, 'students.edit');
   const canApprove = can(role, 'students.approve');
   const live = ['PENDING', 'ACTIVE', 'ON_HOLD'].includes(s.status);
+  // A rejected registration is corrected in place and sent again, never typed in afresh
+  const rejected = s.status === 'REJECTED';
   // What a pending registration still lacks; the Supervisor cannot approve it until it is complete
   const gaps = s.status === 'PENDING' ? (s.raw?.registration_gaps || []) : [];
   const enrolled = classes.filter((c) => s.classes.includes(c.id));
@@ -71,22 +76,13 @@ export default function StudentProfileView({ role, param }) {
   const siblings = siblingsOf(s, students);
   const myWaits = waitlist.filter((w) => w.studentId === s.id);
   const arrears = arrearsCases([s], invoices, settings.unpaidMonthsLimit)[0];
-  const subjectName = (code) => subjects.find((x) => x.code === code)?.name ?? code;
   const teacherOf = (c) => teachers.find((t) => t.code === c.teacher)?.name;
   const dropReasons = getMasterOptions('14_drop_reason');
-  const examTypes = getMasterOptions('10_exam_type');
   const sourceLabel = getMasterOptions('3_lead_source').find((o) => o.value === s.source)?.label ?? (s.source === 'QR_CODE' ? 'Borang QR' : s.source);
   const ageLabel = (code) => getMasterOptions('7_parent_age').find((o) => o.value === code)?.label ?? code;
   const reasonLabel = (code) => dropReasons.find((r) => r.value === code)?.label ?? code;
 
-  // marks per enrolled class, per exam
-  const trend = enrolled.map((c) => ({
-    cls: c,
-    points: exams.map((e) => ({ label: e.name.length > 9 ? `${e.name.slice(0, 8)}…` : e.name, value: results.find((r) => r.examId === e.id && r.classId === c.id)?.marks[s.id] ?? null })),
-  }));
-  const latestExam = [...exams].reverse().find((e) => results.some((r) => r.examId === e.id && r.marks[s.id] != null));
-  const latestMarks = latestExam ? results.filter((r) => r.examId === latestExam.id && r.marks[s.id] != null).map((r) => r.marks[s.id]) : [];
-  const latestAvg = latestMarks.length ? Math.round(latestMarks.reduce((a, b) => a + b, 0) / latestMarks.length) : null;
+  const latestResults = latestSummary(results.filter((r) => r.studentPk === s.pk));
 
   const status = STUDENT_STATUS[s.status] ?? { label: s.status, tone: 'neutral' };
   const act = (name, payload, message) => store.studentAction(s.id, name, payload).then((res) => {
@@ -109,14 +105,14 @@ export default function StudentProfileView({ role, param }) {
         <div className="min-w-0 flex-1">
           <PageHeader
             title={s.name}
-            description={`${s.id} · ${formLabel(s.form)} · ${STREAM_LABEL[s.stream] ?? s.stream} · ${s.school || 'Sekolah tidak dinyatakan'}`}
+            description={`${s.id}${s.previousId ? ` (dahulu ${s.previousId})` : ''} · ${formLabel(s.form)} · ${STREAM_LABEL[s.stream] ?? s.stream} · ${s.school || 'Sekolah tidak dinyatakan'}`}
             actions={
               <>
                 {contact?.phone && (
                   <>
-                    <Button as="a" href={waLink(contact.phone, fillMessage('parent_general', { parent: contact.name, centre: CENTRE.name, student: s.name }))} target="_blank" rel="noreferrer">
+                    <WhatsAppButton phone={contact.phone} recipient={contact.name} message={fillMessage('parent_general', { parent: contact.name, centre: CENTRE.name, student: s.name })}>
                       <WhatsAppIcon /> WhatsApp {(contact.relation || 'penjaga').toLowerCase()}
-                    </Button>
+                    </WhatsAppButton>
                     <Button as="a" href={`tel:${contact.phone}`} icon={Phone}>
                       Telefon
                     </Button>
@@ -133,6 +129,12 @@ export default function StudentProfileView({ role, param }) {
                     >
                       Luluskan pendaftaran
                     </Button>
+                  </>
+                )}
+                {rejected && canEdit && (
+                  <>
+                    <Button onClick={() => setDialog({ type: 'details' })}>Ubah maklumat</Button>
+                    <Button variant="primary" onClick={() => setDialog({ type: 'resubmit' })}>Hantar semula</Button>
                   </>
                 )}
                 {s.status === 'ACTIVE' && canEdit && <Button onClick={() => setDialog({ type: 'hold' })}>Tangguh</Button>}
@@ -160,7 +162,12 @@ export default function StudentProfileView({ role, param }) {
               ))}
               {s.specialFee !== null && <Badge tone="blue">Kadar khas {rm(s.specialFee)}</Badge>}
             </div>
-            {s.registrationComment && <p className="mt-2 text-[13px] text-gray-600">Keputusan pendaftaran ({s.decidedBy}): {s.registrationComment}</p>}
+            {rejected ? (
+              <p role="alert" className="mt-3 rounded-md bg-red-50 px-3 py-2 text-[13px] text-red-800">
+                Pendaftaran ditolak{s.decidedBy ? ` oleh ${s.decidedBy}` : ''}{s.registrationComment ? `: ${s.registrationComment}` : ''}.
+                {canEdit && ' Betulkan maklumat, kemudian tekan Hantar semula. Rekod dan ID pelajar kekal sama.'}
+              </p>
+            ) : s.registrationComment && <p className="mt-2 text-[13px] text-gray-600">Keputusan pendaftaran ({s.decidedBy}): {s.registrationComment}</p>}
           </PageHeader>
         </div>
       </div>
@@ -168,7 +175,11 @@ export default function StudentProfileView({ role, param }) {
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Baki yuran" value={rm(balance)} tone={balance ? 'red' : undefined} hint={balance ? `${myInvoices.filter((i) => invoiceBalance(i) > 0).length} invois` : s.credit > 0 ? `Kredit ${rm(s.credit)}` : 'Tiada tunggakan'} />
         <Stat label="Kedatangan" value={att.rate != null ? `${att.rate}%` : '—'} hint={att.sessions ? `${att.absent} tidak hadir · ${att.late} lewat` : 'Belum direkodkan'} />
-        <Stat label="Purata markah" value={latestAvg != null ? `${latestAvg}%` : '—'} hint={latestExam ? `${latestExam.name} · gred ${grade(latestAvg)}` : 'Belum ada keputusan'} />
+        <Stat
+          label="Purata peperiksaan"
+          value={latestResults?.avg != null ? `${latestResults.avg}%` : '—'}
+          hint={latestResults ? `${latestResults.exam.label}${latestResults.avg != null ? ` · gred ${grade(latestResults.avg)}` : ''}` : 'Belum ada keputusan'}
+        />
         <Stat label="Subjek" value={enrolled.length} hint={myWaits.length ? `${myWaits.length} dalam senarai menunggu` : `Sejak ${date(s.joined)}`} />
       </div>
 
@@ -198,7 +209,7 @@ export default function StudentProfileView({ role, param }) {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="space-y-6 lg:col-span-2">
             <Card>
-              <CardHeader title="Maklumat pelajar" actions={canEdit && live && <Button size="sm" onClick={() => setDialog({ type: 'details' })}>Ubah maklumat</Button>} />
+              <CardHeader title="Maklumat pelajar" actions={canEdit && (live || rejected) && <Button size="sm" onClick={() => setDialog({ type: 'details' })}>Ubah maklumat</Button>} />
               <div className="p-5">
                 <DescriptionList
                   items={[
@@ -427,43 +438,7 @@ export default function StudentProfileView({ role, param }) {
         </Card>
       )}
 
-      {tab === 'results' && (
-        <div className="space-y-4">
-          {can(role, 'results.enter') && live && (
-            <div className="flex justify-end">
-              <Button size="sm" variant="primary" icon={Plus} onClick={() => setDialog({ type: 'result' })}>Tambah keputusan</Button>
-            </div>
-          )}
-          {trend.every((t) => t.points.every((p) => p.value == null)) ? (
-            <Card><EmptyState title="Belum ada keputusan">Masukkan keputusan di sini atau untuk seluruh kelas di Keputusan ujian.</EmptyState></Card>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {trend.map(({ cls, points }) => {
-                const last = [...points].reverse().find((p) => p.value != null);
-                return (
-                  <Card key={cls.id} className="p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{subjectName(cls.subject)}</p>
-                        <p className="text-[13px] text-gray-500">{teacherOf(cls) ? `Cikgu ${teacherOf(cls)}` : ''}</p>
-                      </div>
-                      {last && (
-                        <div className="text-right">
-                          <p className="text-lg font-semibold tnum">{last.value}</p>
-                          <p className="text-xs text-gray-500">Gred {grade(last.value)}</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-2">
-                      <TrendChart points={points} />
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+      {tab === 'results' && <StudentResultsTab student={s} role={role} live={live} />}
 
       {tab === 'feedback' && (
         <Card className="p-5">
@@ -580,6 +555,24 @@ export default function StudentProfileView({ role, param }) {
         />
       )}
       {dialog?.type === 'details' && <StudentDetailsModal student={s} onClose={() => setDialog(null)} />}
+      {dialog?.type === 'resubmit' && (
+        <FormModal
+          title="Hantar semula pendaftaran"
+          description="Pendaftaran akan menunggu kelulusan Supervisor sekali lagi. Pilih semula kelas; kelas yang penuh masuk ke senarai menunggu."
+          onClose={() => setDialog(null)}
+          initial={{ class_ids: (s.raw.resubmit_class_ids || []).filter((id) => classes.some((c) => c.id === id && c.form === s.form)), note: '' }}
+          fields={[
+            {
+              name: 'class_ids', label: 'Kelas', type: 'checkgroup', required: s.type !== 'WALK_IN',
+              options: classes.filter((c) => c.form === s.form).map((c) => ({
+                value: c.id, label: `${classLabel(c, subjects)} · ${DAY_LABEL[c.day]} ${timeRange(c.start, c.end)} · ${c.enrolled}/${c.max}${c.enrolled >= c.max ? ' (penuh)' : ''}`,
+              })),
+            },
+            { name: 'note', label: 'Apa yang dibetulkan', type: 'textarea', required: true, hint: 'Supervisor akan melihat catatan ini bersama sejarah penolakan.' },
+          ]}
+          onSubmit={(v) => act('resubmit', { class_ids: v.class_ids, note: v.note }, 'Pendaftaran dihantar semula untuk kelulusan.')}
+        />
+      )}
       {dialog?.type === 'fee' && (
         <FormModal
           title="Yuran & diskaun" description="Kadar khas untuk kes khas (kadar lain atau kurang daripada subjek minimum). Diskaun tetap ditolak setiap invois bulanan." onClose={() => setDialog(null)}
@@ -595,28 +588,6 @@ export default function StudentProfileView({ role, param }) {
             special_fee_note: v.special_fee_note || '',
             standing_discount: v.standing_discount === '' ? null : Number(v.standing_discount),
           }).then(() => notify('Yuran & diskaun dikemas kini.'))}
-        />
-      )}
-      {dialog?.type === 'result' && (
-        <FormModal
-          title="Tambah keputusan" description="Gred dikira daripada markah." onClose={() => setDialog(null)}
-          initial={{ exam_name: '', subject: '', mark: '', exam_date: todayISO() }}
-          fields={[
-            { name: 'exam_name', label: 'Jenis peperiksaan', type: 'select', required: true, options: examTypes.map((e) => ({ value: e.label, label: e.label })) },
-            { name: 'subject', label: 'Subjek', type: 'select', required: true, options: subjects.filter((x) => x.active).map((x) => ({ value: x.pk, label: x.name })) },
-            { name: 'mark', label: 'Markah (%)', type: 'number', min: 0, max: 100, required: true },
-            { name: 'exam_date', label: 'Tarikh peperiksaan', type: 'date', required: true },
-          ]}
-          onSubmit={async (v) => {
-            try {
-              await studentsApi.addResult({ student: s.pk, exam_name: v.exam_name, subject: Number(v.subject), mark: Number(v.mark), grade: grade(Number(v.mark)), exam_date: v.exam_date });
-              await store.reload('results');
-              notify('Keputusan disimpan.');
-            } catch (err) {
-              notify(err.message || 'Ralat menyimpan keputusan.', 'error');
-              throw err;
-            }
-          }}
         />
       )}
 

@@ -15,8 +15,17 @@ class SubjectMaster(models.Model):
     name = models.CharField(max_length=100)
     level_category = models.CharField(max_length=20, choices=LEVEL_CHOICES)
     stream = models.CharField(max_length=20, choices=STREAM_CHOICES, default='TERAS')
+    # Group on the registration forms: a code from master data 26_subject_category (business_config.setup_lists);
+    # left empty, it becomes the group of the subject's stream
+    category = models.CharField(max_length=60, blank=True, default='')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.category:
+            from .setup_lists import default_subject_category
+            self.category = default_subject_category(self.stream)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.code} - {self.name} ({self.level_category})"

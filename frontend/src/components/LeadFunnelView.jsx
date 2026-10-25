@@ -7,7 +7,7 @@ import { THRESHOLDS, useThresholds } from '../lib/thresholds';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
 import { describeLeadFilters, LEAD_FILTERS, useDrill, useMatching } from '../lib/drilldown';
-import { clock, date, daysAgoISO, FORMS, formLabel, formShort, todayISO, waLink } from '../lib/format';
+import { clock, date, daysAgoISO, FORMS, formLabel, formShort, todayISO } from '../lib/format';
 import DrilldownBar from './DrilldownBar';
 import { Donut } from './Donut';
 import { downloadCsv } from '../lib/csv';
@@ -15,6 +15,7 @@ import { HBarList } from './charts';
 import LeadFields from './LeadFields';
 import LeadImportModal from './LeadImportModal';
 import { Badge, Button, Card, CardHeader, Checkbox, cx, DescriptionList, EmptyState, filterClass, Input, Modal, PageHeader, Segmented, Select, Stat, Table, Td, Th, useToast, WhatsAppIcon } from './ui';
+import WhatsAppButton from './WhatsAppButton';
 
 // The 8 conversion stages, in order
 // The order and the rules of the stages are fixed; their names are the centre's (Settings > Had & amaran)
@@ -181,9 +182,9 @@ function LeadDetailModal({ lead, onClose, sources, sourceLabel, subjectName, cam
               ]}
             />
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button as="a" size="sm" href={waLink(lead.phone, fillMessage('lead_followup', { parent: lead.parent_name || 'Tuan/Puan', centre: CENTRE.name, branch: CENTRE.branch }))} target="_blank" rel="noreferrer">
+              <WhatsAppButton size="sm" phone={lead.phone} recipient={lead.parent_name} message={fillMessage('lead_followup', { parent: lead.parent_name || 'Tuan/Puan', centre: CENTRE.name, branch: CENTRE.branch })}>
                 <WhatsAppIcon className="size-3.5" /> WhatsApp
-              </Button>
+              </WhatsAppButton>
               <Button size="sm" onClick={startEdit}>Ubah maklumat</Button>
             </div>
           </section>

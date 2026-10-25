@@ -1,6 +1,6 @@
 from core import grades
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -120,3 +120,29 @@ class DynamicMasterDataViewSet(viewsets.ModelViewSet):
 def grade_list(request):
     """Approved grades in order, with next grade and description (all roles)."""
     return Response(grades.grade_list())
+
+
+def subject_groups(form_level=''):
+    """Active subjects grouped by their category (master data 26), in the list's order. With a grade, only
+    the subjects that have a class for it. Used by the public forms, which have no login."""
+    from academic.models import ClassTimetable
+    from .setup_lists import SUBJECT_CATEGORY
+    subjects = SubjectMaster.objects.filter(is_active=True).order_by('name')
+    if form_level:
+        offered = ClassTimetable.objects.filter(form_level=form_level).values_list('subject_id', flat=True)
+        subjects = subjects.filter(pk__in=offered)
+    cats = sorted(DynamicMasterData.objects.filter(category=SUBJECT_CATEGORY, status='APPROVED'),
+                  key=lambda c: ((c.meta_info or {}).get('order', 999), c.label))
+    known = {c.code for c in cats}
+    rows = [{'code': c.code, 'label': c.label} for c in cats] + [{'code': '', 'label': 'Lain-lain'}]
+    groups = [{**g, 'subjects': [{'id': s.pk, 'code': s.code, 'name': s.name} for s in subjects
+                                 if (s.category if s.category in known else '') == g['code']]} for g in rows]
+    return [g for g in groups if g['subjects']]
+
+
+@api_view(['GET'])
+@authentication_classes([])  # a stale token in the parent's browser must not block the form
+@permission_classes([AllowAny])
+def public_subjects(request):
+    """Subjects for the public forms, grouped by category; `?form=F5` limits them to that grade's classes."""
+    return Response(subject_groups(str(request.query_params.get('form') or '')[:10]))

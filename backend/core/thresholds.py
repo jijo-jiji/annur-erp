@@ -48,7 +48,7 @@ SPECS = {
     'upload_feedback_mb': _spec('UPLOAD_FEEDBACK_MB', 'Gambar dan video maklum balas', 'Muat naik fail', 50, unit='MB', low=1, high=200),
     'upload_handout_mb': _spec('UPLOAD_HANDOUT_MB', 'Nota dan modul kelas', 'Muat naik fail', 25, unit='MB', low=1, high=100),
     # The start of document numbers; the running number and the year carry on
-    'prefix_student': _spec('PREFIX_STUDENT', 'ID pelajar (cth. AN-2026-001)', 'Nombor dokumen', 'AN', kind='text', pattern=r'[A-Z]{1,6}'),
+    'prefix_student': _spec('PREFIX_STUDENT', 'ID pelajar (cth. HQ-260001)', 'Nombor dokumen', 'HQ', kind='text', pattern=r'[A-Z]{1,6}'),
     'prefix_invoice': _spec('PREFIX_INVOICE', 'Nombor invois (cth. INV-2026-0001)', 'Nombor dokumen', 'INV', kind='text', pattern=r'[A-Z]{1,6}'),
     'prefix_receipt': _spec('PREFIX_RECEIPT', 'Nombor resit (cth. REC-2026-0001)', 'Nombor dokumen', 'REC', kind='text', pattern=r'[A-Z]{1,6}'),
     'prefix_voucher': _spec('PREFIX_VOUCHER', 'Nombor baucar (cth. PV26-0901)', 'Nombor dokumen', 'PV', kind='text', pattern=r'[A-Z]{1,6}'),

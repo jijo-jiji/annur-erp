@@ -209,6 +209,30 @@ def decide_registration(student, by, approve, comment=''):
     return None
 
 
+def last_class_choices(student):
+    """The classes chosen in the student's latest registration (enrolled or waiting-listed since the last
+    REGISTERED / RESUBMITTED entry), so a rejected registration can be sent again with the same choices."""
+    start = student.events.filter(event_type__in=('REGISTERED', 'RESUBMITTED')).order_by('-created_at', '-id').first()
+    events = student.events.filter(event_type__in=('ADD_SUBJECT', 'WAITLIST'), timetable_class__isnull=False)
+    if start:
+        events = events.filter(created_at__gte=start.created_at)
+    return sorted({e.timetable_class_id for e in events})
+
+
+@transaction.atomic
+def resubmit(student, by, classes, note=''):
+    """A rejected registration, corrected by the counter, goes back to the Supervisor. The record keeps its ID
+    and history; the rejection stays in the history and the classes are chosen again."""
+    if student.status != 'REJECTED':
+        raise ValidationError({'detail': 'Hanya pendaftaran yang ditolak boleh dihantar semula.'})
+    student.status = 'PENDING'
+    student.registration_comment = ''
+    student.registration_decided_by = ''
+    student.save(update_fields=['status', 'registration_comment', 'registration_decided_by'])
+    log(student, 'RESUBMITTED', by, description=note)
+    return {cls.pk: enroll(student, cls, by) for cls in classes}
+
+
 def promote(by, dry_run=True, remove_old_classes=True, on=None):
     """Year-end move of active students to their grade's next grade (master data 1_form).
     Grades without a next grade (e.g. Tingkatan 5) are left as they are."""

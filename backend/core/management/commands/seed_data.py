@@ -8,6 +8,9 @@ from academic.models import Classroom, TimeSlot, ClassTimetable, ClassReschedule
 from students.models import Student, Lead
 from billing.models import Invoice, PaymentReceipt
 from expenses.models import Vendor, PaymentVoucher
+from business_config.setup_lists import (
+    SUBJECT_CATEGORY, SUBJECT_CATEGORY_DEFAULTS, SUPPLY_TYPE_CATEGORY, SUPPLY_TYPE_DEFAULTS, default_subject_category,
+)
 
 class Command(BaseCommand):
     help = (
@@ -85,7 +88,8 @@ class Command(BaseCommand):
         for code, name, level, stream in subjects_data:
             sub, _ = SubjectMaster.objects.update_or_create(
                 code=code,
-                defaults={"name": name, "level_category": level, "stream": stream, "is_active": True}
+                defaults={"name": name, "level_category": level, "stream": stream, "is_active": True,
+                          "category": default_subject_category(stream)}
             )
             sub_dict[code] = sub
 
@@ -326,6 +330,11 @@ class Command(BaseCommand):
         from business_config.lead_lists import LEAD_LIST_DEFAULTS
         for cat, choices in LEAD_LIST_DEFAULTS.items():
             master_seed_data.extend((cat, code, label, {"order": order}, "APPROVED") for order, (code, label) in enumerate(choices, start=1))
+        # Supplier types (each suggests an expense category) and the subject groups on the registration forms
+        master_seed_data.extend((SUPPLY_TYPE_CATEGORY, code, label, {"order": order, "cat": cat}, "APPROVED")
+                                for order, (code, label, cat) in enumerate(SUPPLY_TYPE_DEFAULTS, start=1))
+        master_seed_data.extend((SUBJECT_CATEGORY, code, label, {"order": order}, "APPROVED")
+                                for order, (code, label) in enumerate(SUBJECT_CATEGORY_DEFAULTS, start=1))
 
         for cat, code, label, meta, st in master_seed_data:
             DynamicMasterData.objects.update_or_create(
@@ -524,11 +533,11 @@ class Command(BaseCommand):
 
         # 10. Sample Students
         sample_students = [
-            ("AN-2026-001", "Ahmad Daniyal bin Razali", "090514-03-5511", "MONTHLY", "F5", "SAINS", "SMK Telipot", "011-23456781", "Razali bin Mahmud", "012-9876541", "Jurutera", "PARENT_1"),
-            ("AN-2026-002", "Nur Aisyah binti Mohd Zaki", "090822-03-6622", "MONTHLY", "F5", "SAINS", "SMK Zainab 1", "011-23456782", "Mohd Zaki bin Salleh", "012-9876542", "Guru", "PARENT_1"),
-            ("AN-2026-003", "Muhammad Haziq bin Imran", "100311-03-7733", "MONTHLY", "F4", "SAINS", "SMK Sultan Ismail", "011-23456783", "Imran bin Abdullah", "012-9876543", "Peniaga", "PARENT_1"),
-            ("AN-2026-004", "Farah Nadiah binti Azman", "110425-03-8844", "MONTHLY", "F3", "GENERAL", "SMK Maktab Sultan Ismail", "011-23456784", "Azman bin Yusof", "012-9876544", "Pegawai Bank", "PARENT_1"),
-            ("AN-2026-005", "Amirul Hakim bin Shukri", "140212-03-9955", "MONTHLY", "S6", "GENERAL", "SK Telipot", "011-23456785", "Shukri bin Ramli", "012-9876545", "Pensyarah", "PARENT_1"),
+            ("HQ-260001", "Ahmad Daniyal bin Razali", "090514-03-5511", "MONTHLY", "F5", "SAINS", "SMK Telipot", "011-23456781", "Razali bin Mahmud", "012-9876541", "Jurutera", "PARENT_1"),
+            ("HQ-260002", "Nur Aisyah binti Mohd Zaki", "090822-03-6622", "MONTHLY", "F5", "SAINS", "SMK Zainab 1", "011-23456782", "Mohd Zaki bin Salleh", "012-9876542", "Guru", "PARENT_1"),
+            ("HQ-260003", "Muhammad Haziq bin Imran", "100311-03-7733", "MONTHLY", "F4", "SAINS", "SMK Sultan Ismail", "011-23456783", "Imran bin Abdullah", "012-9876543", "Peniaga", "PARENT_1"),
+            ("HQ-260004", "Farah Nadiah binti Azman", "110425-03-8844", "MONTHLY", "F3", "GENERAL", "SMK Maktab Sultan Ismail", "011-23456784", "Azman bin Yusof", "012-9876544", "Pegawai Bank", "PARENT_1"),
+            ("HQ-260005", "Amirul Hakim bin Shukri", "140212-03-9955", "MONTHLY", "S6", "GENERAL", "SK Telipot", "011-23456785", "Shukri bin Ramli", "012-9876545", "Pensyarah", "PARENT_1"),
         ]
         for sid, name, ic, stype, flvl, strm, sch, sph, p1n, p1p, p1occ, pref in sample_students:
             stud, _ = Student.objects.update_or_create(
@@ -561,10 +570,10 @@ class Command(BaseCommand):
                 defaults={
                     "student": stud,
                     "billing_month": date(2026, 3, 1),
-                    "registration_fee": 30.00 if sid == "AN-2026-001" else 0.00,
+                    "registration_fee": 30.00 if sid == "HQ-260001" else 0.00,
                     "monthly_fee": 240.00 if flvl.startswith("F") else 200.00,
-                    "total_payable": 270.00 if sid == "AN-2026-001" else (240.00 if flvl.startswith("F") else 200.00),
-                    "total_paid": 270.00 if sid == "AN-2026-001" else (240.00 if flvl.startswith("F") else 200.00),
+                    "total_payable": 270.00 if sid == "HQ-260001" else (240.00 if flvl.startswith("F") else 200.00),
+                    "total_paid": 270.00 if sid == "HQ-260001" else (240.00 if flvl.startswith("F") else 200.00),
                     "balance_due": 0.00,
                     "status": "PAID",
                     "due_date": date(2026, 3, 7)
@@ -583,6 +592,8 @@ class Command(BaseCommand):
                     "received_by": "Admin 1 (Pejabat)"
                 }
             )
+
+        self.seed_school_results()
 
         # 11. Payment Vouchers & Vendors
         v1, _ = Vendor.objects.update_or_create(
@@ -772,4 +783,21 @@ class Command(BaseCommand):
                 StaffMember.objects.filter(staff_id=staff_code, user=None).update(user=user)
 
         self.stdout.write(self.style.SUCCESS("All Pusat Tuisyen An Nur 2026 operational data seeded successfully!"))
+
+    def seed_school_results(self):
+        """School exam results of the active students for 2026 so far, in their tuition subjects, so the Keputusan
+        and Prestasi screens have something to show. Marks are fixed per student and subject, not random."""
+        from core.gradescale import grade_for
+        from students import exam_terms
+        from students.models import StudentExamResult
+        for student in Student.objects.filter(status='ACTIVE'):
+            terms = ['PENGGAL_1', 'PERTENGAHAN', 'PENGGAL_2'] + (['PERCUBAAN_SPM'] if exam_terms.is_final_year(student.form_level) else [])
+            for subject_id in set(student.enrolled_classes.values_list('subject_id', flat=True)):
+                mark = 38 + (student.pk * 7 + subject_id * 13) % 45
+                step = (student.pk + subject_id) % 3 * 4 - 3  # some improve, some slip
+                for term in terms:
+                    StudentExamResult.objects.update_or_create(
+                        student=student, year=2026, term=term, subject_id=subject_id,
+                        defaults={'mark': mark, 'grade': grade_for(mark), 'form_level': student.form_level, 'recorded_by': 'Admin 1'})
+                    mark = max(0, min(100, mark + step))
 
