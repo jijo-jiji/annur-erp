@@ -4,6 +4,7 @@ import { BarChart3, CalendarClock, Check, ChevronRight, UserPlus, Wallet } from 
 import { dashboardApi } from '../api/client';
 import { routeOf } from '../context/AppContext';
 import { can } from '../lib/permissions';
+import { monthEnd, monthKey, studentsHref } from '../lib/drilldown';
 import { CURRENT_MONTH, date, DAY_LABEL, monthLabel, rm } from '../lib/format';
 import { Donut, STATUS_COLORS } from './Donut';
 import { BarChart, HBarList, Legend, SERIES_COLORS } from './charts';
@@ -51,15 +52,17 @@ function buildNotices(data, role) {
   const approver = role !== 'ADMIN';
   const management = role === 'MANAGEMENT';
   const out = [];
-  const add = (count, tone, title, tab, action = 'Lihat', detail) => {
-    if (count) out.push({ key: `${tab}-${out.length}`, tone, title, href: `#/${routeOf(tab)}`, action, detail });
+  const add = (count, tone, title, tab, action = 'Lihat', detail, href) => {
+    if (count) out.push({ key: `${tab}-${out.length}`, tone, title, href: href ?? `#/${routeOf(tab)}`, action, detail });
   };
 
   add(classes.over.length, 'red', `${classes.over.length} kelas melebihi had kerusi`, 'timetable', 'Lihat jadual', classes.over.map((c) => c.class_code).join(', '));
   if (management) add(approvals.vouchers_pending_management, 'red', `${approvals.vouchers_pending_management} baucar melebihi ${ringgit(THRESHOLDS.voucher_tier2)} menunggu kelulusan anda`, 'expenses', 'Semak');
   attendance.low_classes.forEach((c) => add(1, 'red', `Kehadiran ${c.class_code} ${c.rate}% dalam ${attendance.window_days} hari lepas`, 'attendance', 'Lihat', `${c.present}/${c.total} kehadiran`));
-  add(approvals.registrations_pending, 'amber', `${approvals.registrations_pending} pendaftaran pelajar menunggu kelulusan`, 'students', approver ? 'Luluskan' : 'Lihat');
-  add(approvals.monthly_invoices_pending, 'amber', `${approvals.monthly_invoices_pending} pelajar aktif belum ada invois ${monthLabel(CURRENT_MONTH)}`, 'billing', 'Jana invois');
+  add(approvals.registrations_pending, 'amber', `${approvals.registrations_pending} pendaftaran pelajar menunggu kelulusan`, 'students', approver ? 'Luluskan' : 'Lihat', undefined, '#/students?tab=approvals');
+  // these students, with the same rule the number uses
+  add(approvals.monthly_invoices_pending, 'amber', `${approvals.monthly_invoices_pending} pelajar aktif belum ada invois ${monthLabel(CURRENT_MONTH)}`, 'billing', 'Jana invois', undefined,
+    studentsHref({ uninvoiced: data.today.slice(0, 7) }, { expect: approvals.monthly_invoices_pending }));
   add(finance.outstanding > 0 ? 1 : 0, 'amber', `Tunggakan yuran ${rm(finance.outstanding)}`, 'billing', 'Susulan');
   add(approvals.lead_followups_due, 'amber', `${approvals.lead_followups_due} prospek perlu susulan`, 'leads', 'Hubungi', 'Lebih seminggu sejak tindakan terakhir');
   add(classes.full.length, 'amber', `${classes.full.length} kelas penuh`, 'timetable', 'Lihat jadual');
@@ -95,7 +98,7 @@ function buildNotices(data, role) {
     add(approvals.reschedules_to_verify, 'blue', `${approvals.reschedules_to_verify} kelas ganti / tambahan menunggu pengesahan anda`, 'reschedules', 'Sahkan');
   }
   add(approvals.teacher_pay_to_record, 'blue', `${approvals.teacher_pay_to_record} bayaran elaun guru diluluskan, belum direkod dibayar`, 'teacher_payroll', 'Rekod');
-  add(approvals.waitlist_waiting, 'blue', `${approvals.waitlist_waiting} pelajar dalam senarai menunggu`, 'students', 'Lihat');
+  add(approvals.waitlist_waiting, 'blue', `${approvals.waitlist_waiting} pelajar dalam senarai menunggu`, 'students', 'Lihat', undefined, '#/students?tab=waitlist');
   add(classes.near_full.length, 'blue', `${classes.near_full.length} kelas hampir penuh`, 'timetable', 'Lihat jadual', 'Baki dua kerusi atau kurang');
 
   const order = { red: 0, amber: 1, blue: 2 };
@@ -183,6 +186,10 @@ export default function DashboardView({ role }) {
   );
   const notices = buildNotices(data, role);
   const { students, finance, attendance, classes } = data;
+  const thisMonth = data.today.slice(0, 7);
+  // A link to the students a figure counts; `expect` is the number the figure shows
+  const sh = (filters, expect) => studentsHref(filters, { from: 'ringkasan', expect });
+  const hintLink = (href, text) => <a href={href} className="relative z-10 hover:text-brand-700 hover:underline">{text}</a>;
   const approver = role !== 'ADMIN';
   const management = role === 'MANAGEMENT';
 
@@ -222,7 +229,12 @@ export default function DashboardView({ role }) {
       <>
         {header}
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Stat label="Pelajar aktif" value={students.active} hint={`${students.new_this_month} baharu bulan ini · ${students.on_hold} ditangguh`} />
+          <Stat
+            label="Pelajar aktif"
+            value={students.active}
+            href={sh({ status: 'ACTIVE' }, students.active)}
+            hint={<>{hintLink(sh({ joined: thisMonth }, students.new_this_month), `${students.new_this_month} baharu bulan ini`)} · {hintLink(sh({ status: 'ON_HOLD' }, students.on_hold), `${students.on_hold} ditangguh`)}</>}
+          />
           <Stat label={`Kutipan ${monthLabel(CURRENT_MONTH)}`} value={rm(finance.collected_this_month)} hint={`Hari ini ${rm(finance.collected_today)} · tunggakan ${rm(finance.outstanding)}`} />
           {attendanceStat}
         </div>
@@ -252,11 +264,11 @@ export default function DashboardView({ role }) {
 
       {/* Counter figures: student counts and collection */}
       <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-        <Stat label="Jumlah pelajar" value={students.total} hint={`${students.active} aktif`} />
-        <Stat label="Aktif bulanan" value={students.active_monthly} />
-        <Stat label="Walk-in aktif" value={students.walk_in} />
-        <Stat label="Ditangguh" value={students.on_hold} />
-        <Stat label="Tidak aktif" value={students.inactive} />
+        <Stat label="Jumlah pelajar" value={students.total} href={sh({ status: 'REGISTERED' }, students.total)} hint={`${students.active} aktif`} />
+        <Stat label="Aktif bulanan" value={students.active_monthly} href={sh({ status: 'ACTIVE', type: 'MONTHLY' }, students.active_monthly)} />
+        <Stat label="Walk-in aktif" value={students.walk_in} href={sh({ status: 'ACTIVE', type: 'WALK_IN' }, students.walk_in)} />
+        <Stat label="Ditangguh" value={students.on_hold} href={sh({ status: 'ON_HOLD' }, students.on_hold)} />
+        <Stat label="Tidak aktif" value={students.inactive} href={sh({ status: 'INACTIVE' }, students.inactive)} />
       </div>
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Kutipan hari ini" value={rm(finance.collected_today)} />
@@ -269,7 +281,7 @@ export default function DashboardView({ role }) {
         <ActionList items={notices} limit={8} />
         <Card>
           <CardHeader title="Pelajar aktif mengikut tingkatan" description="Bulanan dan walk-in" />
-          <div className="p-5"><Donut rows={students.by_form.map((f) => ({ label: f.label, value: f.count }))} /></div>
+          <div className="p-5"><Donut rows={students.by_form.map((f) => ({ label: f.label, value: f.count, href: sh({ status: 'ACTIVE', form: f.form }, f.count) }))} /></div>
         </Card>
       </div>
 
@@ -296,7 +308,7 @@ export default function DashboardView({ role }) {
       {approver && (
         <>
           <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat label="Pelajar baharu bulan ini" value={students.new_this_month} hint={growthHint(students.new_growth_pct, `Bulan lepas: ${students.new_last_month}`)} />
+            <Stat label="Pelajar baharu bulan ini" value={students.new_this_month} href={sh({ joined: thisMonth }, students.new_this_month)} hint={growthHint(students.new_growth_pct, `Bulan lepas: ${students.new_last_month}`)} />
             <Stat label="Guru aktif" value={data.teachers.active} hint={`${data.teachers.permanent} tetap · ${data.teachers.replacement} ganti`} />
             <Stat
               label="Permit hampir / telah luput"
@@ -314,12 +326,14 @@ export default function DashboardView({ role }) {
                 <BarChart
                   series={yearSeries}
                   data={MONTHS.map((label, i) => ({ label, values: { now: students.trend_this_year[i]?.total ?? 0, prev: students.trend_last_year[i]?.total ?? 0 } }))}
+                  // a bar opens the students on the books on the last day of that month
+                  hrefFor={(d, key, v) => sh({ as_at: monthEnd(key === 'now' ? year : year - 1, MONTHS.indexOf(d.label) + 1) }, v)}
                 />
               </div>
             </Card>
             <Card>
               <CardHeader title="Tempoh belajar" description="Sejak tarikh daftar" />
-              <div className="p-5"><HBarList rows={students.period_of_stay.map((b) => ({ label: b.label, value: b.count }))} /></div>
+              <div className="p-5"><HBarList rows={students.period_of_stay.map((b) => ({ label: b.label, value: b.count, href: b.count ? sh({ stay: b.key }, b.count) : undefined }))} /></div>
             </Card>
             <Card className="lg:col-span-2">
               <CardHeader title="Pelajar baharu dan berhenti" description={`Setiap bulan ${year}`} actions={<Legend series={flowSeries} />} />
@@ -327,6 +341,7 @@ export default function DashboardView({ role }) {
                 <BarChart
                   series={flowSeries}
                   data={MONTHS.map((label, i) => ({ label, values: { new: students.trend_this_year[i]?.new ?? 0, left: students.trend_this_year[i]?.left ?? 0 } }))}
+                  hrefFor={(d, key, v) => sh({ [key === 'new' ? 'joined' : 'left']: monthKey(year, MONTHS.indexOf(d.label) + 1) }, v)}
                 />
               </div>
             </Card>
@@ -334,15 +349,15 @@ export default function DashboardView({ role }) {
               <CardHeader title="Status pelajar" />
               <div className="p-5">
                 <Donut rows={[
-                  { label: 'Aktif', value: students.active, color: STATUS_COLORS.good },
-                  { label: 'Ditangguh', value: students.on_hold, color: STATUS_COLORS.warning },
-                  { label: 'Tidak aktif', value: students.inactive, color: '#94a3b8' },
+                  { label: 'Aktif', value: students.active, color: STATUS_COLORS.good, href: sh({ status: 'ACTIVE' }, students.active) },
+                  { label: 'Ditangguh', value: students.on_hold, color: STATUS_COLORS.warning, href: sh({ status: 'ON_HOLD' }, students.on_hold) },
+                  { label: 'Tidak aktif', value: students.inactive, color: '#94a3b8', href: sh({ status: 'INACTIVE' }, students.inactive) },
                 ]} />
               </div>
             </Card>
             <Card>
               <CardHeader title="Kategori sekolah" description="Pelajar aktif" />
-              <div className="p-5"><Donut rows={students.by_school_category.map((c) => ({ label: c.category, value: c.count }))} /></div>
+              <div className="p-5"><Donut rows={students.by_school_category.map((c) => ({ label: c.category, value: c.count, href: sh({ status: 'ACTIVE', school_category: c.value }, c.count) }))} /></div>
             </Card>
             <SubjectsByForm rows={students.subjects_by_form} />
             {management && (

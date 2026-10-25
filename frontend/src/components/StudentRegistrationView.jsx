@@ -8,6 +8,8 @@ import { date, DAY_LABEL, FORMS, formLabel, formShort, initials, rm, STREAM_LABE
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
+import { describeStudentFilters, readStudentDrill } from '../lib/drilldown';
+import DrilldownBar from './DrilldownBar';
 import { can } from '../lib/permissions';
 import { downloadCsv } from '../lib/csv';
 import { FeedbackGallery } from './FeedbackViews';
@@ -43,6 +45,18 @@ function StudentsHome({ role, canEdit }) {
   const pending = students.filter((s) => s.status === 'PENDING');
   const active = students.filter((s) => s.status === 'ACTIVE').length;
 
+  // Opened from a figure on Ringkasan or Laporan: the address carries the filter (see lib/drilldown.js)
+  const [drill, setDrill] = useState(readStudentDrill);
+  useEffect(() => {
+    const onHash = () => {
+      const next = readStudentDrill();
+      setDrill(next);
+      if (next) setTab('list');
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
   return (
     <>
       <PageHeader
@@ -69,7 +83,7 @@ function StudentsHome({ role, canEdit }) {
           ...(can(role, 'students.promote') ? [{ value: 'promote', label: 'Naik tingkatan' }] : []),
         ]}
       />
-      {tab === 'list' && <StudentList />}
+      {tab === 'list' && <StudentList drill={drill} />}
       {tab === 'approvals' && <Approvals role={role} pending={pending} />}
       {tab === 'waitlist' && <WaitingList role={role} />}
       {tab === 'history' && <HistoryReport />}
@@ -81,7 +95,7 @@ function StudentsHome({ role, canEdit }) {
 
 // ---- Directory ----------------------------------------------------------------
 
-function StudentList() {
+function StudentList({ drill }) {
   const { students, invoices } = useStore();
   const [q, setQ] = useState('');
   const [form, setForm] = useState('ALL');
@@ -94,15 +108,31 @@ function StudentList() {
     return b;
   }, [invoices]);
 
+  // Opened from a figure: which students match is decided by the server, with the rule the figure uses
+  const [result, setResult] = useState(null); // { key, count, ids } for the filter it was asked about
+  useEffect(() => {
+    if (!drill) return undefined;
+    let current = true;
+    studentsApi.matching(drill.filters)
+      .then((res) => { if (current) setResult({ key: drill.key, count: res.count, ids: new Set(res.student_ids) }); })
+      .catch(() => { if (current) setResult({ key: drill.key, count: 0, ids: new Set() }); });
+    return () => { current = false; };
+  }, [drill]);
+  const matched = drill && result?.key === drill.key ? result : null; // null while the answer for this filter is on its way
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return students.filter((s) => {
-      if (status !== 'ALL' && s.status !== status) return false;
-      if (form !== 'ALL' && s.form !== form) return false;
+      if (drill) {
+        if (!matched?.ids.has(s.id)) return false; // while it loads, nothing is shown rather than the wrong students
+      } else {
+        if (status !== 'ALL' && s.status !== status) return false;
+        if (form !== 'ALL' && s.form !== form) return false;
+      }
       if (!needle) return true;
       return [s.name, s.id, s.ic, s.school, s.parent1.name, s.parent1.phone, s.parent2?.phone].some((v) => v?.toLowerCase().includes(needle));
     });
-  }, [students, q, form, status]);
+  }, [students, q, form, status, drill, matched]);
 
   const count = (st) => students.filter((s) => s.status === st).length;
   const exportCsv = () => downloadCsv(
@@ -115,10 +145,20 @@ function StudentList() {
   );
 
   return (
+    <>
+    {drill && (
+      <DrilldownBar
+        chips={describeStudentFilters(drill.filters)}
+        count={matched ? matched.count : null}
+        expect={drill.expect}
+        from={drill.from}
+        onClear={() => navigate('students')}
+      />
+    )}
     <Card>
       <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 p-4">
         <SearchInput icon={Search} value={q} onChange={(v) => { setQ(v); setLimit(PAGE); }} placeholder="Cari nama, ID, no. K/P, sekolah atau telefon" className="w-full sm:w-80" />
-        <select
+        {!drill && <select
           value={form}
           onChange={(e) => { setForm(e.target.value); setLimit(PAGE); }}
           aria-label="Tapis tingkatan"
@@ -130,8 +170,8 @@ function StudentList() {
               {f.label}
             </option>
           ))}
-        </select>
-        <Segmented
+        </select>}
+        {!drill && <Segmented
           value={status}
           onChange={(v) => { setStatus(v); setLimit(PAGE); }}
           items={[
@@ -140,7 +180,7 @@ function StudentList() {
             { value: 'TERMINATED', label: `Berhenti (${count('TERMINATED')})` },
             { value: 'ALL', label: 'Semua' },
           ]}
-        />
+        />}
         <Button size="sm" icon={Download} className="ml-auto" onClick={exportCsv}>
           CSV / Excel
         </Button>
@@ -223,6 +263,7 @@ function StudentList() {
         </div>
       )}
     </Card>
+    </>
   );
 }
 

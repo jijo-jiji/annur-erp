@@ -7,6 +7,7 @@ from billing.models import Invoice, PaymentReceipt
 from business_config.models import DynamicMasterData
 from expenses.models import PaymentVoucher
 from students.models import Student, StudentExamResult, StudentEvent, ClassWaitlist, Lead
+from students.drilldown import REGISTERED_STATUSES, STAY_BUCKETS, stay_days, stay_key, uninvoiced_students
 from students.views import attendance_rates
 from teachers.staff import alerts as staff_alerts
 from teachers.models import Teacher, TeacherAttendance, LeaveRequest, TeacherRateIncrement, TeacherPayment
@@ -23,17 +24,6 @@ def form_order(present):
     return order + sorted(set(present) - set(order))
 COUNTED_PV_STATUSES = ('VERIFIED_ADMIN', 'APPROVED_SUPERVISOR', 'APPROVED_MANAGEMENT')
 LOW_GRADES = ('D', 'E', 'F', 'G', 'TH')
-# Registered students (approved); PENDING and REJECTED registrations are not counted as students yet
-REGISTERED_STATUSES = ('ACTIVE', 'ON_HOLD', 'TERMINATED')
-STAY_BUCKETS = [
-    ('< 3 bulan', 0, 90),
-    ('3 - 6 bulan', 90, 182),
-    ('6 - 12 bulan', 182, 365),
-    ('1 - 2 tahun', 365, 730),
-    ('> 2 tahun', 730, None),
-]
-
-
 def month_end(year, month):
     return (date(year, month, 1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 
@@ -58,22 +48,18 @@ def student_trends(year, today):
 
 
 def period_of_stay(today):
-    counts = {label: 0 for label, _, _ in STAY_BUCKETS}
+    """Length of study per bucket; each row carries the key the list behind it is opened with."""
+    counts = {key: 0 for key, *_ in STAY_BUCKETS}
     for join, left in Student.objects.filter(status__in=REGISTERED_STATUSES).values_list('join_date', 'left_date'):
-        days = ((left or today) - join).days
-        for label, low, high in STAY_BUCKETS:
-            if days >= low and (high is None or days < high):
-                counts[label] += 1
-                break
-    return [{'label': label, 'count': counts[label]} for label, _, _ in STAY_BUCKETS]
+        key = stay_key(stay_days(join, left, today))
+        if key:
+            counts[key] += 1
+    return [{'key': key, 'label': label, 'count': counts[key]} for key, label, _, _ in STAY_BUCKETS]
 
 
 def monthly_invoices_pending(today):
     """Active monthly students with classes but no invoice yet for this month."""
-    month = today.replace(day=1)
-    invoiced = Invoice.objects.filter(billing_month=month).exclude(invoice_type='OTHER').values('student_id')
-    return (Student.objects.filter(status='ACTIVE', student_type='MONTHLY', enrolled_classes__isnull=False)
-            .exclude(id__in=invoiced).distinct().count())
+    return uninvoiced_students(today.replace(day=1)).count()
 
 
 def money(value):
@@ -225,7 +211,7 @@ def build_dashboard(role, today=None, user=None):
                 for f in form_order(by_form) if by_form.get(f)
             ],
             'by_school_category': [
-                {'category': row['school_category'] or 'Tidak dinyatakan', 'count': row['n']}
+                {'category': row['school_category'] or 'Tidak dinyatakan', 'value': row['school_category'] or 'NONE', 'count': row['n']}
                 for row in active.values('school_category').annotate(n=Count('id')).order_by('-n')
             ],
             'subjects_by_form': [

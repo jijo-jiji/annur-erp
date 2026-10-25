@@ -42,7 +42,8 @@ export function Legend({ series }) {
 }
 
 // Vertical grouped bars. data: [{ label, values: { [seriesKey]: number } }]
-export function BarChart({ data, series, format = (v) => v, height = 220 }) {
+// hrefFor(datum, seriesKey, value) -> the address a bar opens (an empty bar opens nothing)
+export function BarChart({ data, series, format = (v) => v, height = 220, hrefFor }) {
   const [hover, setHover] = useState(null);
   const [ref, W] = useWidth(0);
   const H = height;
@@ -79,13 +80,17 @@ export function BarChart({ data, series, format = (v) => v, height = 220 }) {
                 const x = gx + (groupW - totalW) / 2 + j * (barW + gap);
                 const h = Math.max(0, pad.t + innerH - y(v));
                 const r = Math.min(4, h);
-                return (
+                const href = v > 0 ? hrefFor?.(d, s.key, v) : undefined;
+                const bar = (
                   <path
-                    key={s.key}
                     d={`M${x},${pad.t + innerH} v${-(h - r)} q0,${-r} ${r},${-r} h${barW - 2 * r} q${r},0 ${r},${r} v${h - r} z`}
                     fill={s.color}
+                    className={href ? 'cursor-pointer' : undefined}
                   />
                 );
+                return href
+                  ? <a key={s.key} href={href} aria-label={`${d.label} ${s.label}: ${format(v)}`}>{bar}</a>
+                  : <g key={s.key}>{bar}</g>;
               })}
               <text x={gx + groupW / 2} y={H - 8} textAnchor="middle" className="fill-gray-600 text-[12px]">
                 {d.label}
@@ -116,23 +121,32 @@ export function BarChart({ data, series, format = (v) => v, height = 220 }) {
   );
 }
 
-// Horizontal bars for ranked lists. rows: [{ label, value, max?, hint }]
+// Horizontal bars for ranked lists. rows: [{ label, value, max?, hint, href? }]
 export function HBarList({ rows, format = (v) => v, max: fixedMax, danger, labelWidth = '9rem' }) {
   const max = fixedMax ?? Math.max(...rows.map((r) => r.value), 1);
   return (
     <ul className="space-y-2.5">
-      {rows.map((r) => (
-        <li key={r.label} className="grid items-center gap-3 text-sm" style={{ gridTemplateColumns: `${labelWidth} 1fr 3.5rem` }} title={r.hint}>
-          <span className="truncate text-gray-800">{r.label}</span>
-          <span className="h-2 overflow-hidden rounded-full bg-gray-100">
-            <span
-              className={cx('block h-full rounded-full', danger?.(r) ? 'bg-red-600' : 'bg-brand-500')}
-              style={{ width: `${Math.min(100, (r.value / max) * 100)}%` }}
-            />
-          </span>
-          <span className="text-right text-[13px] font-medium text-gray-700 tnum">{format(r.value)}</span>
-        </li>
-      ))}
+      {rows.map((r) => {
+        const Row = r.href ? 'a' : 'div';
+        return (
+          <li key={r.label} title={r.hint}>
+            <Row
+              {...(r.href ? { href: r.href } : {})}
+              className={cx('grid items-center gap-3 rounded text-sm', r.href && 'hover:bg-gray-50')}
+              style={{ gridTemplateColumns: `${labelWidth} 1fr 3.5rem` }}
+            >
+              <span className="truncate text-gray-800">{r.label}</span>
+              <span className="h-2 overflow-hidden rounded-full bg-gray-100">
+                <span
+                  className={cx('block h-full rounded-full', danger?.(r) ? 'bg-red-600' : 'bg-brand-500')}
+                  style={{ width: `${Math.min(100, (r.value / max) * 100)}%` }}
+                />
+              </span>
+              <span className="text-right text-[13px] font-medium text-gray-700 tnum">{format(r.value)}</span>
+            </Row>
+          </li>
+        );
+      })}
     </ul>
   );
 }

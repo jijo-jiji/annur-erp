@@ -12,7 +12,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from academic.models import ClassTimetable
 from core import numbering
 from core.permissions import APPROVER_ROLES, get_role, display_name, require_role
-from . import lead_import, leads, services
+from . import drilldown, lead_import, leads, services
 from business_config.models import SubjectMaster
 from .models import (
     Student, StudentExamResult, Lead, LeadActivity, StudentEvent, ClassWaitlist,
@@ -97,6 +97,12 @@ class StudentViewSet(viewsets.ModelViewSet):
     def _respond(self, student, **extra):
         student = self.get_queryset().get(pk=student.pk)
         return Response({**self.get_serializer(student).data, **extra})
+
+    @action(detail=False, methods=['get'])
+    def matching(self, request):
+        """The students a dashboard or report figure counts, for the list it opens (see students/drilldown.py)."""
+        ids = list(drilldown.students_matching(request.query_params).order_by('student_id').values_list('student_id', flat=True))
+        return Response({'count': len(ids), 'student_ids': ids})
 
     @action(detail=False, methods=['post'])
     def promote(self, request):

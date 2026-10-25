@@ -56,13 +56,17 @@ export function Donut({ rows, size = 150, emptyText = 'Tiada data' }) {
     <div className="flex flex-wrap items-center gap-4">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img"
         aria-label={arcs.map((a) => `${a.label}: ${a.value}`).join(', ')} className="shrink-0">
-        {arcs.map((a, i) => (
-          <path key={a.label} d={path(a)} fill={a.color} fillRule="evenodd" stroke="#fff" strokeWidth="2"
-            opacity={hover === null || hover === i ? 1 : 0.35}
-            onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
-            <title>{`${a.label}: ${a.value} (${pct(a.value)})`}</title>
-          </path>
-        ))}
+        {arcs.map((a, i) => {
+          const slice = (
+            <path d={path(a)} fill={a.color} fillRule="evenodd" stroke="#fff" strokeWidth="2"
+              opacity={hover === null || hover === i ? 1 : 0.35} className={a.href ? 'cursor-pointer' : undefined}
+              onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+              <title>{`${a.label}: ${a.value} (${pct(a.value)})`}</title>
+            </path>
+          );
+          // a slice with an `href` opens the list of what it counts
+          return a.href ? <a key={a.label} href={a.href} aria-label={`${a.label}: ${a.value}`}>{slice}</a> : <g key={a.label}>{slice}</g>;
+        })}
         <text x={c} y={c - 2} textAnchor="middle" className="fill-gray-900" fontSize="18" fontWeight="600">
           {shown ? shown.value : total}
         </text>
@@ -71,15 +75,19 @@ export function Donut({ rows, size = 150, emptyText = 'Tiada data' }) {
         </text>
       </svg>
       <ul className="min-w-36 flex-1 space-y-1 text-[13px]">
-        {arcs.map((a, i) => (
-          <li key={a.label} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
-            className={`flex items-center gap-2 rounded px-1 ${hover === i ? 'bg-gray-100' : ''}`}>
-            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: a.color }} />
-            <span className="flex-1 text-gray-700 truncate">{a.label}</span>
-            <span className="font-medium text-gray-900 tnum">{a.value}</span>
-            <span className="w-9 text-right text-gray-500 tnum">{pct(a.value)}</span>
-          </li>
-        ))}
+        {arcs.map((a, i) => {
+          const Row = a.href ? 'a' : 'div';
+          return (
+            <li key={a.label} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+              <Row {...(a.href ? { href: a.href } : {})} className={`flex items-center gap-2 rounded px-1 ${hover === i ? 'bg-gray-100' : ''} ${a.href ? 'hover:bg-gray-100' : ''}`}>
+                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: a.color }} />
+                <span className="flex-1 text-gray-700 truncate">{a.label}</span>
+                <span className="font-medium text-gray-900 tnum">{a.value}</span>
+                <span className="w-9 text-right text-gray-500 tnum">{pct(a.value)}</span>
+              </Row>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

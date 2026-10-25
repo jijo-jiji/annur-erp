@@ -749,3 +749,111 @@ class LeadImportTests(Phase2Base):
             self.assertEqual(self.send([self.GOOD]).status_code, 200)
         self.client.force_authenticate(None)
         self.assertIn(self.send([self.GOOD]).status_code, (401, 403))
+
+
+class StudentFiguresMatchTheirListsTests(Phase2Base):
+    """Every student figure on the dashboard equals the length of the list it opens (students/drilldown.py)."""
+
+    def setUp(self):
+        super().setUp()
+        today = date.today()
+        self.today = today
+        n = iter(range(1, 100))
+
+        def make(status, kind, form, category, joined, left=None, with_class=False):
+            student = Student.objects.create(
+                student_id=f'AN-9{next(n):03d}', full_name=f'Pelajar {status} {kind} {form}', ic_number='1', student_type=kind,
+                form_level=form, school_category=category, status=status, join_date=joined, left_date=left,
+                parent1_name='P', parent1_phone='012')
+            if with_class:
+                student.enrolled_classes.add(self.kim)
+            return student
+
+        self.a = make('ACTIVE', 'MONTHLY', 'F5', 'SMK', today - timedelta(days=400), with_class=True)
+        self.b = make('ACTIVE', 'MONTHLY', 'F5', 'SMK', today - timedelta(days=30), with_class=True)
+        self.c = make('ACTIVE', 'MONTHLY', 'F4', 'SK', today - timedelta(days=200), with_class=True)
+        self.d = make('ACTIVE', 'WALK_IN', 'F4', '', today - timedelta(days=10))
+        self.e = make('ACTIVE', 'MONTHLY', 'F3', 'SMK', today.replace(day=1), with_class=True)  # joined this month
+        self.f = make('ON_HOLD', 'MONTHLY', 'F5', 'SMK', today - timedelta(days=800))
+        self.g = make('TERMINATED', 'MONTHLY', 'F3', 'SMK', today - timedelta(days=500), left=today - timedelta(days=60))
+        self.h = make('TERMINATED', 'WALK_IN', 'F3', 'SK', today - timedelta(days=100), left=today - timedelta(days=5))
+        make('PENDING', 'MONTHLY', 'F5', 'SMK', today)
+        make('REJECTED', 'MONTHLY', 'F5', 'SMK', today)  # a rejected registration is counted nowhere
+        # one of the active students with classes already has this month's invoice
+        Invoice.objects.create(invoice_number='INV-9-1', student=self.a, billing_month=today.replace(day=1), invoice_type='MONTHLY',
+                               total_payable=100, balance_due=100, due_date=today)
+
+    def listed(self, **params):
+        self.as_role(SUPERVISOR)
+        res = self.client.get('/api/v1/students/students/matching/', params)
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['count'], len(res.data['student_ids']))
+        return res.data
+
+    def dashboard(self):
+        self.as_role(MANAGEMENT)
+        return self.client.get('/api/v1/dashboard/summary/').data
+
+    def test_the_counts_on_the_dashboard_open_lists_of_the_same_length(self):
+        data = self.dashboard()
+        s = data['students']
+        figures = {
+            'total': {'status': 'REGISTERED'}, 'active': {'status': 'ACTIVE'},
+            'active_monthly': {'status': 'ACTIVE', 'type': 'MONTHLY'}, 'walk_in': {'status': 'ACTIVE', 'type': 'WALK_IN'},
+            'on_hold': {'status': 'ON_HOLD'}, 'inactive': {'status': 'INACTIVE'},
+            'new_this_month': {'joined': self.today.strftime('%Y-%m')}, 'pending': {'status': 'PENDING'},
+        }
+        for key, params in figures.items():
+            self.assertEqual(self.listed(**params)['count'], s[key], f'{key} {params}')
+        self.assertEqual((s['total'], s['active'], s['on_hold'], s['inactive']), (8, 5, 1, 2))  # the setUp data
+
+    def test_each_slice_of_a_chart_opens_the_students_in_it(self):
+        s = self.dashboard()['students']
+        for row in s['by_form']:
+            self.assertEqual(self.listed(status='ACTIVE', form=row['form'])['count'], row['count'], row)
+        for row in s['by_school_category']:
+            self.assertEqual(self.listed(status='ACTIVE', school_category=row['value'])['count'], row['count'], row)
+        self.assertIn('NONE', [r['value'] for r in s['by_school_category']])  # students whose school has no category
+        for row in s['period_of_stay']:
+            self.assertEqual(self.listed(stay=row['key'])['count'], row['count'], row)
+        self.assertEqual(sum(r['count'] for r in s['period_of_stay']), s['total'])
+
+    def test_each_bar_of_the_monthly_charts_opens_the_students_it_counts(self):
+        s = self.dashboard()['students']
+        for series in ('trend_this_year', 'trend_last_year'):
+            year = self.today.year if series == 'trend_this_year' else self.today.year - 1
+            for row in s[series]:
+                if row['total'] is None:
+                    continue  # a month that has not started
+                month = f"{year}-{row['month']:02d}"
+                last_day = (date(year, row['month'], 1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+                self.assertEqual(self.listed(as_at=last_day.isoformat())['count'], row['total'], f'{month} students on the books')
+                self.assertEqual(self.listed(joined=month)['count'], row['new'], f'{month} new')
+                self.assertEqual(self.listed(left=month)['count'], row['left'], f'{month} left')
+
+    def test_students_without_a_monthly_invoice_open_the_same_list(self):
+        data = self.dashboard()
+        month = self.today.strftime('%Y-%m')
+        # active monthly students with classes: a, b, c, e; a already has this month's invoice
+        self.assertEqual(data['approvals']['monthly_invoices_pending'], 3)
+        listed = self.listed(uninvoiced=month)
+        self.assertEqual(listed['count'], 3)
+        self.assertNotIn(self.a.student_id, listed['student_ids'])
+
+    def test_the_list_holds_the_right_students_not_only_the_right_number(self):
+        self.assertEqual(sorted(self.listed(status='ACTIVE', type='WALK_IN')['student_ids']), [self.d.student_id])
+        self.assertEqual(sorted(self.listed(status='INACTIVE', form='F3')['student_ids']), sorted([self.g.student_id, self.h.student_id]))
+        self.assertEqual(self.listed(joined=self.today.strftime('%Y-%m'))['student_ids'].count(self.e.student_id), 1)
+        # as at a day before the first student left: both were still on the books
+        before_leaving = (self.today - timedelta(days=70)).isoformat()
+        self.assertIn(self.g.student_id, self.listed(as_at=before_leaving)['student_ids'])
+        self.assertNotIn(self.g.student_id, self.listed(as_at=self.today.isoformat())['student_ids'])
+
+    def test_filters_combine_and_nonsense_is_refused(self):
+        self.assertEqual(self.listed(status='ACTIVE', form='F5', school_category='SMK')['count'], 2)
+        self.as_role(ADMIN)
+        for bad in ({'status': 'ABC'}, {'type': 'X'}, {'joined': '2026-13'}, {'as_at': 'semalam'}, {'stay': 'forever'}, {'uninvoiced': 'oktober'}):
+            res = self.client.get('/api/v1/students/students/matching/', bad)
+            self.assertEqual(res.status_code, 400, bad)
+        self.client.force_authenticate(None)
+        self.assertIn(self.client.get('/api/v1/students/students/matching/').status_code, (401, 403))

@@ -183,6 +183,8 @@ export const studentsApi = {
   addFeedback: (data) => request('/students/feedback/', { method: 'POST', body: JSON.stringify(data) }),
   deleteFeedback: (id) => request(`/students/feedback/${id}/`, { method: 'DELETE' }),
   getAll: () => request('/students/students/'),
+  // The students a dashboard or report figure counts: { count, student_ids } (same rule as the figure)
+  matching: (params = {}) => request(`/students/students/matching/?${new URLSearchParams(params)}`),
   create: (data) => request('/students/students/', {
     method: 'POST',
     body: JSON.stringify(data),
