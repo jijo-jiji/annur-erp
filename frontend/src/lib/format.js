@@ -1,3 +1,6 @@
+import { displayPhone, whatsappDigits } from './phone';
+import { THRESHOLDS } from './thresholds';
+
 // Grade (form) list: starts with the standard grades and is replaced by the master-data list
 // once loaded (see store.jsx). Highest grade first, as drop-downs show it.
 export const FORMS = [
@@ -136,12 +139,11 @@ export function todayISO() {
 
 export const CURRENT_MONTH = todayISO().slice(0, 7);
 
-// Malaysian mobile number -> wa.me international format (012-345 6789 -> 60123456789)
-export function waNumber(phone) {
-  const digits = (phone || '').replace(/\D/g, '');
-  if (!digits) return '';
-  return digits.startsWith('60') ? digits : `6${digits}`;
-}
+// A phone number as the centre has chosen to show it (Settings > Format nombor telefon): +6013-347-4009 unless changed
+export const fmtPhone = (value) => displayPhone(value, THRESHOLDS.phone_prefix, THRESHOLDS.phone_separator);
+
+// The number for a wa.me link: digits with the country code (013-347 4009 -> 60133474009)
+export const waNumber = whatsappDigits;
 
 export function waLink(phone, text) {
   const num = waNumber(phone);

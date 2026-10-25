@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, FileText, Inbox } from 'lucide-react';
 import { studentsApi } from '../api/client';
 import { useStore } from '../store';
-import { clock, date } from '../lib/format';
+import { clock, date, fmtPhone } from '../lib/format';
 import { RESULT_GRADES, termOf } from '../lib/results';
 import { openAttachment, useBlobUrl } from './Attachments';
 import FormModal from './FormModal';
@@ -59,7 +59,7 @@ export default function ResultSubmissions({ onChanged }) {
                     <span className="font-normal text-gray-400"> · {sub.student_code}</span>
                   </p>
                   <p className="text-[13px] text-gray-500">
-                    {sub.term_label} {sub.year} · dihantar oleh {sub.submitted_by}{sub.relation ? ` (${sub.relation})` : ''}{sub.phone ? ` · ${sub.phone}` : ''} · {date(sub.created_at.slice(0, 10))} {clock(sub.created_at)} · {sub.reference}
+                    {sub.term_label} {sub.year} · dihantar oleh {sub.submitted_by}{sub.relation ? ` (${sub.relation})` : ''}{sub.phone ? ` · ${fmtPhone(sub.phone)}` : ''} · {date(sub.created_at.slice(0, 10))} {clock(sub.created_at)} · {sub.reference}
                   </p>
                   {sub.note && <p className="mt-1 text-[13px] text-gray-700">Catatan: {sub.note}</p>}
                   {sub.status !== 'PENDING' && (

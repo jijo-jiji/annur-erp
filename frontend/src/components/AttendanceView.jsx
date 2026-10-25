@@ -5,7 +5,7 @@ import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { useStore } from '../store';
 import { classLabel, preferredContact, timetableDay } from '../lib/domain';
-import { dateLong, initials, timeRange, todayISO } from '../lib/format';
+import { dateLong, fmtPhone, initials, timeRange, todayISO } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import { navigate } from '../lib/nav';
 import { attendanceHref, ATTENDANCE_FILTERS, describeAttendanceFilters, useDrill, useMatching } from '../lib/drilldown';
@@ -254,7 +254,7 @@ function Roster({ cls, day, teacher, onBack }) {
   };
 
   const exportCsv = () => downloadCsv(`kedatangan-${cls.code.replace(/\s+/g, '-')}-${day}.csv`, ['ID', 'Nama', 'Kedatangan', 'Catatan', 'Telefon penjaga'],
-    roster.map((s) => [s.id, s.name, STATE_LABEL[marks[s.id]], notes[s.id], s.phone]));
+    roster.map((s) => [s.id, s.name, STATE_LABEL[marks[s.id]], notes[s.id], fmtPhone(s.phone)]));
 
   return (
     <>
@@ -361,7 +361,7 @@ function Roster({ cls, day, teacher, onBack }) {
                     <li key={s.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-gray-900">{s.name}</p>
-                        <p className="text-[13px] text-gray-500">{p?.name || phone}</p>
+                        <p className="text-[13px] text-gray-500">{p?.name || fmtPhone(phone)}</p>
                       </div>
                       <WhatsAppButton size="sm" phone={phone} message={msg} recipient={p?.name}>
                         <WhatsAppIcon className="size-3.5" /> Maklum

@@ -41,7 +41,7 @@ class Command(BaseCommand):
             ("WITHDRAWAL_NOTICE_WEEKS", "2", "Tempoh notis pemberitahuan sebelum berhenti tuisyen"),
             ("CENTER_NAME", "Pusat Tuisyen An Nur", "Nama pusat tuisyen"),
             ("CENTER_BRANCH", "Telipot", "Cawangan"),
-            ("CENTER_PHONE", "013-983 8085", "Nombor telefon pusat"),
+            ("CENTER_PHONE", "60139838085", "Nombor telefon pusat"),
             ("CENTER_WHATSAPP", "60139838085", "Nombor WhatsApp pusat"),
             ("CENTER_ADDRESS", "Tingkat 1 & 2, PT 105, Seksyen 23, Jalan Telipot, 15150 Kota Bharu, Kelantan", "Alamat pusat"),
         ]
@@ -366,30 +366,30 @@ class Command(BaseCommand):
         # 6. Teachers (Elaun Guru 2026)
         teachers_data = [
             # Permanent
-            ("NAK", "Cikgu Nik Ahmad Khan", "019-9110001", "PERMANENT", 65.00, ["FZ"]),
-            ("AZ", "Cikgu Azahari", "019-9110002", "PERMANENT", 60.00, ["SAINS_L", "SAINS"]),
-            ("D", "Cikgu Diana", "019-9110003", "PERMANENT", 60.00, ["BIO"]),
-            ("F", "Cikgu Fadzlul", "019-9110004", "PERMANENT", 60.00, ["MATH_L"]),
-            ("G", "Cikgu Ghazani", "019-9110005", "PERMANENT", 60.00, ["BM", "BM_L"]),
-            ("HK", "Cikgu Hakimi", "019-9110006", "PERMANENT", 60.00, ["MATH"]),
-            ("K", "Cikgu Kamal", "019-9110007", "PERMANENT", 60.00, ["BM_L", "BM_P"]),
-            ("SAF", "Cikgu Safran", "019-9110008", "PERMANENT", 60.00, ["MATH", "MATH_L"]),
-            ("SF", "Cikgu Saiful", "019-9110009", "PERMANENT", 65.00, ["KIM", "MATH_L"]),
-            ("Z", "Cikgu Zakir", "019-9110010", "PERMANENT", 60.00, ["BI", "BI_L", "ADDMT"]),
-            ("AZM", "Cikgu Zamri", "019-9110011", "PERMANENT", 65.00, ["ADDMT", "BIO"]),
-            ("HS", "Cikgu Hasmini", "019-9110012", "PERMANENT", 55.00, ["SAINS_P"]),
-            ("AM", "Cikgu Amin", "019-9110013", "PERMANENT", 60.00, ["BIO", "SAINS"]),
-            ("A", "Cikgu Anis Sabreena", "019-9110014", "PERMANENT", 55.00, ["BI_P", "BI_L"]),
-            ("FQ", "Cikgu Faqihah", "019-9110015", "PERMANENT", 55.00, ["MATH_P"]),
-            ("M", "Cikgu Maheran", "019-9110016", "PERMANENT", 60.00, ["SEJ", "SEJ_L"]),
-            ("AT", "Cikgu Atiqah", "019-9110017", "PERMANENT", 60.00, ["ACC"]),
+            ("NAK", "Cikgu Nik Ahmad Khan", "60199110001", "PERMANENT", 65.00, ["FZ"]),
+            ("AZ", "Cikgu Azahari", "60199110002", "PERMANENT", 60.00, ["SAINS_L", "SAINS"]),
+            ("D", "Cikgu Diana", "60199110003", "PERMANENT", 60.00, ["BIO"]),
+            ("F", "Cikgu Fadzlul", "60199110004", "PERMANENT", 60.00, ["MATH_L"]),
+            ("G", "Cikgu Ghazani", "60199110005", "PERMANENT", 60.00, ["BM", "BM_L"]),
+            ("HK", "Cikgu Hakimi", "60199110006", "PERMANENT", 60.00, ["MATH"]),
+            ("K", "Cikgu Kamal", "60199110007", "PERMANENT", 60.00, ["BM_L", "BM_P"]),
+            ("SAF", "Cikgu Safran", "60199110008", "PERMANENT", 60.00, ["MATH", "MATH_L"]),
+            ("SF", "Cikgu Saiful", "60199110009", "PERMANENT", 65.00, ["KIM", "MATH_L"]),
+            ("Z", "Cikgu Zakir", "60199110010", "PERMANENT", 60.00, ["BI", "BI_L", "ADDMT"]),
+            ("AZM", "Cikgu Zamri", "60199110011", "PERMANENT", 65.00, ["ADDMT", "BIO"]),
+            ("HS", "Cikgu Hasmini", "60199110012", "PERMANENT", 55.00, ["SAINS_P"]),
+            ("AM", "Cikgu Amin", "60199110013", "PERMANENT", 60.00, ["BIO", "SAINS"]),
+            ("A", "Cikgu Anis Sabreena", "60199110014", "PERMANENT", 55.00, ["BI_P", "BI_L"]),
+            ("FQ", "Cikgu Faqihah", "60199110015", "PERMANENT", 55.00, ["MATH_P"]),
+            ("M", "Cikgu Maheran", "60199110016", "PERMANENT", 60.00, ["SEJ", "SEJ_L"]),
+            ("AT", "Cikgu Atiqah", "60199110017", "PERMANENT", 60.00, ["ACC"]),
             # Replacement Teachers
-            ("ROS", "Cikgu Roslan", "019-9220001", "REPLACEMENT", 55.00, ["SEJ", "BM"]),
-            ("JUL", "Dr Juliana", "019-9220002", "REPLACEMENT", 55.00, ["SAINS"]),
-            ("ELY", "Cikgu Elyas", "019-9220003", "REPLACEMENT", 55.00, ["KIM", "SAINS"]),
-            ("BAH", "Cikgu Bahirah", "019-9220004", "REPLACEMENT", 55.00, ["BI"]),
-            ("SUL", "Cikgu Sulia", "019-9220005", "REPLACEMENT", 55.00, ["SEJ"]),
-            ("BAL", "Cikgu Balkhis", "019-9220006", "REPLACEMENT", 55.00, ["KIM", "BIO", "FZ"]),
+            ("ROS", "Cikgu Roslan", "60199220001", "REPLACEMENT", 55.00, ["SEJ", "BM"]),
+            ("JUL", "Dr Juliana", "60199220002", "REPLACEMENT", 55.00, ["SAINS"]),
+            ("ELY", "Cikgu Elyas", "60199220003", "REPLACEMENT", 55.00, ["KIM", "SAINS"]),
+            ("BAH", "Cikgu Bahirah", "60199220004", "REPLACEMENT", 55.00, ["BI"]),
+            ("SUL", "Cikgu Sulia", "60199220005", "REPLACEMENT", 55.00, ["SEJ"]),
+            ("BAL", "Cikgu Balkhis", "60199220006", "REPLACEMENT", 55.00, ["KIM", "BIO", "FZ"]),
         ]
         t_dict = {}
         for code, name, phone, t_type, rate, q_subs in teachers_data:
@@ -533,11 +533,11 @@ class Command(BaseCommand):
 
         # 10. Sample Students
         sample_students = [
-            ("HQ-260001", "Ahmad Daniyal bin Razali", "090514-03-5511", "MONTHLY", "F5", "SAINS", "SMK Telipot", "011-23456781", "Razali bin Mahmud", "012-9876541", "Jurutera", "PARENT_1"),
-            ("HQ-260002", "Nur Aisyah binti Mohd Zaki", "090822-03-6622", "MONTHLY", "F5", "SAINS", "SMK Zainab 1", "011-23456782", "Mohd Zaki bin Salleh", "012-9876542", "Guru", "PARENT_1"),
-            ("HQ-260003", "Muhammad Haziq bin Imran", "100311-03-7733", "MONTHLY", "F4", "SAINS", "SMK Sultan Ismail", "011-23456783", "Imran bin Abdullah", "012-9876543", "Peniaga", "PARENT_1"),
-            ("HQ-260004", "Farah Nadiah binti Azman", "110425-03-8844", "MONTHLY", "F3", "GENERAL", "SMK Maktab Sultan Ismail", "011-23456784", "Azman bin Yusof", "012-9876544", "Pegawai Bank", "PARENT_1"),
-            ("HQ-260005", "Amirul Hakim bin Shukri", "140212-03-9955", "MONTHLY", "S6", "GENERAL", "SK Telipot", "011-23456785", "Shukri bin Ramli", "012-9876545", "Pensyarah", "PARENT_1"),
+            ("HQ-260001", "Ahmad Daniyal bin Razali", "090514-03-5511", "MONTHLY", "F5", "SAINS", "SMK Telipot", "601123456781", "Razali bin Mahmud", "60129876541", "Jurutera", "PARENT_1"),
+            ("HQ-260002", "Nur Aisyah binti Mohd Zaki", "090822-03-6622", "MONTHLY", "F5", "SAINS", "SMK Zainab 1", "601123456782", "Mohd Zaki bin Salleh", "60129876542", "Guru", "PARENT_1"),
+            ("HQ-260003", "Muhammad Haziq bin Imran", "100311-03-7733", "MONTHLY", "F4", "SAINS", "SMK Sultan Ismail", "601123456783", "Imran bin Abdullah", "60129876543", "Peniaga", "PARENT_1"),
+            ("HQ-260004", "Farah Nadiah binti Azman", "110425-03-8844", "MONTHLY", "F3", "GENERAL", "SMK Maktab Sultan Ismail", "601123456784", "Azman bin Yusof", "60129876544", "Pegawai Bank", "PARENT_1"),
+            ("HQ-260005", "Amirul Hakim bin Shukri", "140212-03-9955", "MONTHLY", "S6", "GENERAL", "SK Telipot", "601123456785", "Shukri bin Ramli", "60129876545", "Pensyarah", "PARENT_1"),
         ]
         for sid, name, ic, stype, flvl, strm, sch, sph, p1n, p1p, p1occ, pref in sample_students:
             stud, _ = Student.objects.update_or_create(
@@ -555,7 +555,7 @@ class Command(BaseCommand):
                     "parent1_phone": p1p,
                     "parent1_occupation": p1occ,
                     "parent2_name": "Puan Halimah",
-                    "parent2_phone": "013-8889999",
+                    "parent2_phone": "60138889999",
                     "preferred_contact": pref,
                     "status": "ACTIVE"
                 }
@@ -601,7 +601,7 @@ class Command(BaseCommand):
             defaults={
                 "vendor_name": "Pustaka Sri Telipot",
                 "pic_name": "Encik Razak",
-                "phone_number": "09-7441234",
+                "phone_number": "6097441234",
                 "bank_name": "CIMB Bank",
                 "bank_account": "8600112233",
                 "tin_number": "C-1234567890",
@@ -639,10 +639,10 @@ class Command(BaseCommand):
         # 13. CRM Leads (Kanban Conversion Funnel)
         self.stdout.write("Seeding CRM Leads...")
         sample_leads = [
-            ("LD-2026-001", "Muhammad Danish bin Faizal", "Encik Faizal", "019-9881122", "danish@gmail.com", "F5", "SMK Telipot", "TIKTOK", ["FZ", "KIM", "ADDMT"], "ENQUIRY", None, "", "Admin 1", "Berminat pakej 5 subjek SPM aliran Sains"),
-            ("LD-2026-002", "Nurul Izzati binti Rosli", "Puan Rosli", "019-9882233", "izzati@gmail.com", "F4", "SMK Zainab 1", "FB", ["BIO", "KIM"], "TRIAL", date(2026, 3, 10), "Hadir kelas percubaan Fizik & Kimia Sabtu lepas, waris sangat berpuas hati.", "Admin 2", "Menunggu pengesahan pendaftaran rasmi awal bulan depan."),
-            ("LD-2026-003", "Wan Arif bin Wan Kamal", "Wan Kamal", "019-9883344", "arif@gmail.com", "F3", "SMK Sultan Ismail", "WHATSAPP", ["MATH_L", "SAINS_L"], "REGISTERED", date(2026, 2, 25), "Selesai kelas trial dan terus bayar yuran pendaftaran.", "Admin 1", "Telah didaftarkan sebagai pelajar tetap."),
-            ("LD-2026-004", "Siti Aisyah binti Khairul", "Khairul", "019-9884455", "aisyah@gmail.com", "S6", "SK Telipot", "FLYER", ["MATH_P", "SAINS_P"], "ENQUIRY", None, "", "Admin 2", "Ibu bertanya tentang persediaan UASA Darjah 6"),
+            ("LD-2026-001", "Muhammad Danish bin Faizal", "Encik Faizal", "60199881122", "danish@gmail.com", "F5", "SMK Telipot", "TIKTOK", ["FZ", "KIM", "ADDMT"], "ENQUIRY", None, "", "Admin 1", "Berminat pakej 5 subjek SPM aliran Sains"),
+            ("LD-2026-002", "Nurul Izzati binti Rosli", "Puan Rosli", "60199882233", "izzati@gmail.com", "F4", "SMK Zainab 1", "FB", ["BIO", "KIM"], "TRIAL", date(2026, 3, 10), "Hadir kelas percubaan Fizik & Kimia Sabtu lepas, waris sangat berpuas hati.", "Admin 2", "Menunggu pengesahan pendaftaran rasmi awal bulan depan."),
+            ("LD-2026-003", "Wan Arif bin Wan Kamal", "Wan Kamal", "60199883344", "arif@gmail.com", "F3", "SMK Sultan Ismail", "WHATSAPP", ["MATH_L", "SAINS_L"], "REGISTERED", date(2026, 2, 25), "Selesai kelas trial dan terus bayar yuran pendaftaran.", "Admin 1", "Telah didaftarkan sebagai pelajar tetap."),
+            ("LD-2026-004", "Siti Aisyah binti Khairul", "Khairul", "60199884455", "aisyah@gmail.com", "S6", "SK Telipot", "FLYER", ["MATH_P", "SAINS_P"], "ENQUIRY", None, "", "Admin 2", "Ibu bertanya tentang persediaan UASA Darjah 6"),
         ]
         for lid, sname, pname, ph, em, flvl, sch, src, subs, st, tdate, tfb, asgn, nts in sample_leads:
             Lead.objects.update_or_create(
@@ -673,7 +673,7 @@ class Command(BaseCommand):
                 "role": "Pegawai Pentadbiran & Kaunter (Admin 1)",
                 "department": "Pentadbiran & Khidmat Pelanggan",
                 "ic_number": "960412-03-5124",
-                "phone": "013-9123456",
+                "phone": "60139123456",
                 "email": "siti.annur@gmail.com",
                 "join_date": date(2024, 1, 1),
                 "al_entitlement": 11,
@@ -689,7 +689,7 @@ class Command(BaseCommand):
                 "role": "Pegawai Pentadbiran & Media Sosial (Admin 2)",
                 "department": "Pentadbiran & Pemasaran",
                 "ic_number": "980915-03-5322",
-                "phone": "013-9876544",
+                "phone": "60139876544",
                 "email": "fizah.annur@gmail.com",
                 "join_date": date(2024, 6, 1),
                 "al_entitlement": 12,
@@ -705,7 +705,7 @@ class Command(BaseCommand):
                 "role": "Penyelia Akademik & Operasi (Supervisor)",
                 "department": "Pengurusan Akademik",
                 "ic_number": "850210-03-5001",
-                "phone": "019-9110016",
+                "phone": "60199110016",
                 "email": "maheran.annur@gmail.com",
                 "join_date": date(2022, 1, 1),
                 "al_entitlement": 14,

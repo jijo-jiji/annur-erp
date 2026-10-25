@@ -3,15 +3,9 @@ import { request } from '../api/client';
 import { loadCentre } from '../lib/centre';
 import { date } from '../lib/format';
 import { Button, Card, CardHeader, EmptyState, Input, Textarea, useToast } from './ui';
+import { whatsappDigits } from '../lib/phone';
 
 const when = (iso) => (iso ? `${date(String(iso).slice(0, 10))} ${new Date(iso).toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit' })}` : '');
-
-// The number WhatsApp links will use: country code, digits only (013-983 8085 becomes 60139838085)
-function whatsappPreview(value) {
-  let digits = String(value || '').replace(/\D/g, '');
-  if (digits.startsWith('0')) digits = `6${digits}`;
-  return digits;
-}
 
 // The centre's own details, in one place (Management only). Receipts, vouchers, payslips, the login page
 // and the messages to parents read them, so a change shows on the next document.
@@ -72,8 +66,8 @@ export default function CentrePanel() {
           <div className="sm:col-span-2">
             <Textarea label="Alamat" required value={f.address ?? ''} onChange={set('address')} error={[].concat(errors.address || []).join(' ') || undefined} />
           </div>
-          {field('phone', 'Telefon', { required: true })}
-          {field('whatsapp', 'Nombor WhatsApp', { required: true, hint: f.whatsapp ? `Pautan WhatsApp menggunakan ${whatsappPreview(f.whatsapp)}.` : undefined })}
+          {field('phone', 'Telefon', { required: true, type: 'tel' })}
+          {field('whatsapp', 'Nombor WhatsApp', { required: true, type: 'tel', hint: f.whatsapp ? `Pautan WhatsApp menggunakan ${whatsappDigits(f.whatsapp)}.` : undefined })}
           {field('email', 'E-mel', { type: 'email' })}
         </div>
       </Card>

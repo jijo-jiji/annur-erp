@@ -22,6 +22,7 @@ test.describe('Approval requests', () => {
     await form.getByLabel('Nama subjek').fill(name);
     await form.getByLabel('Peringkat').selectOption({ index: 1 });
     await form.getByLabel('Aliran').selectOption({ index: 1 });
+    await form.getByLabel(/^Kategori/).selectOption('TERAS');
     await form.getByLabel('Sebab permohonan').fill('Kelas baharu bermula bulan depan');
     await form.locator('button[type="submit"]').click();
     await expect(toast(page).filter({ hasText: 'Permohonan dihantar' })).toBeVisible();

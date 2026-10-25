@@ -10,7 +10,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
 from rest_framework.exceptions import ValidationError
 from business_config.models import DynamicMasterData, SubjectMaster
-from core import grades, numbering
+from core import grades, numbering, phone as phones
 from . import leads
 from .models import Lead, Student
 
@@ -19,19 +19,9 @@ SUBJECT_SPLIT = re.compile(r'[;|/,]')
 
 
 def clean_phone(raw):
-    """Digits as Malaysians write numbers: spaces, dashes and brackets removed, +60 / 60 become 0, and the leading 0
-    that Excel drops is put back. An empty string means it cannot be a phone number."""
-    digits = re.sub(r'\D', '', str(raw or ''))
-    if digits.startswith('60') and len(digits) >= 10:
-        digits = '0' + digits[2:]
-    elif digits.startswith('1') and len(digits) in (9, 10):
-        digits = '0' + digits
-    return digits if 9 <= len(digits) <= 12 else ''
-
-
-def show_phone(digits):
-    """012-3456789, the way the centre writes mobile numbers; other numbers are left as digits."""
-    return f'{digits[:3]}-{digits[3:]}' if re.fullmatch(r'01\d{8,9}', digits) else digits
+    """The number as the system keeps it (core/phone.py: 60133474009), whatever style the file used and even when Excel dropped
+    the leading 0. An empty string means it cannot be a phone number."""
+    return phones.normalize(raw) or ''
 
 
 def _lookup(items):
@@ -111,7 +101,7 @@ def check_row(raw, defaults, lists, seen, number):
     phone = clean_phone(value('phone'))
     if not phone:
         errors.append('No. telefon tiada atau tidak sah.')
-    data['phone'] = show_phone(phone) if phone else value('phone')
+    data['phone'] = phone or value('phone')
 
     source = value('lead_source') or defaults.get('lead_source', '')
     if not source:

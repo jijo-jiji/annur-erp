@@ -1,6 +1,12 @@
 // Downloads rows as a CSV file that opens directly in Excel (UTF-8 with a byte-order mark)
 export function downloadCsv(filename, header, rows) {
-  const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  // Excel treats a cell that starts with + - = or @ as a formula (+6013-347-4009 would become a sum), so text like that is written
+  // as ="text", which Excel shows as the text itself. Numbers are not text and are left alone.
+  const escape = (v) => {
+    const text = String(v ?? '');
+    const asText = typeof v === 'string' && /^[=+\-@]/.test(text) ? `="${text.replace(/"/g, '""')}"` : text;
+    return `"${asText.replace(/"/g, '""')}"`;
+  };
   const csv = [header, ...rows].map((r) => r.map(escape).join(',')).join('\r\n');
   const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');

@@ -4,6 +4,7 @@ import { leadsApi } from '../api/client';
 import { downloadCsv } from '../lib/csv';
 import { LEAD_COLUMNS, LEAD_TEMPLATE, readLeadCsv } from '../lib/leadImport';
 import { Badge, Button, Input, Modal, Select, Table, Td, Th } from './ui';
+import { fmtPhone } from '../lib/format';
 
 const STATUS = {
   ok: { label: 'Sedia', tone: 'green' },
@@ -158,7 +159,7 @@ export default function LeadImportModal({ onClose, onImported, stages, sources, 
                         {leftOut(preview).slice(0, SHOWN_PROBLEMS).map((r) => (
                           <tr key={r.row} className="align-top">
                             <Td className="whitespace-nowrap tnum">{r.row + 1}</Td>
-                            <Td className="text-gray-700">{[r.name, r.phone].filter(Boolean).join(' · ') || '—'}</Td>
+                            <Td className="text-gray-700">{[r.name, fmtPhone(r.phone)].filter(Boolean).join(' · ') || '—'}</Td>
                             <Td><Badge tone={STATUS[r.status].tone}>{STATUS[r.status].label}</Badge></Td>
                             <Td className="text-[13px] text-gray-600">{r.messages.join(' ')}</Td>
                           </tr>

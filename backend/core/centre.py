@@ -12,6 +12,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from . import phone
 from .models import SettingEvent
 from .permissions import MANAGEMENT, display_name, require_role
 
@@ -27,21 +28,14 @@ def _text(maximum, required=False, label=''):
     return clean
 
 
-def _phone(value):
-    value = ' '.join(str(value or '').split())
-    if not re.fullmatch(r'[0-9+()\- ]{7,30}', value):
-        raise ValueError('Nombor telefon tidak sah, cth. 013-983 8085.')
-    return value
-
-
-def _whatsapp(value):
-    """Digits with the country code and no plus sign, which is what WhatsApp links need: 013-983 8085 becomes 60139838085."""
-    digits = re.sub(r'\D', '', str(value or ''))
-    if digits.startswith('0'):
-        digits = '6' + digits
-    if not 9 <= len(digits) <= 15:
-        raise ValueError('Nombor WhatsApp tidak sah, cth. 013-983 8085.')
-    return digits
+def _number(label):
+    """The centre's numbers are kept like every other number in the system (core/phone.py): 013-983 8085 becomes 60139838085."""
+    def clean(value):
+        stored = phone.normalize(value)
+        if not stored:
+            raise ValueError(f'{label} tidak sah, cth. 60139838085 atau 013-983 8085.')
+        return stored
+    return clean
 
 
 def _email(value):
@@ -73,8 +67,8 @@ FIELDS = {
     'name': ('CENTER_NAME', 'Nama pusat', True, 'Pusat Tuisyen An Nur', _text(100, True, 'Nama pusat')),
     'branch': ('CENTER_BRANCH', 'Cawangan', True, 'Telipot', _text(60, False, 'Cawangan')),
     'address': ('CENTER_ADDRESS', 'Alamat', True, 'Tingkat 1 & 2, PT 105, Seksyen 23, Jalan Telipot, 15150 Kota Bharu, Kelantan', _text(250, True, 'Alamat')),
-    'phone': ('CENTER_PHONE', 'Telefon', True, '013-983 8085', _phone),
-    'whatsapp': ('CENTER_WHATSAPP', 'WhatsApp', True, '60139838085', _whatsapp),
+    'phone': ('CENTER_PHONE', 'Telefon', True, '60139838085', _number('Nombor telefon')),
+    'whatsapp': ('CENTER_WHATSAPP', 'WhatsApp', True, '60139838085', _number('Nombor WhatsApp')),
     'email': ('CENTER_EMAIL', 'E-mel', True, '', _email),
     'tin': ('CENTER_TIN', 'No. TIN', False, '', _tin),
     'bank_name': ('CENTER_BANK_NAME', 'Bank', False, '', _text(60, False, 'Nama bank')),

@@ -9,7 +9,7 @@ from academic.models import ClassTimetable, TimeSlot
 from business_config.models import BusinessSetting, DynamicMasterData, PricingTier, SubjectMaster
 from core.permissions import ADMIN, ALL_ROLES, MANAGEMENT, SUPERVISOR
 from expenses.models import PaymentVoucher, Vendor
-from students.models import Student
+from students.models import ResultSubmission, Student
 
 
 class FeedbackBase(APITestCase):
@@ -33,7 +33,7 @@ class FeedbackBase(APITestCase):
         self.as_role(ADMIN)
         res = self.client.post('/api/v1/students/students/', {
             'full_name': name, 'ic_number': '090101-03-1234', 'form_level': 'F5', 'school_name': 'SK Telipot',
-            'parent1_name': 'Bapa', 'parent1_phone': '012', 'class_ids': class_ids if class_ids is not None else [self.fz.id],
+            'parent1_name': 'Bapa', 'parent1_phone': '012-345 6789', 'class_ids': class_ids if class_ids is not None else [self.fz.id],
         }, format='json')
         self.assertEqual(res.status_code, 201, res.data)
         return res.data
@@ -287,3 +287,8 @@ class PhaseCSchoolResultsTests(FeedbackBase):
         self.assertEqual(self.submit([{'subject': primary.id, 'mark': 50}]).status_code, 400)
         self.assertEqual(self.submit([{'subject': self.fizik.id, 'mark': ''}]).status_code, 400)
         self.assertEqual(self.submit([{'subject': self.fizik.id, 'mark': 50}], submitted_by='').status_code, 400)
+
+    def test_the_sender_s_phone_is_kept_in_the_one_stored_form(self):
+        self.assertEqual(self.submit([{'subject': self.fizik.id, 'mark': 50}], phone='012').status_code, 400)
+        self.assertEqual(self.submit([{'subject': self.fizik.id, 'mark': 50}], phone='013-347 4009').status_code, 201)
+        self.assertEqual(ResultSubmission.objects.get().phone, '60133474009')

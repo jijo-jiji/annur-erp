@@ -17,7 +17,7 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from academic.models import ClassTimetable
 from business_config.models import SubjectMaster
-from core import files, grades
+from core import files, grades, phone
 from core.models import Attachment
 from core.permissions import display_name
 from . import exam_terms
@@ -311,6 +311,9 @@ def public_results_submit(request):
     sender = str(request.data.get('submitted_by') or '').strip()[:120]
     if not sender:
         raise ValidationError({'submitted_by': 'Nyatakan nama anda.'})
+    sender_phone = phone.normalize(request.data.get('phone'))
+    if sender_phone is None:
+        raise ValidationError({'phone': phone.HELP})
     slip = request.FILES.get('slip')
     content_type = files.validate_upload('RESULT_SLIP', slip) if slip else None
     with transaction.atomic():
@@ -319,7 +322,7 @@ def public_results_submit(request):
         sub = sub or ResultSubmission(student=student, year=year, term=term)
         sub.form_level, sub.rows, sub.submitted_by = student.form_level, clean, sender
         sub.relation = str(request.data.get('relation') or '')[:30]
-        sub.phone = str(request.data.get('phone') or '')[:30]
+        sub.phone = sender_phone
         sub.note = str(request.data.get('note') or '')[:1000]
         sub.save()
         if slip:

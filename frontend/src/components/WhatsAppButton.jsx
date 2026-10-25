@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Copy } from 'lucide-react';
-import { waLink } from '../lib/format';
+import { fmtPhone, waLink } from '../lib/format';
 import { Button, Modal, Textarea, useToast, WhatsAppIcon } from './ui';
 
 // A prepared WhatsApp message opens in a preview first, so staff can read and change the wording for this
@@ -24,7 +24,7 @@ export default function WhatsAppButton({ phone, message, recipient, onSent, chil
         open={text !== null}
         onClose={() => setText(null)}
         title="Semak mesej WhatsApp"
-        description={`Kepada ${recipient ? `${recipient} · ` : ''}${phone}. Ubah ayat jika perlu; perubahan ini untuk mesej ini sahaja.`}
+        description={`Kepada ${recipient ? `${recipient} · ` : ''}${fmtPhone(phone)}. Ubah ayat jika perlu; perubahan ini untuk mesej ini sahaja.`}
         footer={
           <>
             <Button onClick={() => setText(null)}>Batal</Button>

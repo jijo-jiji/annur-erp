@@ -11,6 +11,8 @@ async function createThroughTheForm(page, { amount, description }) {
   const form = page.getByRole('dialog', { name: 'Baucar bayaran baharu' });
   await form.getByLabel('Penerima bayaran').selectOption({ index: 1 });
   await form.getByLabel(/^Kategori/).selectOption({ index: 1 });
+  const sub = form.getByLabel(/^Subkategori/);
+  if (await sub.locator('option').count() > 1) await sub.selectOption({ index: 1 });
   await form.getByLabel('Amaun (RM)').fill(String(amount));
   await form.getByLabel('Perkara / tujuan bayaran').fill(description);
   await form.getByRole('button', { name: 'Simpan baucar' }).click();

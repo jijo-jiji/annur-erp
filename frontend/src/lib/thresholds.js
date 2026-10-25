@@ -20,6 +20,10 @@ export const THRESHOLDS = {
   upload_handout_mb: 25,
   // Finished prospects stay on the board this many days
   lead_board_days: 30,
+  // How telephone numbers read and are typed (see lib/phone.js)
+  phone_prefix: 'plus60',
+  phone_separator: 'dash',
+  phone_input: '60',
   // Names of the lead stages
   lead_label_ENQUIRY: 'Enquiry',
   lead_label_CONTENT_1: 'Content 1',

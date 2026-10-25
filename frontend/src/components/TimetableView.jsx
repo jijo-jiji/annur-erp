@@ -8,7 +8,7 @@ import { useStore } from '../store';
 import { classLabel, preferredContact } from '../lib/domain';
 import { can } from '../lib/permissions';
 import { navigate } from '../lib/nav';
-import { date, DAY_LABEL, FORMS, formLabel, STUDENT_STATUS, timeRange } from '../lib/format';
+import { date, DAY_LABEL, FORMS, formLabel, STUDENT_STATUS, timeRange, fmtPhone } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import TimetableChangesPanel from './TimetableChangesPanel';
 import { Badge, Button, Card, cx, EmptyState, Input, Modal, PageHeader, SeatMeter, Segmented, Select, Table, Td, Th, useToast } from './ui';
@@ -311,7 +311,7 @@ function ClassModal({ cls, role, onClose, onEdit, onChanged }) {
     (s) => ['ACTIVE', 'PENDING'].includes(s.status) && s.form === cls.form && !s.classes.includes(cls.id) && !waits.some((w) => w.studentId === s.id),
   );
   const exportList = () => downloadCsv(`senarai-${cls.code.replace(/\s+/g, '-')}.csv`, ['#', 'ID', 'Nama', 'Sekolah', 'Telefon pelajar', 'Penjaga', 'Telefon penjaga', 'Status'],
-    roster.map((s, i) => { const p = preferredContact(s); return [i + 1, s.id, s.name, s.school, s.phone, p?.name, p?.phone, STUDENT_STATUS[s.status]?.label]; }));
+    roster.map((s, i) => { const p = preferredContact(s); return [i + 1, s.id, s.name, s.school, fmtPhone(s.phone), p?.name, fmtPhone(p?.phone), STUDENT_STATUS[s.status]?.label]; }));
 
   return (
     <Modal
@@ -450,7 +450,7 @@ function ClassModal({ cls, role, onClose, onEdit, onChanged }) {
                       {s.status !== 'ACTIVE' && <span className="ml-2 text-xs text-amber-700">{STUDENT_STATUS[s.status]?.label}</span>}
                     </td>
                     <td className="py-2 text-gray-600">{s.school}</td>
-                    <td className="py-2 text-gray-600">{p?.phone}</td>
+                    <td className="py-2 text-gray-600">{fmtPhone(p?.phone)}</td>
                   </tr>
                 );
               })}

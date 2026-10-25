@@ -724,13 +724,13 @@ class TeacherRequestTests(RoleTestBase):
         from business_config.models import SubjectMaster
         self.math = SubjectMaster.objects.create(code='MT', name='Matematik', level_category='UPPER_SEC')
         self.bio = SubjectMaster.objects.create(code='BIO', name='Biologi', level_category='UPPER_SEC')
-        self.teacher = Teacher.objects.create(teacher_code='NAK', full_name='Nur Aini', phone_number='011', rate_per_session=60)
+        self.teacher = Teacher.objects.create(teacher_code='NAK', full_name='Nur Aini', phone_number='60112345011', rate_per_session=60)
 
     def ask(self, action, payload, target_id=None, note='Perlu'):
         return self.client.post(self.URL, {'kind': 'TEACHER', 'action': action, 'target_id': target_id, 'payload': payload, 'note': note}, format='json')
 
     def new_teacher(self, code='sf', **extra):
-        payload = {'teacher_code': code, 'full_name': 'Siti Fatimah', 'phone_number': '012', 'teacher_type': 'REPLACEMENT',
+        payload = {'teacher_code': code, 'full_name': 'Siti Fatimah', 'phone_number': '60123450012', 'teacher_type': 'REPLACEMENT',
                    'rate_per_session': '55', 'bank_name': 'Maybank', 'bank_account': '555', 'subjects_qualified': [self.math.id, self.bio.id],
                    'teaching_since': '2015-01-01', 'teaching_permit_expiry': '2027-03-01', **extra}
         return self.ask('CREATE', payload)
@@ -764,16 +764,16 @@ class TeacherRequestTests(RoleTestBase):
         self.as_role(SUPERVISOR)
         self.assertEqual(self.ask('UPDATE', {'rate_per_session': '99'}, self.teacher.id).status_code, 400)
         self.assertEqual(self.ask('UPDATE', {'teacher_code': 'ZZ'}, self.teacher.id).status_code, 400)
-        res = self.ask('UPDATE', {'phone_number': '019', 'bank_account': '777', 'teacher_type': 'REPLACEMENT', 'rate_per_session': '60'}, self.teacher.id)
+        res = self.ask('UPDATE', {'phone_number': '019-123 4019', 'bank_account': '777', 'teacher_type': 'REPLACEMENT', 'rate_per_session': '60'}, self.teacher.id)
         self.assertEqual(res.status_code, 201, res.data)
         self.assertEqual({c['field'] for c in res.data['changes']}, {'phone_number', 'bank_account', 'teacher_type'})  # the unchanged rate is dropped
         self.teacher.refresh_from_db()
-        self.assertEqual((self.teacher.phone_number, self.teacher.teacher_type), ('011', 'PERMANENT'))
+        self.assertEqual((self.teacher.phone_number, self.teacher.teacher_type), ('60112345011', 'PERMANENT'))
         self.as_role(MANAGEMENT)
         self.client.post(f"{self.URL}{res.data['id']}/approve/", {}, format='json')
         self.teacher.refresh_from_db()
         self.assertEqual((self.teacher.phone_number, self.teacher.bank_account, self.teacher.teacher_type, float(self.teacher.rate_per_session)),
-                         ('019', '777', 'REPLACEMENT', 60.0))
+                         ('60191234019', '777', 'REPLACEMENT', 60.0))
 
     def test_a_teacher_with_classes_cannot_be_made_inactive(self):
         from academic.models import ClassTimetable, TimeSlot
@@ -818,9 +818,9 @@ class TeacherRequestTests(RoleTestBase):
         self.assertEqual(self.new_teacher(teaching_since='bukan tarikh').status_code, 400)
         self.assertEqual(self.new_teacher().status_code, 201)
         self.assertEqual(self.new_teacher().status_code, 400)  # same code already waiting
-        self.assertEqual(self.ask('UPDATE', {'phone_number': '019'}, self.teacher.id).status_code, 201)
-        self.assertEqual(self.ask('UPDATE', {'phone_number': '018'}, self.teacher.id).status_code, 400)  # one change at a time
-        self.assertEqual(self.ask('UPDATE', {'phone_number': '011'}, self.teacher.id).status_code, 400)  # unchanged
+        self.assertEqual(self.ask('UPDATE', {'phone_number': '019-123 4019'}, self.teacher.id).status_code, 201)
+        self.assertEqual(self.ask('UPDATE', {'phone_number': '018-123 4018'}, self.teacher.id).status_code, 400)  # one change at a time
+        self.assertEqual(self.ask('UPDATE', {'phone_number': '011-234 5011'}, self.teacher.id).status_code, 400)  # unchanged (the same number in another style)
         self.assertEqual(Teacher.objects.count(), 1)
 
     def test_teachers_cannot_be_written_directly(self):
@@ -1359,13 +1359,13 @@ class CentreProfileTests(RoleTestBase):
 
         self.client.force_authenticate(None)
         public = self.client.get(self.PUBLIC).data
-        self.assertEqual((public['phone'], public['email']), ('09-747 1234', 'admin@annur.example'))
+        self.assertEqual((public['phone'], public['email']), ('6097471234', 'admin@annur.example'))
         self.assertNotIn('tin', public)
 
         self.as_role(MANAGEMENT)
         events = self.client.get('/api/v1/centre/events/').data
         changed = {e['label']: (e['old'], e['new']) for e in events}
-        self.assertEqual(changed['Telefon'], ('013-983 8085', '09-747 1234'))
+        self.assertEqual(changed['Telefon'], ('60139838085', '6097471234'))
         self.assertEqual(changed['No. TIN'], ('', 'C 1234567-89'))
         self.assertNotIn('Nama pusat', changed)  # the name only had extra spaces, so nothing changed
         self.assertEqual(events[0]['by'], 'management')
@@ -1389,7 +1389,7 @@ class CentreProfileTests(RoleTestBase):
         self.client.put(self.PROFILE, {'name': 'Pusat Ilmu Baharu', 'phone': '09-111 2222', 'tin': 'C 99887766-01'}, format='json')
         header = ' '.join(p.text for p in pdf._header('RESIT RASMI') if hasattr(p, 'text'))
         self.assertIn('PUSAT ILMU BAHARU', header)
-        self.assertIn('09-111 2222', header)
+        self.assertIn('+609-111-2222', header)  # a number reads the way Settings says (+6013-347-4009 style by default)
         self.assertIn('C 99887766-01', header)
 
     def test_the_general_settings_endpoint_does_not_bypass_the_checks(self):
@@ -1669,7 +1669,7 @@ class SettingDefaultsTests(RoleTestBase):
         return self.client.put(self.URL, changes, format='json')
 
     def new_staff(self, **extra):
-        return self.client.post('/api/v1/teachers/staff/', {'name': 'Aina', 'role': 'Kerani', 'department': 'Pejabat', 'phone': '011', **extra}, format='json')
+        return self.client.post('/api/v1/teachers/staff/', {'name': 'Aina', 'role': 'Kerani', 'department': 'Pejabat', 'phone': '011-234 5011', **extra}, format='json')
 
     def test_new_staff_start_from_the_centre_defaults(self):
         self.as_role(MANAGEMENT)

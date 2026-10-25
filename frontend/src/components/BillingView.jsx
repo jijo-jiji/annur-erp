@@ -12,7 +12,7 @@ import {
   addMonths, arrearsCases, invoiceBalance, invoiceStatus, monthlyFee, preferredContact,
 } from '../lib/domain';
 import {
-  CURRENT_MONTH, date, formLabel, monthLabel, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, rm, tierGroupLabel, todayISO,
+  CURRENT_MONTH, date, fmtPhone, formLabel, monthLabel, PAYMENT_METHOD_LABEL, PAYMENT_TYPE_LABEL, rm, tierGroupLabel, todayISO,
 } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import {
@@ -399,7 +399,7 @@ function ArrearsPanel({ cases, role, openInvoices, onPay }) {
                         {s.name}
                       </a>
                       <p className="text-[13px] text-gray-500">
-                        {contact.name} · {contact.phone}
+                        {contact.name} · {fmtPhone(contact.phone)}
                       </p>
                     </Td>
                     <Td className="text-gray-700">{overdue.map((i) => monthLabel(i.month)).join(', ')}</Td>
@@ -452,7 +452,7 @@ function ArrearsPanel({ cases, role, openInvoices, onPay }) {
             size="sm"
             icon={Download}
             onClick={() => downloadCsv(`tertunggak-${today}.csv`, ['Invois', 'Pelajar', 'Penjaga', 'Telefon', 'Baki', 'Tarikh akhir', 'Hari lewat', 'Susulan', 'Peringatan', 'Terakhir'],
-              open.map((i) => [i.no, i.studentName, i.parentName, i.phone, invoiceBalance(i), i.dueDate, daysLate(i), followUpLabel(i), i.reminders, i.lastReminder || '']))}
+              open.map((i) => [i.no, i.studentName, i.parentName, fmtPhone(i.phone), invoiceBalance(i), i.dueDate, daysLate(i), followUpLabel(i), i.reminders, i.lastReminder || '']))}
           >
             CSV
           </Button>
@@ -482,7 +482,7 @@ function ArrearsPanel({ cases, role, openInvoices, onPay }) {
                       <a href={`#/students/${inv.studentId}?tab=fees`} className="font-medium text-gray-900 hover:text-brand-700 hover:underline">
                         {inv.studentName}
                       </a>
-                      <p className="text-[13px] text-gray-500">{contact.name} · {contact.phone}</p>
+                      <p className="text-[13px] text-gray-500">{contact.name} · {fmtPhone(contact.phone)}</p>
                     </Td>
                     <Td className="whitespace-nowrap">
                       <p className="text-gray-900">{inv.no}</p>
@@ -919,7 +919,7 @@ export function ReceiptDocument({ receipt: r }) {
         <div>
           <p className="text-base font-semibold text-gray-900">{CENTRE.name}</p>
           <p className="max-w-xs text-[13px] text-gray-500">{CENTRE.address}</p>
-          <p className="text-[13px] text-gray-500">Tel: {CENTRE.phone}</p>
+          <p className="text-[13px] text-gray-500">Tel: {fmtPhone(CENTRE.phone)}</p>
           {CENTRE.tin && <p className="text-[13px] text-gray-500">No. TIN: {CENTRE.tin}</p>}
         </div>
         <div className="text-right">

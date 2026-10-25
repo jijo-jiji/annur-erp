@@ -3,10 +3,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pencil, Plus } from 'lucide-react';
 import { authApi, hrApi } from '../api/client';
 import { useApp } from '../context/AppContext';
-import { date, todayISO } from '../lib/format';
+import { date, todayISO, fmtPhone } from '../lib/format';
 import { AttachmentList, DOC_TYPES, PhotoBox } from './Attachments';
 import FormModal from './FormModal';
-import { Badge, Button, cx, inputClass, Modal, Table, Td, Th } from './ui';
+import { Badge, Button, cx, inputClass, Modal, Table, Td, Th, TelInput } from './ui';
 
 export const MARITAL = [
   { id: 'SINGLE', label: 'Bujang' },
@@ -52,6 +52,7 @@ function display(field, value, staff) {
   if (field === 'is_active') return value ? 'Aktif' : 'Tidak aktif';
   if (field === 'user') return staff.username || '—';
   if (DATE_FIELDS.includes(field)) return date(value);
+  if (field === 'phone' || field === 'emergency_phone') return fmtPhone(value);
   return String(value);
 }
 
@@ -82,6 +83,7 @@ function FieldInput({ field, value, onChange, users }) {
       </div>
     );
   }
+  if (field === 'phone' || field === 'emergency_phone') return <TelInput value={value ?? ''} onChange={(e) => set(e.target.value)} />;
   if (['address', 'skills', 'emergency_address'].includes(field)) return <textarea rows={2} value={value || ''} onChange={(e) => set(e.target.value)} className={inputClass} />;
   const type = DATE_FIELDS.includes(field) ? 'date'
     : ['work_start', 'work_end'].includes(field) ? 'time'

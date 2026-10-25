@@ -6,7 +6,7 @@ import { useStore } from '../store';
 import { can } from '../lib/permissions';
 import { navigate } from '../lib/nav';
 import { classLabel } from '../lib/domain';
-import { CURRENT_MONTH, date, DAY_LABEL, FORMS, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
+import { CURRENT_MONTH, date, DAY_LABEL, fmtPhone, FORMS, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import { describeTeacherFilters, TEACHER_FILTERS, useDrill, useMatching } from '../lib/drilldown';
 import { THRESHOLDS } from '../lib/thresholds';
@@ -30,7 +30,7 @@ function teacherFields(adding, subjectOptions, rateHint) {
   return [
     ...(adding ? [{ name: 'teacher_code', label: 'Kod guru', required: true, hint: 'Singkatan nama, cth. NAK. Digunakan dalam kod kelas dan tidak boleh diubah.' }] : []),
     { name: 'full_name', label: 'Nama penuh', required: true },
-    { name: 'phone_number', label: 'Telefon', required: true },
+    { name: 'phone_number', label: 'Telefon', required: true, type: 'tel' },
     { name: 'email', label: 'E-mel', type: 'email' },
     { name: 'teacher_type', label: 'Kategori guru', type: 'select', required: true, options: TEACHER_TYPES },
     ...(adding ? [{ name: 'rate_per_session', label: 'Kadar permulaan (RM / sesi)', type: 'number', min: '0', step: '0.01', required: true, hint: `${rateHint ? `${rateHint} ` : ''}Kenaikan seterusnya melalui tab Kenaikan kadar supaya sejarah direkod.` }] : []),
@@ -150,7 +150,7 @@ export default function TeachersView({ role }) {
   const exportCsv = () => downloadCsv('senarai-guru.csv',
     ['Kod', 'Nama', 'Kategori', 'Subjek', 'Tingkatan', 'Kelas seminggu', 'Telefon', 'Permit mengajar', ...(showPay ? ['Kadar sesi (RM)'] : [])],
     rows.map((t) => [t.code, t.name, t.type === 'PERMANENT' ? 'Tetap' : 'Sambilan', t.subjects, [...new Set(taught(t.code).map((c) => formShort(c.form)))].sort().join(' '),
-      taught(t.code).length, t.phone, t.permitExpiry || '', ...(showPay ? [t.rate] : [])]));
+      taught(t.code).length, fmtPhone(t.phone), t.permitExpiry || '', ...(showPay ? [t.rate] : [])]));
 
   return (
     <>
@@ -262,7 +262,7 @@ export default function TeachersView({ role }) {
                                 Cikgu {t.name} <span className="font-normal text-gray-400">· {t.code}</span>
                               </p>
                               <p className="text-[13px] text-gray-500">
-                                {t.type === 'PERMANENT' ? 'Guru tetap' : 'Guru sambilan'}{t.since ? ` · sejak ${t.since}` : ''}{experienceYears(t.teachingSince) !== null ? ` · ${experienceYears(t.teachingSince)} tahun mengajar` : ''} · {t.phone}
+                                {t.type === 'PERMANENT' ? 'Guru tetap' : 'Guru sambilan'}{t.since ? ` · sejak ${t.since}` : ''}{experienceYears(t.teachingSince) !== null ? ` · ${experienceYears(t.teachingSince)} tahun mengajar` : ''} · {fmtPhone(t.phone)}
                                 <span className="xl:hidden">{t.subjects && ` · ${t.subjects}`}</span>
                               </p>
                             </div>

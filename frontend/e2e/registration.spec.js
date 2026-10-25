@@ -68,7 +68,7 @@ test.describe.serial('Registration to payment', () => {
     const students = await api(request, 'SUPERVISOR', 'GET', '/students/students/');
     const saved = students.find((s) => s.full_name === student.name);
     expect(saved.status).toBe('ACTIVE');
-    expect(saved.student_id).toMatch(/^AN-\d{4}-\d{3}$/);
+    expect(saved.student_id).toMatch(/^HQ-\d{2}\d{4,}$/); // prefix, year, running number
   });
 
   test('the counter takes the first payment and a numbered receipt is issued', async ({ page, request }) => {
@@ -120,7 +120,7 @@ test.describe('Parents register from the QR code', () => {
     await page.getByRole('button', { name: 'Hantar pendaftaran' }).click();
 
     await expect(page.getByRole('heading', { name: 'Pendaftaran diterima' })).toBeVisible();
-    await expect(page.getByText(/AN-\d{4}-\d{3}/).first()).toBeVisible();
+    await expect(page.getByText(/HQ-\d{6,}/).first()).toBeVisible();
     const saved = (await api(page.request, 'SUPERVISOR', 'GET', '/students/students/')).find((x) => x.full_name === child);
     expect(saved.phone_number).toBe('');
 
