@@ -63,6 +63,10 @@ class Invoice(models.Model):
         return f"[{self.invoice_number}] {self.student.full_name} - RM{self.total_payable} ({self.status})"
 
 class PaymentReceipt(models.Model):
+    """One payment. A receipt is never edited or removed: a wrong one is cancelled with a reason (its amount comes off the
+    invoice again) and, for a correction, a new receipt with the right details replaces it. Cancelled receipts keep their
+    number, so numbers are never reused, and stay in the list struck through."""
+    STATUS_CHOICES = [('VALID', 'Sah'), ('CANCELLED', 'Dibatalkan')]
     METHOD_CHOICES = [
         ('DUITNOW_QR', 'DuitNow QR'),
         ('ONLINE_BANKING', 'Online Banking / FPX'),
@@ -87,7 +91,43 @@ class PaymentReceipt(models.Model):
     overpaid_amount = models.DecimalField(max_digits=8, decimal_places=2, default=0)  # moved to student credit
     whatsapp_sent = models.BooleanField(default=False)
     received_by = models.CharField(max_length=100, default='Admin Pejabat')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='VALID', db_index=True)
+    cancel_reason = models.TextField(blank=True)
+    cancelled_by = models.CharField(max_length=150, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    # A corrected receipt points to the cancelled one it replaces
+    replaces = models.OneToOneField('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='replaced_by')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"[{self.receipt_number}] RM{self.amount_paid} ({self.payment_method})"
+
+
+class DailyCashClose(models.Model):
+    """Tutup kaunter harian: the day's receipts by payment method, the cash the counter should hold and the cash counted.
+    Admin closes the day (and may close it again until it is verified); Supervisor verifies it or returns it for a recount.
+    The totals are kept as they were at closing, so a receipt added or cancelled for that day later shows as a change."""
+    STATUS_CHOICES = [('CLOSED', 'Ditutup, menunggu semakan'), ('RETURNED', 'Dikembalikan untuk dikira semula'), ('VERIFIED', 'Disahkan')]
+    date = models.DateField(unique=True)
+    opening_float = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # cash in the drawer before the day's takings
+    cash_receipts = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    cash_expected = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # float + cash receipts
+    cash_counted = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    difference = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # counted - expected
+    receipts_total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    receipt_count = models.PositiveIntegerField(default=0)
+    by_method = models.JSONField(default=dict)  # {method: {'count': n, 'amount': '0.00'}}
+    note = models.TextField(blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='CLOSED')
+    closed_by = models.CharField(max_length=150, blank=True)
+    closed_by_user = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    closed_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.CharField(max_length=150, blank=True)  # who verified or returned it
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verify_note = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"Tutup kaunter {self.date} ({self.status})"

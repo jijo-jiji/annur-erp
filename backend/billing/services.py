@@ -1,12 +1,13 @@
-"""Invoicing: the monthly run, discounts, student credit and overdue status."""
+"""Invoicing: the monthly run, discounts, student credit, overdue status, and recording or cancelling a payment."""
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
 from django.db.models import F
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from business_config.models import BusinessSetting
 from core import numbering
-from .models import Discount, Invoice
+from .models import Discount, Invoice, PaymentReceipt
 
 OPEN_STATUSES = ('UNPAID', 'PARTIAL', 'OVERDUE')
 CENT = Decimal('0.01')
@@ -198,3 +199,96 @@ def follow_up_week(invoice, today=None):
     if invoice.billing_month.year != today.year or invoice.billing_month.month != today.month:
         return None
     return min(5, (today.day - 1) // 7 + 1)
+
+
+# ---- Payments ------------------------------------------------------------------------------------------------------
+
+RECEIPT_FIELDS = ('payment_date', 'amount_paid', 'payment_method', 'reference_number', 'payment_type', 'payment_month', 'notes')
+
+
+@transaction.atomic
+def record_payment(invoice, values, received_by, replaces=None):
+    """Issue a receipt for a payment on `invoice` and take it off the balance. Anything above the balance is kept as
+    credit for the student (overpayment). `values` holds the RECEIPT_FIELDS; `replaces` is the cancelled receipt a
+    correction replaces."""
+    invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+    student = type(invoice.student).objects.select_for_update().get(pk=invoice.student_id)
+    payment_date = values.get('payment_date') or date.today()
+    amount = Decimal(values['amount_paid'])
+    overpaid = max(Decimal('0'), amount - invoice.balance_due)
+    receipt = PaymentReceipt.objects.create(
+        invoice=invoice, student=student, payment_date=payment_date, amount_paid=amount,
+        payment_method=values.get('payment_method') or 'DUITNOW_QR', reference_number=values.get('reference_number') or '',
+        payment_type=values.get('payment_type') or 'MONTHLY', payment_month=values.get('payment_month'),
+        notes=values.get('notes') or '', overpaid_amount=overpaid, received_by=received_by, replaces=replaces,
+        receipt_number=numbering.receipt_number(PaymentReceipt, payment_date),
+    )
+    invoice.total_paid += amount - overpaid
+    invoice.balance_due = max(Decimal('0'), invoice.total_payable - invoice.total_paid)
+    settle_status(invoice)
+    invoice.save()
+    if overpaid:
+        student.credit_balance += overpaid
+        student.save(update_fields=['credit_balance'])
+    return receipt
+
+
+def cancel_problem(receipt):
+    """Why `receipt` cannot be cancelled now, or None."""
+    if receipt.status != 'VALID':
+        return 'Resit ini sudah dibatalkan.'
+    if receipt.overpaid_amount > receipt.student.credit_balance:
+        return (f"Lebihan {receipt.overpaid_amount:.2f} daripada resit ini sudah digunakan sebagai kredit pada invois lain, "
+                f"jadi resit ini tidak boleh dibatalkan.")
+    return None
+
+
+@transaction.atomic
+def cancel_receipt(receipt, reason, by_name):
+    """Cancel a receipt: its amount comes off the invoice again and its overpayment off the student's credit. The receipt
+    stays (struck through) with the reason, so its number is never reused and the history stays complete."""
+    receipt = PaymentReceipt.objects.select_for_update().select_related('student').get(pk=receipt.pk)
+    problem = cancel_problem(receipt)
+    if problem:
+        raise ValidationError(problem)
+    invoice = Invoice.objects.select_for_update().get(pk=receipt.invoice_id)
+    student = type(receipt.student).objects.select_for_update().get(pk=receipt.student_id)
+    invoice.total_paid -= receipt.amount_paid - receipt.overpaid_amount
+    invoice.balance_due = max(Decimal('0'), invoice.total_payable - invoice.total_paid)
+    settle_status(invoice)
+    invoice.save()
+    if receipt.overpaid_amount:
+        student.credit_balance -= receipt.overpaid_amount
+        student.save(update_fields=['credit_balance'])
+    receipt.status, receipt.cancel_reason, receipt.cancelled_by, receipt.cancelled_at = 'CANCELLED', reason, by_name, timezone.now()
+    receipt.save(update_fields=['status', 'cancel_reason', 'cancelled_by', 'cancelled_at'])
+    return receipt
+
+
+def invoice_edit_problem(invoice):
+    """An invoice's amounts may change only while nothing has been paid or credited against it."""
+    if invoice.total_paid > 0 or invoice.credit_applied > 0 or invoice.payments.filter(status='VALID').exists():
+        return 'Invois yang sudah ada bayaran atau kredit tidak boleh diubah. Batalkan resitnya dahulu.'
+    return None
+
+
+@transaction.atomic
+def edit_invoice(invoice, values):
+    """Change an unpaid invoice's fee, registration fee or description. A discount from a code follows the new fee
+    (a percentage is worked out again); the total and balance are worked out again."""
+    invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+    problem = invoice_edit_problem(invoice)
+    if problem:
+        raise ValidationError(problem)
+    for field in ('monthly_fee', 'registration_fee', 'description'):
+        if field in values:
+            setattr(invoice, field, values[field])
+    invoice.monthly_fee, invoice.registration_fee = Decimal(invoice.monthly_fee), Decimal(invoice.registration_fee)
+    if invoice.discount_id:
+        invoice.discount_amount = discount_amount(invoice.discount, invoice.monthly_fee)
+    invoice.discount_amount = min(Decimal(invoice.discount_amount), invoice.monthly_fee)
+    invoice.total_payable = invoice.registration_fee + invoice.monthly_fee - invoice.discount_amount
+    invoice.balance_due = invoice.total_payable - invoice.total_paid
+    settle_status(invoice)
+    invoice.save()
+    return invoice

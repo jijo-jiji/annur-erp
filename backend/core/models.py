@@ -58,6 +58,7 @@ class ChangeRequest(models.Model):
         ('EXPENSE_CATEGORY', 'Kategori perbelanjaan'), ('EXPENSE_SUBCATEGORY', 'Subkategori perbelanjaan'),
         ('TEACHER', 'Guru'), ('PRICING_TIER', 'Pakej yuran'), ('DISCOUNT', 'Diskaun'),
         ('TIME_SLOT', 'Slot masa'), ('CLASSROOM', 'Bilik darjah'), ('CLOSED_DATE', 'Tarikh tutup'),
+        ('RECEIPT', 'Resit'), ('INVOICE', 'Invois'),
     ]
     ACTIONS = [('CREATE', 'Tambah'), ('UPDATE', 'Ubah'), ('DELETE', 'Padam')]
     STATUS_CHOICES = [
@@ -90,6 +91,20 @@ class ChangeRequest(models.Model):
         return f"{self.kind} {self.action} {self.target_label} ({self.status})"
 
 
+class DailyChecklist(models.Model):
+    """The office's daily checklist (Data induk: Senarai semak harian Admin). Staff tick items through the day;
+    Supervisor checks the day once. `ticks` holds what was ticked, by code: {code: {label, by, at, note}}."""
+    date = models.DateField(unique=True)
+    ticks = models.JSONField(default=dict)
+    checked_by = models.CharField(max_length=150, blank=True)
+    checked_at = models.DateTimeField(null=True, blank=True)
+    check_note = models.TextField(blank=True)
+    items_at_check = models.JSONField(default=list, blank=True)  # the list as it stood when Supervisor checked it
+
+    class Meta:
+        ordering = ['-date']
+
+
 def attachment_path(instance, filename):
     """Stored under a random name so file names never reveal who or what they belong to."""
     ext = os.path.splitext(filename)[1].lower()
@@ -109,6 +124,7 @@ class Attachment(models.Model):
         ('VOUCHER_SIGNATURE', 'Tandatangan Penerima'),
         ('HANDOUT', 'Fail Nota / Modul'),
         ('RESULT_SLIP', 'Slip Keputusan Peperiksaan'),
+        ('PAYMENT_PROOF', 'Bukti Bayaran'),
     ]
     DOC_TYPES = [
         ('IC', 'Salinan Kad Pengenalan'),

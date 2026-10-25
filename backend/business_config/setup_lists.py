@@ -31,3 +31,15 @@ SUBJECT_CATEGORY_DEFAULTS = [
 def default_subject_category(stream):
     """A subject's category before anyone sets it: its stream when that is one of the defaults."""
     return stream if stream in ('TERAS', 'SAINS', 'SASTERA') else 'TERAS'
+
+# The office's daily checklist (core.DailyChecklist). `meta_info.order` sets the order; `meta_info.auto` names what the
+# system can see for that item, shown beside it as a hint (the person still ticks it): `cash_close` (the day's counter
+# is closed), `attendance` (classes held that day with attendance taken), `reminders` (fee reminders recorded that day).
+DAILY_CHECKLIST = '27_daily_checklist'
+DAILY_CHECKLIST_DEFAULTS = [
+    ('TUTUP_KAUNTER', 'Tutup kaunter & kira tunai', 'cash_close'),
+    ('KEDATANGAN', 'Kedatangan semua kelas diambil', 'attendance'),
+    ('PERINGATAN_YURAN', 'Peringatan yuran dihantar', 'reminders'),
+    ('NOTA_ESOK', 'Nota / modul kelas esok disediakan', ''),
+    ('MESEJ_IBU_BAPA', 'Mesej ibu bapa dibalas', ''),
+]

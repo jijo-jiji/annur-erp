@@ -38,6 +38,7 @@ const CATEGORIES = [
   { id: '24_lost_reason', name: 'Sebab prospek tidak berminat' },
   { id: '25_supply_type', name: 'Jenis bekalan' },
   { id: '26_subject_category', name: 'Kategori subjek' },
+  { id: '27_daily_checklist', name: 'Senarai semak harian' },
 ];
 const STATUS = {
   APPROVED: { label: 'Aktif', tone: 'green' },
@@ -49,6 +50,9 @@ const STATUS = {
 const UNUSED = ['2_interested_sub', '4_student_type', '5_grade', '8_active_sub', '9_walkin_sub', '10_exam_type', '11_academic_grade', '12_academic_sub',
   '15_teacher_type', '16_teacher_sub', '17_teacher_grade', '20_vendor', '21_payment_method'];
 const BAND_CATEGORY = '13_mark_band';
+// The office's daily checklist (Kaunter harian): some items show what the system sees beside them
+const CHECKLIST_CATEGORY = '27_daily_checklist';
+const CHECKLIST_HINT = { cash_close: 'menunjukkan status tutup kaunter', attendance: 'menunjukkan kelas yang sudah diambil kedatangan', reminders: 'menunjukkan peringatan yuran direkod' };
 
 // Lists changed only through change requests, in Baucar bayaran (Supervisor asks, Management approves)
 const REQUEST_ONLY = ['18_expense_cat', '19_expense_subcat'];
@@ -65,6 +69,7 @@ function metaText(item, pricingTiers) {
     return [LEVEL_LABELS[m.level] || m.level, `susunan ${m.order ?? '—'}`, `seterusnya: ${m.next || 'tamat'}`, m.fee_group ? `pakej: ${tierGroupLabel(m.fee_group, pricingTiers)}` : '', m.description].filter(Boolean).join(' · ');
   }
   if (item.category === BAND_CATEGORY) return `markah ${m.min ?? '—'}% ke atas`;
+  if (item.category === CHECKLIST_CATEGORY) return [`susunan ${m.order ?? '—'}`, CHECKLIST_HINT[m.auto], m.detail].filter(Boolean).join(' · ');
   return Object.entries(m).map(([k, v]) => (k === 'detail' ? v : `${k}: ${v}`)).join(' · ');
 }
 

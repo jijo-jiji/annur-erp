@@ -8,7 +8,7 @@ building it, before the next one starts.
 | A | Quick fixes: voucher subcategory, red highlights, supplier code + type, resubmit rejected registration, subject categories, substitute warning, teacher filters, WhatsApp preview & edit | **Done** 25 Oct 2026 |
 | B | Student code `HQ-YY0000` and renumbering | **Done** 25 Oct 2026 |
 | C | School exam results: terms per year, grid entry, public results form + review queue, student and class statistics | **Done** 25 Oct 2026 |
-| D | Fees: payment proof, receipt correction, unpaid invoice edit; daily counter close; Admin daily checklist | Planned (design notes below) |
+| D | Fees: payment proof, receipt correction, unpaid invoice edit; daily counter close; Admin daily checklist | **Done** 26 Oct 2026 |
 | E | Notifications and the week-5 unpaid rule for Supervisor | Planned |
 | F | Teacher private links and the public teacher profile form | Planned |
 | I | QR self check-in for student attendance | Planned |
@@ -151,41 +151,40 @@ Tests: `PhaseCSchoolResultsTests` (8 tests); full backend suite 240 tests OK.
 3. **Admin daily checklist** (cash closed, attendance taken, reminders sent, handouts ready; editable items) that
    Supervisor ticks off each day.
 
-### Phase D: design notes (worked out before handing over; no code yet)
+### Phase D: what was built
 
-What the existing code does today, and how Phase D was going to fit it:
+| Where | What |
+|---|---|
+| Yuran & resit → **Rekod bayaran** | New box *Bukti bayaran (pilihan)*: the parent's slip or screenshot (image or PDF) goes on the receipt once it is issued. More can be added later from the receipt. |
+| Receipt → **Bukti bayaran**, **Betulkan resit**, **Batalkan resit** | A receipt is never edited or deleted (the delete call was removed). *Betulkan* asks for the corrected date, amount, method, reference, type, month or note; *Batalkan* only cancels. A reason is always required. Admin's requests wait for Supervisor or Management; theirs apply at once. On approval the old receipt is cancelled (its amount comes off the invoice again, its overpayment off the student's credit) and, for a correction, a new receipt with a new number replaces it. Refused when the overpayment credit has already been used on another invoice. |
+| Resit list, receipt, PDF | Cancelled receipts stay in the list struck through with *Dibatalkan · diganti REC-…*; the new one says *Menggantikan REC-…*. The receipt and its PDF show *DIBATALKAN*, who, when and why. The proof of the original receipt shows on the new one. WhatsApp is not offered for a cancelled receipt. CSV has a Status column. |
+| Invois → **Ubah** (unpaid invoices only) | Fee, registration fee or description, with a reason, through the same approval as receipts. Refused once anything is paid or credited. A discount from a code follows the new fee (a percentage is worked out again). |
+| Yuran & resit → **Pembetulan** tab | Receipt corrections and invoice changes waiting for a decision, and the decisions (the invoice change history). The requester can revise or withdraw until it is decided. Ringkasan links each waiting request here. |
+| **Kaunter harian** (new menu item, all staff) → *Tutup kaunter* | The day's valid receipts by method, cash expected (opening float + cash receipts), cash counted, the difference in red with a required explanation. Admin closes (and may close again until it is verified); Supervisor or Management verifies it or returns it for a recount with a note. Nobody verifies a close they made, except Management. A receipt added or cancelled for that day afterwards shows *Berubah* with the old and new totals. Month history, any past date. |
+| Kaunter harian → *Senarai semak* | The day's checklist from Data induk → **Senarai semak harian** (5 default items). Staff tick items (who and when is kept); the cash, attendance and reminder items show what the system sees beside them. Supervisor or Management checks the day once (a note is required if anything is not ticked); the list and ticks are then locked as they were. |
+| Ringkasan | *Kaunter … belum ditutup* (days in the last week with takings and no close), closes returned for a recount, and closes waiting for the person's check. |
 
-- `billing/views.py` `PaymentReceiptViewSet` allows DELETE for Supervisor / Management, and the default `destroy` removes the
-  receipt **without** taking its amount off the invoice or the student's credit. Replace delete with cancel.
-- `PaymentReceipt` gets `status` (VALID / CANCELLED), `cancel_reason`, `cancelled_by`, `cancelled_at` and
-  `replaces` (OneToOne to the cancelled receipt it replaces). Cancelling takes `amount_paid - overpaid_amount` off
-  `invoice.total_paid`, takes `overpaid_amount` off `student.credit_balance` (refuse if that credit is already spent),
-  then `settle_status`. Move the payment logic in `perform_create` into a service used by both "record" and "reissue".
-- Correction goes through the existing change-request engine (`core/change_requests.py`): a `ReceiptHandler` with kind
-  `RECEIPT`; action UPDATE = cancel and reissue with the corrected fields (date, amount, method, reference, type, month,
-  notes); action DELETE = cancel only. Proposers: all roles; approvers: Supervisor and Management (their own corrections
-  apply at once and are recorded). The reason (`note`) must be required even for approvers: add a `note_required` flag
-  to the handler and check it in `submit`. The frontend reuses `ChangeRequestsPanel` (kind `RECEIPT`) for the queue.
-- Cancelled receipts must stop counting: filter `status='VALID'` in `core/analytics.py` (line ~133),
-  `billing/drilldown.py` (`receipts_matching`), `InvoiceSerializer.get_latest_receipt`, and on the frontend
-  `BillingView` "Kutipan hari ini". Receipt numbers: `numbering.next_number` must still see cancelled numbers so they
-  are never reused. Show cancelled receipts struck through with the reason and the replacement number; mark the PDF.
-- Payment proof: new attachment kind `PAYMENT_PROOF` on `PaymentReceipt` (images + PDF, `upload_document_mb`), uploaded
-  from the payment form after the receipt is created; `AttachmentList` on the receipt modal.
-- Unpaid invoice edit: `POST /billing/invoices/{id}/edit/` with `monthly_fee`, `registration_fee`, `description`,
-  `reason`; only when `total_paid == 0` and `credit_applied == 0`; recompute
-  `total_payable = registration_fee + monthly_fee - discount_amount` (cap the discount at the fee) and the balance; log each
-  edit in a new `InvoiceEdit` model (changes as `{field: [before, after]}`, reason, who, when) shown on the invoice.
-- Tutup kaunter harian: new `DailyCashClose` model, one per date: `opening_float`, `cash_expected` (float + cash
-  receipts), `cash_counted`, `difference`, `by_method` JSON (count and amount per method), `receipts_total`,
-  `receipt_count`, `note`, `status` (CLOSED / RETURNED / VERIFIED), who closed and when, who verified and when, verify
-  note. Admin closes (can redo while not verified); Supervisor verifies or returns it for a recount. Differences in red.
-  Show "changed after closing" when the live total of that day differs from the snapshot.
-- Admin daily checklist: items in a new Data induk list `27_daily_checklist` (defaults: tutup kaunter & kira tunai;
-  kedatangan semua kelas diambil; peringatan yuran dihantar; nota / modul kelas esok disediakan; mesej ibu bapa dibalas),
-  a `DailyChecklist` record per date (items ticked with who and when, Supervisor's check). The cash and attendance items
-  can show what the system sees (close done; classes with attendance against `teachers.payroll.roster(date)`).
-- Both pages under a new menu item (e.g. *Kaunter harian*), visible to all staff; Supervisor sees the verify buttons.
+Changes from the design notes, found while building:
+- The invoice edit uses the change-request engine (kind `INVOICE`) instead of a separate `InvoiceEdit` model, so it gets the
+  same approval, reason, before / after and history as receipt corrections without a second mechanism. Admin can no longer
+  change an invoice on their own; Supervisor and Management's changes apply at once.
+- `replaces` uses `SET_NULL`, not `PROTECT`: receipts are only ever deleted together with their student or invoice, and
+  `PROTECT` would have blocked deleting a student whose receipts were corrected.
+- Cancelled receipts are left out of every money figure: Ringkasan, Laporan, the drill-down lists (`receipts_matching`),
+  the invoice's latest receipt and *Kutipan hari ini*. Their numbers stay in use, so a number is never given out twice.
+- Change requests can now ask for a reason even from an approver (`note_required`), name their actions per kind
+  (*Betulkan* / *Batalkan* instead of *Ubah* / *Padam*), and be listed for several kinds or one record (`kind=RECEIPT,INVOICE`, `target=`).
+
+Data: `PaymentReceipt.status`, `cancel_reason`, `cancelled_by`, `cancelled_at`, `replaces`; new `DailyCashClose` (billing) and
+`DailyChecklist` (core); attachment kind `PAYMENT_PROOF`; Data induk list `27_daily_checklist` (`meta_info.order`, `meta_info.auto`).
+APIs: `/billing/cash-close/` (GET, POST), `/billing/cash-close/history/`, `/billing/cash-close/verify/`, `/billing/cash-close/return/`,
+`/checklist/`, `/checklist/tick/`, `/checklist/check/`; change requests of kind `RECEIPT` and `INVOICE`.
+
+Tests: `PhaseDFeesAndCounterTests` (9 tests); full backend suite 264 tests OK; browser `e2e/counter.spec.js` (5 tests).
+
+Before Phase D the branch took in `main`'s phone number work (one stored form, one display). The public results form from
+Phase C now keeps the sender's number in that form, and the tests from Phases A to C were brought up to date with the phone
+rule and the new student codes (see the merge commit).
 
 ## Phase E: notifications and the week-5 rule
 

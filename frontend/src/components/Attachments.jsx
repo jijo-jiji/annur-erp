@@ -12,6 +12,7 @@ export const ACCEPT = {
   STAFF_DOC: '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx',
   VOUCHER: '.pdf,.jpg,.jpeg,.png,.webp',
   HANDOUT: '.pdf,.jpg,.jpeg,.png,.doc,.docx,.ppt,.pptx',
+  PAYMENT_PROOF: '.pdf,.jpg,.jpeg,.png,.webp',
 };
 export const DOC_TYPES = [
   { id: 'IC', label: 'Salinan kad pengenalan' },

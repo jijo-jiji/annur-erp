@@ -36,8 +36,10 @@ def receipts_matching(params):
     from, to   YYYY-MM-DD (inclusive); one day is from = to
     walk_in    1: walk-in students only
     form    the student's tingkatan / darjah (grade code)
-    level   UPPER | LOWER | PRIMARY: all the grades of that level"""
-    qs = PaymentReceipt.objects.all()
+    level   UPPER | LOWER | PRIMARY: all the grades of that level
+
+    Cancelled receipts are left out: their money was taken off the invoice again."""
+    qs = PaymentReceipt.objects.filter(status='VALID')
     if params.get('month'):
         first, after = month_range(params['month'], 'month')
         qs = qs.filter(payment_date__gte=first, payment_date__lt=after)

@@ -3,8 +3,6 @@ from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from datetime import date, timedelta
-from decimal import Decimal
-from django.db import transaction
 from django.db.models import F
 from core import numbering, pdf
 from core.permissions import APPROVER_ROLES, display_name
@@ -57,7 +55,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         if instance.payments.exists() or instance.credit_applied > 0:
-            raise ValidationError({'detail': 'Invois yang telah dibayar tidak boleh dipadam.'})
+            # a cancelled receipt counts too: it stays on its invoice as the record of what happened
+            raise ValidationError({'detail': 'Invois yang ada resit (termasuk resit dibatalkan) atau kredit tidak boleh dipadam.'})
         if instance.discount_id:
             Discount.objects.filter(pk=instance.discount_id, used_count__gt=0).update(used_count=F('used_count') - 1)
         instance.delete()
@@ -87,10 +86,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(invoice).data)
 
 class PaymentReceiptViewSet(viewsets.ModelViewSet):
-    queryset = PaymentReceipt.objects.all().select_related('invoice', 'student').order_by('-created_at')
+    queryset = PaymentReceipt.objects.all().select_related('invoice', 'student', 'replaces', 'replaced_by').order_by('-created_at')
     serializer_class = PaymentReceiptSerializer
-    # A receipt is a financial record: it is issued once and never edited in place
-    http_method_names = ['get', 'post', 'delete', 'head', 'options']
+    # A receipt is a financial record: it is issued once and never edited or removed in place. A wrong one is
+    # corrected or cancelled through a request (kind RECEIPT in core/change_requests.py), which keeps it struck through
+    http_method_names = ['get', 'post', 'head', 'options']
 
     @action(detail=False, methods=['get'])
     def matching(self, request):
@@ -103,28 +103,10 @@ class PaymentReceiptViewSet(viewsets.ModelViewSet):
         receipt = self.get_object()
         return pdf.pdf_response(pdf.receipt_pdf(receipt), f"{receipt.receipt_number}.pdf")
 
-    @transaction.atomic
     def perform_create(self, serializer):
-        invoice = serializer.validated_data['invoice']
-        student = invoice.student
-        payment_date = serializer.validated_data.get('payment_date') or date.today()
-        amount = Decimal(serializer.validated_data['amount_paid'])
-
-        # Anything above the invoice balance is kept as credit for the student (overpayment)
-        overpaid = max(Decimal('0'), amount - invoice.balance_due)
-        receipt = serializer.save(
-            student=student, payment_date=payment_date, overpaid_amount=overpaid,
-            receipt_number=numbering.receipt_number(PaymentReceipt, payment_date),
-            received_by=display_name(self.request.user),
-        )
-
-        invoice.total_paid += amount - overpaid
-        invoice.balance_due = max(Decimal('0'), invoice.total_payable - invoice.total_paid)
-        services.settle_status(invoice)
-        invoice.save()
-        if overpaid:
-            student.credit_balance += overpaid
-            student.save(update_fields=['credit_balance'])
+        # Anything above the invoice balance is kept as credit for the student (overpayment), see services.record_payment
+        values = serializer.validated_data
+        serializer.instance = services.record_payment(values['invoice'], values, display_name(self.request.user))
 
 @api_view(['POST'])
 def calculate_fees(request):

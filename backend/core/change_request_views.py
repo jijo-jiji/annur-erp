@@ -8,7 +8,7 @@ from .permissions import APPROVER_ROLES, get_role
 
 class ChangeRequestSerializer(serializers.ModelSerializer):
     kind_label = serializers.CharField(source='get_kind_display', read_only=True)
-    action_label = serializers.CharField(source='get_action_display', read_only=True)
+    action_label = serializers.SerializerMethodField()
     status_label = serializers.CharField(source='get_status_display', read_only=True)
     changes = serializers.SerializerMethodField()
     mine = serializers.SerializerMethodField()
@@ -23,6 +23,9 @@ class ChangeRequestSerializer(serializers.ModelSerializer):
 
     def get_changes(self, obj):
         return service.changes_of(obj)
+
+    def get_action_label(self, obj):
+        return service.action_label(obj)
 
     def get_can_decide(self, obj):
         request = self.context.get('request')
@@ -46,7 +49,9 @@ class ChangeRequestViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(requested_by=self.request.user)
         p = self.request.query_params
         if p.get('kind'):
-            qs = qs.filter(kind=p['kind'])
+            qs = qs.filter(kind__in=p['kind'].split(','))
+        if p.get('target'):
+            qs = qs.filter(target_id=p['target'])
         if p.get('status'):
             qs = qs.filter(status__in=p['status'].split(','))
         if p.get('mine'):

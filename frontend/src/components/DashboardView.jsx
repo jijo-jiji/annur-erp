@@ -45,10 +45,12 @@ const REQUEST_PAGES = {
   PRICING_TIER: { name: 'pakej yuran', tab: 'settings', query: '?tab=pricing' },
   DISCOUNT: { name: 'diskaun', tab: 'settings', query: '?tab=discounts' },
   EXPENSE_SUBCATEGORY: { name: 'subkategori perbelanjaan', tab: 'expenses', query: '?tab=categories' },
+  RECEIPT: { name: 'resit', tab: 'billing', query: '?tab=corrections' },
+  INVOICE: { name: 'invois', tab: 'billing', query: '?tab=corrections' },
 };
 
 function buildNotices(data, role) {
-  const { classes, finance, approvals, attendance, teachers, staff } = data;
+  const { classes, finance, approvals, attendance, teachers, staff, counter } = data;
   const approver = role !== 'ADMIN';
   const management = role === 'MANAGEMENT';
   const out = [];
@@ -64,6 +66,10 @@ function buildNotices(data, role) {
   }
   attendance.low_classes.forEach((c) => add(1, 'red', `Kehadiran ${c.class_code} ${c.rate}% dalam ${attendance.window_days} hari lepas`, 'attendance', 'Lihat', `${c.present}/${c.total} kehadiran`,
     attendanceHref({ class_id: c.class_id, from: attendance.start, to: attendance.end }, { expect: c.rate, unit: 'rate' })));
+  // Tutup kaunter harian: a day with takings left unclosed, a close sent back for a recount, a close to verify
+  (counter?.unclosed_days || []).forEach((d) => add(1, 'red', `Kaunter ${date(d)} belum ditutup`, 'counter', 'Tutup kaunter', 'Ada resit pada hari itu', `#/counter?date=${d}`));
+  add(counter?.returned, 'red', `${counter?.returned} tutup kaunter dikembalikan untuk dikira semula`, 'counter', 'Kira semula');
+  if (approver) add(counter?.to_verify, 'amber', `${counter?.to_verify} tutup kaunter menunggu semakan anda`, 'counter', 'Semak');
   add(approvals.registrations_pending, 'amber', `${approvals.registrations_pending} pendaftaran pelajar menunggu kelulusan`, 'students', approver ? 'Luluskan' : 'Lihat', undefined, '#/students?tab=approvals');
   // these students, with the same rule the number uses
   add(approvals.monthly_invoices_pending, 'amber', `${approvals.monthly_invoices_pending} pelajar aktif belum ada invois ${monthLabel(CURRENT_MONTH)}`, 'billing', 'Jana invois', undefined,

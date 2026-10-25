@@ -13,6 +13,7 @@ import CommandPalette from './components/CommandPalette';
 import StudentRegistrationView from './components/StudentRegistrationView';
 import StudentProfileView from './components/StudentProfileView';
 import BillingView from './components/BillingView';
+import CounterView from './components/CounterView';
 import TimetableView from './components/TimetableView';
 import AttendanceView from './components/AttendanceView';
 import ResultsView from './components/ResultsView';
@@ -55,6 +56,7 @@ const VIEWS = {
   'teacher-attendance': TeacherAttendanceView,
   payroll: TeacherPayrollView,
   billing: BillingView,
+  counter: CounterView,
   vouchers: PaymentVoucherView,
   staff: StaffHRView,
   'master-data': MasterDataView,

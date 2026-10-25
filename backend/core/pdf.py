@@ -1,6 +1,7 @@
 """PDF receipts and payslips (j-status.doc: payment record with PDF receipt; payslip PDF)."""
 from io import BytesIO
 from django.http import HttpResponse
+from django.utils import timezone
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, A5
 from reportlab.lib.styles import ParagraphStyle
@@ -77,6 +78,12 @@ def receipt_pdf(receipt):
         kind += f" ({receipt.payment_month:%m/%Y})"
     width = A5[0] - 28 * mm
     story = _header('RESIT RASMI')
+    if receipt.status == 'CANCELLED':
+        # A cancelled receipt can still be printed for the record, never passed off as valid
+        replacement = getattr(receipt, 'replaced_by', None)
+        story.append(Paragraph(f"DIBATALKAN {timezone.localtime(receipt.cancelled_at):%d/%m/%Y} oleh {_esc(receipt.cancelled_by)}", WATERMARK))
+        story.append(Paragraph(f"Sebab: {_esc(receipt.cancel_reason)}" + (f" · Diganti dengan resit {_esc(replacement.receipt_number)}" if replacement else ''), SUB))
+        story.append(Spacer(1, 3 * mm))
     story.append(_details([
         ('No. Resit', receipt.receipt_number),
         ('Tarikh', receipt.payment_date.strftime('%d/%m/%Y')),
@@ -86,6 +93,7 @@ def receipt_pdf(receipt):
         ('Kaedah', receipt.get_payment_method_display()),
         ('No. rujukan', receipt.reference_number),
         ('Diterima oleh', receipt.received_by),
+        *([('Menggantikan resit', receipt.replaces.receipt_number)] if receipt.replaces_id else []),
     ], width))
     story.append(Spacer(1, 4 * mm))
     story.append(_total('JUMLAH DITERIMA', receipt.amount_paid, width))

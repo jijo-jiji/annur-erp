@@ -593,7 +593,7 @@ export default function StudentProfileView({ role, param }) {
       )}
 
       {paying && <PaymentModal invoice={paying} onClose={() => setPaying(null)} onPaid={(r) => { setPaying(null); setViewing(r); }} />}
-      <ReceiptModal receipt={viewing} onClose={() => setViewing(null)} hideActions={!can(role, 'billing.record')} />
+      <ReceiptModal receipt={viewing} onClose={() => setViewing(null)} hideActions={!can(role, 'billing.record')} role={role} />
     </>
   );
 }

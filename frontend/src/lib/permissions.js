@@ -19,6 +19,7 @@ const STAFF_COMMON = [
   'teachers.view',
   'teachers.attendance',
   'billing.view',
+  'counter.view', // Kaunter harian: close the day's cash, tick the daily checklist
   'vouchers.view',
   'vouchers.create',
   'staff.view', // own clock-in and leave; approvers see everyone
@@ -61,6 +62,7 @@ export const PERMISSIONS = {
     'settings.pricing',
     'settings.discounts',
     'messages.manage', // the wording of the WhatsApp messages
+    'counter.verify', // verify or return the day's cash close, check the daily checklist
   ],
   MANAGEMENT: [
     ...STAFF_COMMON,
@@ -97,6 +99,7 @@ export const PERMISSIONS = {
     'centre.manage', // the centre's name, address, phone, WhatsApp, TIN and bank details
     'messages.manage', // the wording of the WhatsApp messages
     'settings.discounts',
+    'counter.verify',
   ],
 };
 

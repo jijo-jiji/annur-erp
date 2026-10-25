@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Calculator, Download, FilePlus2, Plus, Printer, Receipt, Search, Tag } from 'lucide-react';
+import { AlertTriangle, Ban, Calculator, Download, FilePen, FilePlus2, Pencil, Plus, Printer, Receipt, Search, Tag } from 'lucide-react';
 import { CENTRE } from '../lib/config';
 import { bankLine } from '../lib/centre';
 import { fillMessage } from '../lib/messages';
-import { billingApi, downloadPdf } from '../api/client';
+import { billingApi, downloadPdf, filesApi } from '../api/client';
 import { describeInvoiceFilters, describeReceiptFilters, INVOICE_FILTERS, RECEIPT_FILTERS, useDrill, useMatching } from '../lib/drilldown';
 import DrilldownBar from './DrilldownBar';
 import { useStore } from '../store';
-import { can } from '../lib/permissions';
+import { can, isApprover } from '../lib/permissions';
 import {
   addMonths, arrearsCases, invoiceBalance, invoiceStatus, monthlyFee, preferredContact,
 } from '../lib/domain';
@@ -20,6 +20,9 @@ import {
   useToast, WhatsAppIcon,
 } from './ui';
 import WhatsAppButton from './WhatsAppButton';
+import { AttachmentList, uploadError } from './Attachments';
+import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
+import FormModal from './FormModal';
 
 const STATUS_BADGE = {
   PAID: <Badge tone="green">Dibayar</Badge>,
@@ -101,7 +104,11 @@ export default function BillingView({ role }) {
   const receiptRows = receipts.filter((r) => (drill ? Boolean(matched?.ids.has(r.no)) : (month === 'ALL' || r.date.startsWith(month))) && matches(r.no, invoiceByNo[r.invoiceNo]?.studentId));
   const cases = arrearsCases(students, invoices, settings.unpaidMonthsLimit);
   const openInvoices = invoices.filter((i) => invoiceBalance(i) > 0);
-  const collectedToday = receipts.filter((r) => r.date === todayISO()).reduce((a, r) => a + r.amount, 0);
+  const collectedToday = receipts.filter((r) => !r.cancelled && r.date === todayISO()).reduce((a, r) => a + r.amount, 0);
+  // Receipt corrections and changes to unpaid invoices wait here for Supervisor / Management
+  const corrections = useChangeRequests('RECEIPT,INVOICE');
+  const correctionsWaiting = corrections.requests.filter((r) => r.status === 'PENDING').length;
+  const [editingInvoice, setEditingInvoice] = useState(null);
 
   const monthInv = invoices.filter((i) => i.month === CURRENT_MONTH);
   const billed = monthInv.reduce((a, i) => a + i.total - i.discount, 0);
@@ -158,11 +165,14 @@ export default function BillingView({ role }) {
           { value: 'invoices', label: 'Invois' },
           { value: 'receipts', label: 'Resit' },
           ...(can(role, 'billing.arrears') ? [{ value: 'arrears', label: 'Tunggakan & susulan', count: openInvoices.length }] : []),
+          { value: 'corrections', label: 'Pembetulan', count: correctionsWaiting || undefined },
         ]}
       />
 
       {tab === 'arrears' ? (
         <ArrearsPanel cases={cases} role={role} openInvoices={openInvoices} onPay={setPaying} />
+      ) : tab === 'corrections' ? (
+        <CorrectionsPanel requests={corrections.requests} reload={corrections.load} role={role} />
       ) : (
         <>
         {drill && (
@@ -213,8 +223,9 @@ export default function BillingView({ role }) {
               onClick={() => (tab === 'invoices'
                 ? downloadCsv(`invois-${month}.csv`, ['Invois', 'Untuk', 'Pelajar', 'ID', 'Jumlah', 'Diskaun', 'Dibayar', 'Baki', 'Status', 'Tarikh akhir'],
                   invoiceRows.map((i) => [i.no, invoiceTitle(i), studentById[i.studentId]?.name, i.studentId, i.total - i.discount, i.discount, i.paid, invoiceBalance(i), invoiceStatus(i), i.dueDate]))
-                : downloadCsv(`resit-${month}.csv`, ['Resit', 'Tarikh', 'Pelajar', 'Invois', 'Jenis', 'Bulan', 'Kaedah', 'Rujukan', 'Amaun', 'Lebihan', 'Diterima oleh', 'Catatan'],
-                  receiptRows.map((r) => [r.no, r.date, r.studentName, r.invoiceNo, PAYMENT_TYPE_LABEL[r.type], r.month, PAYMENT_METHOD_LABEL[r.method], r.ref, r.amount, r.overpaid, r.by, r.notes])))}
+                : downloadCsv(`resit-${month}.csv`, ['Resit', 'Tarikh', 'Pelajar', 'Invois', 'Jenis', 'Bulan', 'Kaedah', 'Rujukan', 'Amaun', 'Lebihan', 'Diterima oleh', 'Catatan', 'Status'],
+                  receiptRows.map((r) => [r.no, r.date, r.studentName, r.invoiceNo, PAYMENT_TYPE_LABEL[r.type], r.month, PAYMENT_METHOD_LABEL[r.method], r.ref, r.amount, r.overpaid, r.by, r.notes,
+                    r.cancelled ? `Dibatalkan: ${r.cancelReason}${r.replacedByNo ? ` (diganti ${r.replacedByNo})` : ''}` : 'Sah'])))}
             >
               CSV
             </Button>
@@ -262,6 +273,12 @@ export default function BillingView({ role }) {
                         {st !== 'PAID'
                           ? canRecord && (
                               <div className="flex justify-end gap-2">
+                                {inv.paid === 0 && inv.creditApplied === 0 && (
+                                  <Button size="sm" icon={Pencil} onClick={() => setEditingInvoice(inv)} disabled={inv.correctionPending}
+                                    title={inv.correctionPending ? 'Perubahan invois ini menunggu kelulusan' : 'Ubah yuran atau keterangan invois yang belum dibayar'}>
+                                    {inv.correctionPending ? 'Menunggu' : 'Ubah'}
+                                  </Button>
+                                )}
                                 <Button size="sm" icon={Tag} onClick={() => setAdjusting(inv)} title="Kod baucar atau kredit pelajar">
                                   Diskaun
                                 </Button>
@@ -296,10 +313,13 @@ export default function BillingView({ role }) {
                 {receiptRows.slice(0, limit).map((r) => {
                   const s = studentById[invoiceByNo[r.invoiceNo]?.studentId];
                   return (
-                    <tr key={r.no} className="hover:bg-gray-50">
+                    <tr key={r.no} className={r.cancelled ? 'bg-gray-50/60 text-gray-400' : 'hover:bg-gray-50'}>
                       <Td className="whitespace-nowrap">
-                        <p className="font-medium text-gray-900">{r.no}</p>
+                        <p className={r.cancelled ? 'font-medium text-gray-500 line-through' : 'font-medium text-gray-900'}>{r.no}</p>
                         <p className="text-[13px] text-gray-500">{date(r.date)}</p>
+                        {r.cancelled && <Badge tone="red">Dibatalkan{r.replacedByNo ? ` · diganti ${r.replacedByNo}` : ''}</Badge>}
+                        {r.replacesNo && <p className="text-xs text-gray-500">Menggantikan {r.replacesNo}</p>}
+                        {r.correctionPending && <Badge tone="amber">Pembetulan menunggu</Badge>}
                       </Td>
                       <Td>
                         <p className="text-gray-900">{s?.name ?? r.studentName}</p>
@@ -309,7 +329,7 @@ export default function BillingView({ role }) {
                         <p className="text-gray-900">{PAYMENT_METHOD_LABEL[r.method]}</p>
                         {r.ref && <p className="text-[13px] text-gray-500">{r.ref}</p>}
                       </Td>
-                      <Td className="text-right font-medium tnum">{rm(r.amount)}</Td>
+                      <Td className={`text-right font-medium tnum ${r.cancelled ? 'text-gray-400 line-through' : ''}`}>{rm(r.amount)}</Td>
                       <Td className="text-right">
                         <Button size="sm" onClick={() => setViewing(r)}>
                           Lihat
@@ -347,10 +367,11 @@ export default function BillingView({ role }) {
           }}
         />
       )}
-      <ReceiptModal receipt={viewing} onClose={() => setViewing(null)} hideActions={!canRecord} />
+      <ReceiptModal receipt={viewing} onClose={() => setViewing(null)} hideActions={!canRecord} role={role} onCorrected={corrections.load} />
       <CalculatorModal open={calc} onClose={() => setCalc(false)} />
       {running && <MonthlyRunModal onClose={() => setRunning(false)} onDone={(m) => { setMonth(m); setTab('invoices'); setRunning(false); }} />}
       {adjusting && <InvoiceAdjustModal invoice={adjusting} onClose={() => setAdjusting(null)} />}
+      {editingInvoice && <InvoiceEditModal invoice={editingInvoice} role={role} onClose={() => setEditingInvoice(null)} onDone={corrections.load} />}
       {addingOther && <OtherInvoiceModal onClose={() => setAddingOther(false)} />}
     </>
   );
@@ -743,6 +764,124 @@ function OtherInvoiceModal({ onClose }) {
   );
 }
 
+// ---- Corrections: receipts and unpaid invoices -------------------------------------
+// A receipt is never changed in place: the wrong one is cancelled (kept, struck through) and a corrected one replaces
+// it. Admin's requests wait for Supervisor / Management; theirs apply at once. A reason is always required.
+
+const receiptFields = (direct) => [
+  { name: 'payment_date', label: 'Tarikh bayaran', type: 'date', required: true, max: todayISO() },
+  { name: 'amount_paid', label: 'Amaun diterima (RM)', type: 'number', min: '0.01', step: '0.01', required: true },
+  { name: 'payment_method', label: 'Kaedah bayaran', type: 'select', required: true, options: Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => ({ value, label })) },
+  { name: 'reference_number', label: 'No. rujukan transaksi' },
+  { name: 'payment_type', label: 'Jenis bayaran', type: 'select', required: true, options: Object.entries(PAYMENT_TYPE_LABEL).map(([value, label]) => ({ value, label })) },
+  { name: 'payment_month', label: 'Bulan', type: 'month', hint: 'Untuk yuran bulanan sahaja.' },
+  { name: 'notes', label: 'Catatan untuk pembayar', type: 'textarea' },
+  ...(direct === undefined ? [] : [{ name: 'note', label: 'Sebab pembetulan', type: 'textarea', required: true, hint: direct ? 'Disimpan bersama resit yang dibatalkan.' : 'Supervisor akan melihat sebab ini semasa membuat keputusan.' }]),
+];
+
+const receiptValues = (r) => ({
+  payment_date: r.date, amount_paid: r.amount, payment_method: r.method, reference_number: r.ref || '',
+  payment_type: r.type, payment_month: r.month || '', notes: r.notes || '',
+});
+
+const correctionPayload = (v) => ({
+  payment_date: v.payment_date, amount_paid: v.amount_paid, payment_method: v.payment_method, reference_number: (v.reference_number || '').trim(),
+  payment_type: v.payment_type, payment_month: v.payment_type === 'MONTHLY' && v.payment_month ? v.payment_month : null, notes: (v.notes || '').trim(),
+});
+
+const invoiceFields = (inv) => [
+  { name: 'monthly_fee', label: inv.type === 'OTHER' ? 'Jumlah (RM)' : 'Yuran (RM)', type: 'number', min: '0', step: '0.01', required: true },
+  ...(inv.regFee > 0 || inv.type === 'FIRST' ? [{ name: 'registration_fee', label: 'Yuran pendaftaran (RM)', type: 'number', min: '0', step: '0.01', required: true }] : []),
+  { name: 'description', label: 'Keterangan', required: inv.type === 'OTHER' },
+];
+
+const sentText = (done, applied) => (done.status === 'PENDING'
+  ? 'Permohonan dihantar. Ia berkuat kuasa selepas diluluskan oleh Supervisor atau Pengurusan.'
+  : applied);
+
+function ReceiptCorrectionModal({ receipt: r, action, role, onClose, onDone }) {
+  const { submitCorrection } = useStore();
+  const notify = useToast();
+  const direct = isApprover(role);
+  const cancelling = action === 'DELETE';
+  const submit = async ({ note, ...values }) => {
+    const done = await submitCorrection({ kind: 'RECEIPT', action, pk: r.pk, values: cancelling ? {} : correctionPayload(values), note: note.trim() });
+    notify(sentText(done, cancelling ? `Resit ${r.no} dibatalkan.` : `Resit ${r.no} dibatalkan dan resit baharu dikeluarkan (lihat tab Resit).`));
+    onDone?.();
+  };
+  const effect = `Amaun ${rm(r.amount)} akan ditolak semula daripada invois ${r.invoiceNo}${r.overpaid > 0 ? ` dan lebihan ${rm(r.overpaid)} daripada kredit pelajar` : ''}.`;
+  return (
+    <FormModal
+      title={cancelling ? `Batalkan resit ${r.no}` : `Betulkan resit ${r.no}`}
+      description={cancelling
+        ? `${effect} Resit ini kekal dalam senarai sebagai dibatalkan.${direct ? '' : ' Menunggu kelulusan Supervisor atau Pengurusan.'}`
+        : `Resit ini akan dibatalkan dan resit baharu dengan butiran betul dikeluarkan; nombor lama tidak digunakan semula.${direct ? '' : ' Menunggu kelulusan Supervisor atau Pengurusan.'}`}
+      danger={cancelling}
+      submitLabel={direct ? (cancelling ? 'Batalkan resit' : 'Betulkan resit') : 'Hantar permohonan'}
+      fields={cancelling ? [{ name: 'note', label: 'Sebab pembatalan', type: 'textarea', required: true }] : receiptFields(direct)}
+      initial={cancelling ? { note: '' } : { ...receiptValues(r), note: '' }}
+      onSubmit={submit}
+      onClose={onClose}
+    />
+  );
+}
+
+function InvoiceEditModal({ invoice: inv, role, onClose, onDone }) {
+  const { submitCorrection } = useStore();
+  const notify = useToast();
+  const direct = isApprover(role);
+  return (
+    <FormModal
+      title={`Ubah invois ${inv.no}`}
+      description={`${inv.studentName} · ${invoiceTitle(inv)}. Hanya invois yang belum ada bayaran boleh diubah.${inv.discount > 0 ? ' Diskaun dikira semula mengikut yuran baharu.' : ''} Sejarah perubahan ada di tab Pembetulan.`}
+      submitLabel={direct ? 'Simpan perubahan' : 'Hantar permohonan'}
+      fields={[...invoiceFields(inv), { name: 'note', label: 'Sebab perubahan', type: 'textarea', required: true, hint: direct ? 'Disimpan dalam sejarah perubahan invois.' : 'Supervisor akan melihat sebab ini semasa membuat keputusan.' }]}
+      initial={{ monthly_fee: inv.monthlyFee, registration_fee: inv.regFee, description: inv.description || '', note: '' }}
+      onSubmit={async ({ note, ...values }) => {
+        const done = await submitCorrection({ kind: 'INVOICE', action: 'UPDATE', pk: inv.pk, values, note: note.trim() });
+        notify(sentText(done, `Invois ${inv.no} dikemas kini.`));
+        onDone?.();
+      }}
+      onClose={onClose}
+    />
+  );
+}
+
+function CorrectionsPanel({ requests, reload, role }) {
+  const { receipts, invoices, refreshBilling } = useStore();
+  const approver = isApprover(role);
+  // The person who asked can revise a waiting request: the form starts from the record with the request applied
+  const editFields = (req) => {
+    if (req.kind === 'INVOICE') {
+      const inv = invoices.find((i) => i.pk === req.target_id);
+      return inv ? invoiceFields(inv) : [];
+    }
+    return req.action === 'DELETE' ? [] : receiptFields();
+  };
+  const editInitial = (req) => {
+    if (req.kind === 'INVOICE') {
+      const inv = invoices.find((i) => i.pk === req.target_id);
+      return inv ? { monthly_fee: inv.monthlyFee, registration_fee: inv.regFee, description: inv.description || '', ...req.payload } : req.payload;
+    }
+    const r = receipts.find((x) => x.pk === req.target_id);
+    const asked = { ...req.payload, ...(req.payload.payment_month ? { payment_month: req.payload.payment_month.slice(0, 7) } : {}) };
+    return { ...(r ? receiptValues(r) : {}), ...asked };
+  };
+  return (
+    <ChangeRequestsPanel
+      title="Pembetulan resit & invois"
+      description={approver
+        ? 'Pembetulan resit dan perubahan invois yang belum dibayar. Resit yang dibetulkan dibatalkan dan diganti dengan resit baharu; resit lama kekal dalam senarai.'
+        : 'Permohonan anda untuk membetulkan resit atau mengubah invois. Ia berkuat kuasa selepas diluluskan oleh Supervisor atau Pengurusan.'}
+      requests={requests}
+      reload={reload}
+      onApplied={refreshBilling}
+      editFields={editFields}
+      editInitial={editInitial}
+    />
+  );
+}
+
 // ---- Payment & receipt --------------------------------------------------------
 
 export function InvoiceLines({ inv, showPaid = true }) {
@@ -795,6 +934,7 @@ export function PaymentModal({ invoice: inv, onClose, onPaid }) {
   const [ref, setRef] = useState('');
   const [notes, setNotes] = useState('');
   const [payDate, setPayDate] = useState(todayISO());
+  const [proofs, setProofs] = useState([]);
   const [busy, setBusy] = useState(false);
   const s = students.find((x) => x.id === inv.studentId);
   const amt = Number(amount) || 0;
@@ -802,13 +942,21 @@ export function PaymentModal({ invoice: inv, onClose, onPaid }) {
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
+    let receipt;
     try {
-      const receipt = await recordPayment(inv.no, { amount: amt, method, ref: ref.trim(), date: payDate, type, month: payMonth, notes: notes.trim() });
-      notify(`Bayaran ${rm(amt)} direkodkan. Resit ${receipt.no} dikeluarkan.`);
-      onPaid(receipt);
+      receipt = await recordPayment(inv.no, { amount: amt, method, ref: ref.trim(), date: payDate, type, month: payMonth, notes: notes.trim() });
     } catch {
       setBusy(false);
+      return;
     }
+    // The parent's slip goes on the receipt; a file refused here can still be added from the receipt
+    const failed = [];
+    for (const file of proofs) {
+      try { await filesApi.upload('PAYMENT_PROOF', receipt.pk, file); } catch (err) { failed.push(`${file.name}: ${uploadError(err)}`); }
+    }
+    notify(`Bayaran ${rm(amt)} direkodkan. Resit ${receipt.no} dikeluarkan.`);
+    if (failed.length) notify(`Bukti bayaran tidak dimuat naik. ${failed.join(' ')}`, 'error');
+    onPaid(receipt);
   };
 
   return (
@@ -855,6 +1003,12 @@ export function PaymentModal({ invoice: inv, onClose, onPaid }) {
           <Input label="No. rujukan transaksi" required={method !== 'CASH'} value={ref} onChange={(e) => setRef(e.target.value)} placeholder={method === 'CASH' ? 'Pilihan' : 'Seperti pada bukti pindahan'} />
         </div>
         <Textarea label="Catatan untuk pembayar" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <label className="block">
+          <span className="mb-1.5 block text-[13px] font-medium text-gray-700">Bukti bayaran (pilihan)</span>
+          <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={(e) => setProofs([...(e.target.files || [])])}
+            className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-800 hover:file:bg-gray-200" />
+          <span className="mt-1.5 block text-[13px] text-gray-500">Slip pindahan atau tangkapan skrin daripada ibu bapa (gambar atau PDF). Boleh ditambah kemudian pada resit.</span>
+        </label>
         {amt > balance && (
           <p className="rounded-md bg-brand-50 px-3 py-2 text-[13px] text-brand-900">Lebihan {rm(amt - balance)} akan disimpan sebagai kredit pelajar.</p>
         )}
@@ -866,8 +1020,18 @@ export function PaymentModal({ invoice: inv, onClose, onPaid }) {
   );
 }
 
-export function ReceiptModal({ receipt: r, onClose, hideActions }) {
+export function ReceiptModal({ receipt: r, onClose, hideActions, role, onCorrected }) {
+  const { receipts } = useStore();
+  const [correcting, setCorrecting] = useState(null); // 'UPDATE' | 'DELETE'
   if (!r) return null;
+  if (correcting) {
+    return (
+      <ReceiptCorrectionModal receipt={r} action={correcting} role={role} onClose={() => setCorrecting(null)}
+        onDone={() => { setCorrecting(null); onCorrected?.(); onClose(); }} />
+    );
+  }
+  const original = r.replacesNo && receipts.find((x) => x.no === r.replacesNo);
+  const canCorrect = !hideActions && role && !r.cancelled;
   return (
     <Modal
       open
@@ -876,6 +1040,19 @@ export function ReceiptModal({ receipt: r, onClose, hideActions }) {
       footer={<ReceiptActions receipt={r} hideActions={hideActions} />}
     >
       <ReceiptDocument receipt={r} />
+      <div className="no-print mt-5 space-y-4 border-t border-gray-200 pt-4">
+        <AttachmentList kind="PAYMENT_PROOF" objectId={r.pk} title="Bukti bayaran" canUpload={!hideActions && !r.cancelled} canDelete={!hideActions && !r.cancelled}
+          emptyText={r.cancelled ? 'Tiada bukti bayaran.' : 'Tiada bukti bayaran dilampirkan.'} />
+        {original && <AttachmentList kind="PAYMENT_PROOF" objectId={original.pk} title={`Bukti bayaran resit asal ${original.no}`} canUpload={false} emptyText="Tiada." />}
+        {canCorrect && (r.correctionPending ? (
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-900">Pembetulan resit ini sedang menunggu kelulusan (tab Pembetulan).</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" icon={FilePen} onClick={() => setCorrecting('UPDATE')}>Betulkan resit</Button>
+            <Button size="sm" variant="danger" icon={Ban} onClick={() => setCorrecting('DELETE')}>Batalkan resit</Button>
+          </div>
+        ))}
+      </div>
     </Modal>
   );
 }
@@ -893,7 +1070,7 @@ function ReceiptActions({ receipt: r, hideActions }) {
   });
   return (
     <>
-      {!hideActions && contact?.phone && (
+      {!hideActions && !r.cancelled && contact?.phone && (
         <WhatsAppButton phone={contact.phone} message={message} recipient={contact.name}>
           <WhatsAppIcon /> Hantar kepada penjaga
         </WhatsAppButton>
@@ -915,6 +1092,12 @@ export function ReceiptDocument({ receipt: r }) {
   const contact = preferredContact(s);
   return (
     <div className="print-area bg-white text-sm">
+      {r.cancelled && (
+        <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800">
+          <p className="font-semibold">DIBATALKAN {r.cancelledAt ? date(r.cancelledAt.slice(0, 10)) : ''} oleh {r.cancelledBy}</p>
+          <p>Sebab: {r.cancelReason}{r.replacedByNo ? ` · Diganti dengan resit ${r.replacedByNo}` : ''}</p>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
         <div>
           <p className="text-base font-semibold text-gray-900">{CENTRE.name}</p>
@@ -951,6 +1134,12 @@ export function ReceiptDocument({ receipt: r }) {
           <dt className="text-xs text-gray-500">Invois</dt>
           <dd className="text-gray-900">{r.invoiceNo}</dd>
         </div>
+        {r.replacesNo && (
+          <div>
+            <dt className="text-xs text-gray-500">Menggantikan resit</dt>
+            <dd className="text-gray-900">{r.replacesNo}</dd>
+          </div>
+        )}
         <div>
           <dt className="text-xs text-gray-500">Jenis bayaran</dt>
           <dd className="text-gray-900">

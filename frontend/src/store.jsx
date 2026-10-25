@@ -126,6 +126,7 @@ function toInvoice(i) {
     status: i.status,
     dueDate: i.due_date,
     receipt: i.latest_receipt,
+    correctionPending: i.correction_pending,
     followUpWeek: i.follow_up_week,
     reminders: i.reminder_count,
     lastReminder: i.last_reminder_at,
@@ -151,6 +152,15 @@ const toReceipt = (r) => ({
   ref: r.reference_number,
   notes: r.notes,
   by: r.received_by,
+  // A wrong receipt is cancelled (kept struck through) and, when corrected, replaced by a new one
+  status: r.status,
+  cancelled: r.status === 'CANCELLED',
+  cancelReason: r.cancel_reason,
+  cancelledBy: r.cancelled_by,
+  cancelledAt: r.cancelled_at,
+  replacesNo: r.replaces_number,
+  replacedByNo: r.replaced_by_number,
+  correctionPending: r.correction_pending,
 });
 
 // Server statuses grouped the way the voucher screens show them
@@ -371,6 +381,13 @@ export function StoreProvider({ children }) {
       async runMonthlyInvoices(month, dryRun = false) {
         return act(() => billingApi.monthlyRun(month, dryRun), dryRun ? {} : { refresh: app.refreshBilling });
       },
+
+      // A receipt correction or cancellation, or a change to an unpaid invoice (kind RECEIPT / INVOICE): Admin's wait for
+      // Supervisor or Management, theirs apply at once; a reason is always required
+      submitCorrection({ kind, action, pk, values = {}, note }) {
+        return act(() => changeRequestApi.create({ kind, action, target_id: pk, payload: values, note }), { refresh: app.refreshBilling });
+      },
+      refreshBilling: () => app.refreshBilling(),
 
       invoiceAction(invoiceNo, name, payload = {}) {
         return act(() => billingApi.invoiceAction(invoicePk(invoiceNo), name, payload), { refresh: app.refreshBilling });

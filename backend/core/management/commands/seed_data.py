@@ -9,7 +9,8 @@ from students.models import Student, Lead
 from billing.models import Invoice, PaymentReceipt
 from expenses.models import Vendor, PaymentVoucher
 from business_config.setup_lists import (
-    SUBJECT_CATEGORY, SUBJECT_CATEGORY_DEFAULTS, SUPPLY_TYPE_CATEGORY, SUPPLY_TYPE_DEFAULTS, default_subject_category,
+    DAILY_CHECKLIST, DAILY_CHECKLIST_DEFAULTS, SUBJECT_CATEGORY, SUBJECT_CATEGORY_DEFAULTS, SUPPLY_TYPE_CATEGORY,
+    SUPPLY_TYPE_DEFAULTS, default_subject_category,
 )
 
 class Command(BaseCommand):
@@ -335,6 +336,9 @@ class Command(BaseCommand):
                                 for order, (code, label, cat) in enumerate(SUPPLY_TYPE_DEFAULTS, start=1))
         master_seed_data.extend((SUBJECT_CATEGORY, code, label, {"order": order}, "APPROVED")
                                 for order, (code, label) in enumerate(SUBJECT_CATEGORY_DEFAULTS, start=1))
+        # The office's daily checklist
+        master_seed_data.extend((DAILY_CHECKLIST, code, label, {"order": order, "auto": auto}, "APPROVED")
+                                for order, (code, label, auto) in enumerate(DAILY_CHECKLIST_DEFAULTS, start=1))
 
         for cat, code, label, meta, st in master_seed_data:
             DynamicMasterData.objects.update_or_create(

@@ -28,6 +28,9 @@ class Handler:
     fields = {}  # field -> label shown in the list of changes
     proposers = ALL_ROLES  # who may ask for a change
     approvers = APPROVER_ROLES  # who may decide it (their own changes apply at once)
+    note_required = False  # a reason even when an approver makes the change (financial corrections)
+    action_labels = {}  # how the actions read for this kind, e.g. a receipt is cancelled, not deleted
+    delete_word = 'dipadam'
 
     def validate(self, action, target_id, data, ignore=None):
         """Return (values to apply, values they replace, label of the record)."""
@@ -820,9 +823,166 @@ class ClosedDateHandler(ModelHandler):
         return str(value) if value not in (None, '') else '—'
 
 
+def _money(value):
+    return f"RM {Decimal(str(value)):,.2f}"
+
+
+def _dmy(value):
+    y, m, d = str(value)[:10].split('-')
+    return f'{d}/{m}/{y}'
+
+
+class ReceiptHandler(Handler):
+    """Correcting an issued receipt (Phase D). A receipt is never changed in place: the wrong one is cancelled with the
+    reason (its amount comes off the invoice again) and, for a correction, a new receipt with the right details replaces
+    it. Anyone at the counter may ask; Supervisor or Management decide (theirs apply at once), always with a reason."""
+    kind = 'RECEIPT'
+    fields = {
+        'payment_date': 'Tarikh bayaran', 'amount_paid': 'Amaun', 'payment_method': 'Kaedah', 'reference_number': 'No. rujukan',
+        'payment_type': 'Jenis bayaran', 'payment_month': 'Bulan', 'notes': 'Catatan',
+    }
+    note_required = True
+    action_labels = {'UPDATE': 'Betulkan', 'DELETE': 'Batalkan'}
+    delete_word = 'dibatalkan'
+
+    @staticmethod
+    def receipt(target_id):
+        from billing.models import PaymentReceipt
+        receipt = PaymentReceipt.objects.select_related('invoice', 'student').filter(pk=target_id).first()
+        if not receipt:
+            raise ValidationError('Resit tidak dijumpai.')
+        return receipt
+
+    def clean(self, data, receipt):
+        """The corrected values, checked; only those that differ from the receipt."""
+        from billing.serializers import ReceiptCorrectionSerializer
+        serializer = ReceiptCorrectionSerializer(data={k: data[k] for k in self.fields if k in data}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        merged = {f: serializer.validated_data.get(f, getattr(receipt, f)) for f in self.fields}
+        if merged['payment_type'] != 'MONTHLY':
+            merged['payment_month'] = None  # only a monthly fee covers a month
+        elif merged['payment_month']:
+            merged['payment_month'] = merged['payment_month'].replace(day=1)
+        return {f: v for f, v in merged.items() if v != getattr(receipt, f) and not (v in (None, '') and getattr(receipt, f) in (None, ''))}
+
+    def validate(self, action, target_id, data, ignore=None):
+        from billing import services
+        if action == 'CREATE':
+            raise ValidationError('Resit baharu dikeluarkan melalui Rekod bayaran.')
+        receipt = self.receipt(target_id)
+        others = ChangeRequest.objects.filter(kind=self.kind, status='PENDING', target_id=receipt.pk)
+        if ignore:
+            others = others.exclude(pk=ignore.pk)
+        if others.exists():
+            raise ValidationError('Sudah ada permohonan untuk resit ini yang menunggu kelulusan.')
+        problem = services.cancel_problem(receipt)
+        if problem:
+            raise ValidationError(problem)
+        label = f"{receipt.receipt_number} · {receipt.student.full_name} · {_money(receipt.amount_paid)}"
+        current = {f: ModelHandler.jsonable(getattr(receipt, f)) for f in self.fields}
+        if action == 'DELETE':
+            return {}, current, label
+        values = self.clean(data, receipt)
+        if not values:
+            raise ValidationError('Tiada perubahan untuk dihantar.')
+        return {k: ModelHandler.jsonable(v) for k, v in values.items()}, {k: current[k] for k in values}, label
+
+    def apply(self, action, target_id, values, req=None):
+        from billing import services
+        receipt = self.receipt(target_id)
+        by = (req.decided_by or req.requested_by_name) if req else ''
+        reason = req.note if req else ''
+        corrected = None
+        if action == 'UPDATE':
+            corrected = {f: getattr(receipt, f) for f in self.fields}
+            corrected.update(self.clean(values, receipt))
+        services.cancel_receipt(receipt, reason, by)
+        if corrected is not None:
+            services.record_payment(receipt.invoice, corrected, receipt.received_by, replaces=receipt)
+        return receipt
+
+    def display(self, field, value):
+        from billing.models import PaymentReceipt
+        if value in (None, ''):
+            return '—'
+        if field == 'amount_paid':
+            return _money(value)
+        if field == 'payment_date':
+            return _dmy(value)
+        if field == 'payment_month':
+            return _dmy(value)[3:]
+        if field == 'payment_method':
+            return dict(PaymentReceipt.METHOD_CHOICES).get(value, value)
+        if field == 'payment_type':
+            return dict(PaymentReceipt._meta.get_field('payment_type').choices).get(value, value)
+        return str(value)
+
+
+class InvoiceHandler(Handler):
+    """Changing an invoice nothing has been paid on yet: the fee, the registration fee or the description. Same order as
+    receipts: anyone may ask with a reason, Supervisor or Management decide."""
+    kind = 'INVOICE'
+    fields = {'monthly_fee': 'Yuran', 'registration_fee': 'Yuran pendaftaran', 'description': 'Keterangan'}
+    note_required = True
+    action_labels = {'UPDATE': 'Ubah'}
+
+    def validate(self, action, target_id, data, ignore=None):
+        from billing import services
+        from billing.models import Invoice
+        if action != 'UPDATE':
+            raise ValidationError('Invois hanya boleh diubah di sini.')
+        invoice = Invoice.objects.select_related('student').filter(pk=target_id).first()
+        if not invoice:
+            raise ValidationError('Invois tidak dijumpai.')
+        others = ChangeRequest.objects.filter(kind=self.kind, status='PENDING', target_id=invoice.pk)
+        if ignore:
+            others = others.exclude(pk=ignore.pk)
+        if others.exists():
+            raise ValidationError('Sudah ada permohonan untuk invois ini yang menunggu kelulusan.')
+        problem = services.invoice_edit_problem(invoice)
+        if problem:
+            raise ValidationError(problem)
+        values = {}
+        for field in ('monthly_fee', 'registration_fee'):
+            if field in data and data[field] not in (None, ''):
+                try:
+                    amount = Decimal(str(data[field])).quantize(Decimal('0.01'))
+                except InvalidOperation:
+                    raise ValidationError({field: 'Amaun tidak sah.'})
+                if amount < 0 or amount > 100000:
+                    raise ValidationError({field: 'Amaun mesti antara RM0 dan RM100,000.'})
+                if amount != getattr(invoice, field):
+                    values[field] = amount
+        if 'description' in data:
+            text = ' '.join(str(data['description'] or '').split())[:150]
+            if invoice.invoice_type == 'OTHER' and not text:
+                raise ValidationError({'description': 'Invois lain memerlukan keterangan.'})
+            if text != invoice.description:
+                values['description'] = text
+        if not values:
+            raise ValidationError('Tiada perubahan untuk dihantar.')
+        fee = values.get('monthly_fee', invoice.monthly_fee)
+        if values.get('registration_fee', invoice.registration_fee) + fee <= 0:
+            raise ValidationError({'monthly_fee': 'Jumlah invois mesti lebih daripada 0.'})
+        label = f"{invoice.invoice_number} · {invoice.student.full_name}"
+        return ({k: ModelHandler.jsonable(v) for k, v in values.items()},
+                {k: ModelHandler.jsonable(getattr(invoice, k)) for k in values}, label)
+
+    def apply(self, action, target_id, values, req=None):
+        from billing import services
+        from billing.models import Invoice
+        return services.edit_invoice(Invoice.objects.get(pk=target_id), values)
+
+    def display(self, field, value):
+        if field in ('monthly_fee', 'registration_fee') and value not in (None, ''):
+            return _money(value)
+        return str(value) if value not in (None, '') else '—'
+
+
 HANDLERS = {h.kind: h for h in (
     SubjectHandler(), VendorHandler(), ExpenseCategoryHandler(), ExpenseSubcategoryHandler(), TeacherHandler(),
     PricingTierHandler(), DiscountHandler(), TimeSlotHandler(), ClassroomHandler(), ClosedDateHandler(),
+    ReceiptHandler(), InvoiceHandler(),
 )}
 
 
@@ -847,11 +1007,15 @@ def require_decider(user, kind):
         raise PermissionDenied(f'Permohonan ini hanya boleh diputuskan oleh {names}.')
 
 
+def action_label(req):
+    return handler_for(req.kind).action_labels.get(req.action) or req.get_action_display()
+
+
 def changes_of(req):
     """The fields a request changes, ready to show: label, before (updates) and after."""
     handler = handler_for(req.kind)
     if req.action == 'DELETE':
-        return [{'field': f, 'label': handler.fields.get(f, f), 'before': handler.display(f, v), 'after': 'dipadam'}
+        return [{'field': f, 'label': handler.fields.get(f, f), 'before': handler.display(f, v), 'after': handler.delete_word}
                 for f, v in req.before.items() if f in handler.fields and v not in (None, '')]
     return [{
         'field': field,
@@ -872,7 +1036,7 @@ def submit(user, kind, action, target_id, data, note):
         raise PermissionDenied(f'Perubahan ini hanya boleh dimohon oleh {names}.')
     direct = role in handler.approvers
     note = (note or '').strip()
-    if not direct and not note:
+    if (handler.note_required or not direct) and not note:
         raise ValidationError({'note': 'Nyatakan sebab permohonan.'})
     values, before, label = handler.validate(action, target_id, data if isinstance(data, dict) else {})
     req = ChangeRequest(

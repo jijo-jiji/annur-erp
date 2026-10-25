@@ -292,3 +292,215 @@ class PhaseCSchoolResultsTests(FeedbackBase):
         self.assertEqual(self.submit([{'subject': self.fizik.id, 'mark': 50}], phone='012').status_code, 400)
         self.assertEqual(self.submit([{'subject': self.fizik.id, 'mark': 50}], phone='013-347 4009').status_code, 201)
         self.assertEqual(ResultSubmission.objects.get().phone, '60133474009')
+
+
+class PhaseDFeesAndCounterTests(FeedbackBase):
+    def setUp(self):
+        super().setUp()
+        from billing.models import Invoice
+        self.student = Student.objects.create(student_id='HQ-260001', full_name='Ali', ic_number='090101-03-1234', form_level='F5',
+                                              join_date=date(2026, 1, 1), status='ACTIVE', parent1_name='Bapa', parent1_phone='60123456789')
+        self.invoice = self.new_invoice(240)
+        self.today = date.today()
+
+    def new_invoice(self, fee, number=None):
+        from billing.models import Invoice
+        number = number or f'INV-2026-{Invoice.objects.count() + 1:04d}'
+        return Invoice.objects.create(invoice_number=number, student=self.student, billing_month=date(2026, 10, 1), invoice_type='MONTHLY',
+                                      registration_fee=0, monthly_fee=fee, total_payable=fee, balance_due=fee, due_date=date(2099, 1, 7))
+
+    def pay(self, amount, method='CASH', invoice=None, role=ADMIN, **extra):
+        self.as_role(role)
+        res = self.client.post('/api/v1/billing/receipts/', {
+            'invoice': (invoice or self.invoice).id, 'amount_paid': amount, 'payment_method': method, 'payment_type': 'MONTHLY', **extra,
+        }, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        return res.data
+
+    def correct(self, receipt, action='UPDATE', payload=None, note='Amaun salah ditaip', role=ADMIN):
+        self.as_role(role)
+        return self.client.post('/api/v1/change-requests/', {
+            'kind': 'RECEIPT', 'action': action, 'target_id': receipt['id'], 'payload': payload or {}, 'note': note}, format='json')
+
+    def refresh(self):
+        self.invoice.refresh_from_db()
+        self.student.refresh_from_db()
+
+    def test_a_receipt_is_never_deleted_and_the_proof_locks_once_it_is_cancelled(self):
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+        receipt = self.pay(100)
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.delete(f"/api/v1/billing/receipts/{receipt['id']}/").status_code, 405)
+
+        def proof():
+            buf = BytesIO()
+            Image.new('RGB', (4, 4)).save(buf, 'PNG')
+            return SimpleUploadedFile('slip.png', buf.getvalue(), content_type='image/png')
+        self.as_role(ADMIN)
+        sent = self.client.post('/api/v1/files/', {'kind': 'PAYMENT_PROOF', 'object_id': receipt['id'], 'file': proof()}, format='multipart')
+        self.assertEqual(sent.status_code, 201, sent.data)
+        self.assertEqual(self.correct(receipt, 'DELETE', role=SUPERVISOR).status_code, 201)
+        locked = self.client.post('/api/v1/files/', {'kind': 'PAYMENT_PROOF', 'object_id': receipt['id'], 'file': proof()}, format='multipart')
+        self.assertEqual(locked.status_code, 403)
+        self.assertEqual(self.client.get('/api/v1/files/', {'kind': 'PAYMENT_PROOF', 'object_id': receipt['id']}).status_code, 200)
+
+    def test_admin_asks_to_correct_a_receipt_and_it_is_cancelled_and_reissued_only_on_approval(self):
+        receipt = self.pay(100)
+        self.assertEqual(self.correct(receipt, payload={'amount_paid': '120.00'}, note='').status_code, 400)  # a reason is required
+        asked = self.correct(receipt, payload={'amount_paid': '120.00'})
+        self.assertEqual((asked.status_code, asked.data['status'], asked.data['action_label']), (201, 'PENDING', 'Betulkan'), asked.data)
+        self.assertEqual(self.correct(receipt, payload={'notes': 'x'}).status_code, 400)  # one request per receipt at a time
+        self.refresh()
+        self.assertEqual(self.invoice.balance_due, 140)  # nothing changes before approval
+
+        self.as_role(SUPERVISOR)
+        done = self.client.post(f"/api/v1/change-requests/{asked.data['id']}/approve/", {}, format='json')
+        self.assertEqual(done.data['status'], 'APPROVED', done.data)
+        rows = {r['receipt_number']: r for r in self.client.get('/api/v1/billing/receipts/').data}
+        old = rows[receipt['receipt_number']]
+        self.assertEqual((old['status'], old['cancel_reason'], old['cancelled_by']), ('CANCELLED', 'Amaun salah ditaip', 'supervisor'))
+        new = rows[old['replaced_by_number']]
+        self.assertEqual((new['status'], new['amount_paid'], new['replaces_number'], new['received_by']),
+                         ('VALID', '120.00', receipt['receipt_number'], 'admin'))
+        self.assertNotEqual(new['receipt_number'], receipt['receipt_number'])
+        self.refresh()
+        self.assertEqual((self.invoice.total_paid, self.invoice.balance_due), (120, 120))
+        # cancelled money is not collected money: the dashboard figure and the list it opens agree
+        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['finance']['collected_today'], 120.0)
+        matching = self.client.get('/api/v1/billing/receipts/matching/', {'from': self.today.isoformat(), 'to': self.today.isoformat()}).data
+        self.assertEqual((matching['count'], matching['total']), (1, 120.0))
+        self.assertEqual(self.client.get('/api/v1/billing/invoices/').data[0]['latest_receipt'], new['receipt_number'])
+        for pk in (old['id'], new['id']):  # the cancelled one prints marked DIBATALKAN, the new one names the one it replaces
+            pdf = self.client.get(f'/api/v1/billing/receipts/{pk}/pdf/')
+            self.assertEqual((pdf.status_code, pdf['Content-Type']), (200, 'application/pdf'))
+
+    def test_an_approver_s_own_correction_applies_at_once_but_still_needs_a_reason(self):
+        receipt = self.pay(100)
+        self.assertEqual(self.correct(receipt, 'DELETE', note='', role=SUPERVISOR).status_code, 400)
+        done = self.correct(receipt, 'DELETE', note='Bayaran berganda', role=SUPERVISOR)
+        self.assertEqual((done.data['status'], done.data['action_label']), ('APPROVED', 'Batalkan'))
+        self.refresh()
+        self.assertEqual((self.invoice.total_paid, self.invoice.balance_due, self.invoice.status), (0, 240, 'UNPAID'))
+        self.assertEqual(self.correct(receipt, 'DELETE', note='lagi', role=SUPERVISOR).status_code, 400)  # already cancelled
+        # the cancelled number is never given out again
+        nxt = self.pay(50)
+        self.assertGreater(nxt['receipt_number'], receipt['receipt_number'])
+
+    def test_cancelling_takes_back_the_overpayment_credit_and_is_refused_once_that_credit_is_spent(self):
+        receipt = self.pay(300)  # 60 above the invoice becomes credit
+        self.refresh()
+        self.assertEqual(self.student.credit_balance, 60)
+        self.correct(receipt, 'DELETE', note='Salah pelajar', role=SUPERVISOR)
+        self.refresh()
+        self.assertEqual((self.student.credit_balance, self.invoice.balance_due), (0, 240))
+
+        again = self.pay(300)
+        second = self.new_invoice(100)
+        self.as_role(ADMIN)
+        self.client.post(f'/api/v1/billing/invoices/{second.id}/apply_credit/', {}, format='json')
+        refused = self.correct(again, 'DELETE', note='Salah pelajar', role=SUPERVISOR)
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn('kredit', str(refused.data))
+
+    def test_an_unpaid_invoice_is_changed_with_a_reason_and_approval_and_its_discount_follows_the_fee(self):
+        from billing.models import Discount
+        self.invoice.discount = Discount.objects.create(name='Adik-beradik', code='SIB10', mode='PERCENT', value=10)
+        self.invoice.discount_amount, self.invoice.total_payable, self.invoice.balance_due = 24, 216, 216
+        self.invoice.save()
+        self.as_role(ADMIN)
+        asked = self.client.post('/api/v1/change-requests/', {'kind': 'INVOICE', 'action': 'UPDATE', 'target_id': self.invoice.id,
+                                                              'payload': {'monthly_fee': '200'}, 'note': 'Pakej salah'}, format='json')
+        self.assertEqual(asked.data['status'], 'PENDING', asked.data)
+        self.as_role(SUPERVISOR)
+        self.client.post(f"/api/v1/change-requests/{asked.data['id']}/approve/", {}, format='json')
+        self.refresh()
+        self.assertEqual((self.invoice.monthly_fee, self.invoice.discount_amount, self.invoice.total_payable, self.invoice.balance_due), (200, 20, 180, 180))
+        history = self.client.get('/api/v1/change-requests/', {'kind': 'INVOICE', 'target': self.invoice.id}).data
+        self.assertEqual(history[0]['changes'][0], {'field': 'monthly_fee', 'label': 'Yuran', 'before': 'RM 240.00', 'after': 'RM 200.00'})
+
+        self.pay(50)
+        paid = self.client.post('/api/v1/change-requests/', {'kind': 'INVOICE', 'action': 'UPDATE', 'target_id': self.invoice.id,
+                                                             'payload': {'monthly_fee': '150'}, 'note': 'x'}, format='json')
+        self.assertEqual(paid.status_code, 400)  # money has been taken against it
+
+    def test_a_student_with_a_corrected_receipt_can_still_be_removed_with_their_records(self):
+        from billing import services
+        from billing.models import PaymentReceipt
+        first = services.record_payment(self.invoice, {'amount_paid': 50}, 'admin')
+        services.cancel_receipt(first, 'Salah', 'supervisor')
+        services.record_payment(self.invoice, {'amount_paid': 60}, 'admin', replaces=first)
+        self.student.delete()
+        self.assertEqual(PaymentReceipt.objects.count(), 0)
+
+    def close(self, role=ADMIN, **data):
+        self.as_role(role)
+        return self.client.post('/api/v1/billing/cash-close/', data, format='json')
+
+    def test_the_counter_is_closed_with_the_cash_counted_and_checked_by_someone_else(self):
+        self.pay(100, 'CASH')
+        self.pay(50, 'DUITNOW_QR', reference_number='QR123')
+        short = self.close(opening_float='20', cash_counted='115')
+        self.assertEqual(short.status_code, 400)  # a difference needs an explanation
+        closed = self.close(opening_float='20', cash_counted='115', note='Kurang RM5, baki duit kecil')
+        c = closed.data['close']
+        self.assertEqual((c['status'], c['cash_expected'], c['difference'], c['receipts_total'], c['receipt_count']),
+                         ('CLOSED', 120, -5, 150, 2), c)
+        self.assertEqual(c['by_method']['DUITNOW_QR'], {'label': 'DuitNow QR', 'count': 1, 'amount': '50.00'})
+
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.post('/api/v1/billing/cash-close/verify/', {}, format='json').status_code, 403)
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post('/api/v1/billing/cash-close/return/', {}, format='json').status_code, 400)  # say what to recount
+        returned = self.client.post('/api/v1/billing/cash-close/return/', {'note': 'Kira semula syiling'}, format='json')
+        self.assertEqual(returned.data['close']['status'], 'RETURNED')
+        self.assertEqual(self.close(opening_float='20', cash_counted='120').data['close']['status'], 'CLOSED')
+        self.as_role(SUPERVISOR)
+        verified = self.client.post('/api/v1/billing/cash-close/verify/', {}, format='json')
+        self.assertEqual(verified.data['close']['status'], 'VERIFIED')
+        self.assertEqual(self.close(opening_float='20', cash_counted='120').status_code, 400)  # a verified day is final
+
+        self.pay(30, 'CASH')  # recorded for the same day after closing
+        day = self.client.get('/api/v1/billing/cash-close/').data
+        self.assertTrue(day['close']['changed_after_close'])
+        self.assertEqual(day['live']['receipts_total'], 180)
+        history = self.client.get('/api/v1/billing/cash-close/history/').data['days']
+        self.assertEqual(history[0]['close']['status'], 'VERIFIED')
+
+    def test_nobody_but_management_verifies_their_own_close_and_unclosed_days_show_on_the_dashboard(self):
+        from datetime import timedelta
+        from billing.models import PaymentReceipt
+        receipt = self.pay(100, 'CASH')
+        yesterday = self.today - timedelta(days=1)
+        PaymentReceipt.objects.filter(pk=receipt['id']).update(payment_date=yesterday)
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['counter']['unclosed_days'], [yesterday])
+        self.close(role=SUPERVISOR, cash_counted='0')
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post('/api/v1/billing/cash-close/verify/', {}, format='json').status_code, 403)
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.get('/api/v1/dashboard/summary/').data['counter']['to_verify'], 1)
+        self.assertEqual(self.client.post('/api/v1/billing/cash-close/verify/', {}, format='json').data['close']['status'], 'VERIFIED')
+
+    def test_the_daily_checklist_is_ticked_by_staff_and_checked_once_by_the_supervisor(self):
+        add = lambda code, label, order, auto='': DynamicMasterData.objects.create(category='27_daily_checklist', code=code, label=label,
+                                                                                 meta_info={'order': order, 'auto': auto})
+        DynamicMasterData.objects.filter(category='27_daily_checklist').delete()  # the defaults loaded by the migration
+        add('TUTUP', 'Tutup kaunter', 1, 'cash_close')
+        add('MESEJ', 'Mesej dibalas', 2)
+        self.as_role(ADMIN)
+        day = self.client.get('/api/v1/checklist/').data
+        self.assertEqual([(i['code'], i['done'], i['hint']) for i in day['items']], [('TUTUP', False, 'Kaunter belum ditutup'), ('MESEJ', False, '')])
+        self.assertEqual(self.client.post('/api/v1/checklist/tick/', {'code': 'NOPE'}, format='json').status_code, 400)
+        ticked = self.client.post('/api/v1/checklist/tick/', {'code': 'MESEJ', 'note': '3 mesej'}, format='json').data
+        self.assertEqual((ticked['done'], ticked['items'][1]['by'], ticked['can_check']), (1, 'admin', False))
+
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post('/api/v1/checklist/check/', {}, format='json').status_code, 400)  # an item is not ticked
+        checked = self.client.post('/api/v1/checklist/check/', {'note': 'Kaunter ditutup lewat'}, format='json').data
+        self.assertEqual((checked['checked_by'], checked['can_tick']), ('supervisor', False))
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.post('/api/v1/checklist/tick/', {'code': 'TUTUP'}, format='json').status_code, 400)
+        DynamicMasterData.objects.filter(code='MESEJ').delete()  # a later change to the list leaves a checked day as it was
+        self.assertEqual(len(self.client.get('/api/v1/checklist/').data['items']), 2)

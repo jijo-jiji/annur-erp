@@ -8,6 +8,7 @@ from business_config.models import DynamicMasterData
 from expenses.models import PaymentVoucher
 from students.models import Student, StudentExamResult, ClassWaitlist
 from academic.drilldown import capacity_state
+from billing.counter import counter_alerts
 from billing.drilldown import invoices_matching, receipts_matching
 from expenses.drilldown import COUNTED_STATUSES, vouchers_matching
 from students.drilldown import REGISTERED_STATUSES, STAY_BUCKETS, events_matching, leads_matching, stay_days, stay_key, uninvoiced_students
@@ -130,7 +131,7 @@ def build_dashboard(role, today=None, user=None):
     full = [class_row(c) for c in classes if capacity_state(c, near_seats) == 'full']
     near_full = [class_row(c) for c in classes if capacity_state(c, near_seats) == 'near']
 
-    receipts = PaymentReceipt.objects.all()
+    receipts = PaymentReceipt.objects.filter(status='VALID')  # a cancelled receipt's money went back on the invoice
     collected_today = receipts.filter(payment_date=today).aggregate(t=Sum('amount_paid'))['t']
     collected_month = receipts.filter(payment_date__gte=month_start, payment_date__lt=next_month).aggregate(t=Sum('amount_paid'))['t']
     collected_prev = receipts.filter(payment_date__gte=prev_start, payment_date__lt=month_start).aggregate(t=Sum('amount_paid'))['t']
@@ -269,6 +270,8 @@ def build_dashboard(role, today=None, user=None):
         # Staff alerts: contract ending within a month and birthdays this week (not shown to Admin)
         'staff': staff_alerts(today) if role != ADMIN else {'contracts_ending': [], 'birthdays': []},
         'approvals': approvals,
+        # Tutup kaunter harian: closes waiting for this person's check, and recent days with takings but no close
+        'counter': counter_alerts(user, today),
         'pending_vouchers': [{
             'id': pv.id, 'pv_number': pv.pv_number, 'amount': money(pv.amount),
             'vendor': pv.vendor.vendor_name if pv.vendor else None,

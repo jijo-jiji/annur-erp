@@ -286,6 +286,12 @@ export const billingApi = {
     body: JSON.stringify({ month, dry_run: dryRun }),
   }),
   getDiscounts: () => request('/billing/discounts/'),
+  // Tutup kaunter harian: the day's receipts and its close; close it (Admin), verify or return it (Supervisor)
+  cashClose: (day) => request(`/billing/cash-close/${day ? `?date=${day}` : ''}`),
+  closeCounter: (data) => request('/billing/cash-close/', { method: 'POST', body: JSON.stringify(data) }),
+  verifyClose: (day, note = '') => request('/billing/cash-close/verify/', { method: 'POST', body: JSON.stringify({ date: day, note }) }),
+  returnClose: (day, note) => request('/billing/cash-close/return/', { method: 'POST', body: JSON.stringify({ date: day, note }) }),
+  closeHistory: (month) => request(`/billing/cash-close/history/?month=${month}`),
   calculateFees: (levelCategory, subjectCount, isNewStudent) => request('/billing/calculate-fees/', {
     method: 'POST',
     body: JSON.stringify({
@@ -455,8 +461,16 @@ export const dashboardApi = {
 };
 
 // Changes to setup data (subjects, ...): Admin proposes, Supervisor / Management decides
+// The office's daily checklist: tick items through the day; Supervisor checks the day once
+export const checklistApi = {
+  get: (day) => request(`/checklist/${day ? `?date=${day}` : ''}`),
+  tick: (day, code, done, note = '') => request('/checklist/tick/', { method: 'POST', body: JSON.stringify({ date: day, code, done, note }) }),
+  check: (day, note = '') => request('/checklist/check/', { method: 'POST', body: JSON.stringify({ date: day, note }) }),
+};
+
 export const changeRequestApi = {
-  list: (kind) => request(`/change-requests/?kind=${encodeURIComponent(kind)}`),
+  // kind may name several kinds (RECEIPT,INVOICE); target narrows it to one record's requests
+  list: (kind, target) => request(`/change-requests/?kind=${encodeURIComponent(kind)}${target ? `&target=${target}` : ''}`),
   create: (body) => request('/change-requests/', { method: 'POST', body: JSON.stringify(body) }),
   revise: (id, payload, note) => request(`/change-requests/${id}/`, { method: 'PATCH', body: JSON.stringify({ payload, note }) }),
   approve: (id, comment = '') => request(`/change-requests/${id}/approve/`, { method: 'POST', body: JSON.stringify({ comment }) }),

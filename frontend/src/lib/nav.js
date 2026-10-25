@@ -17,6 +17,7 @@ import {
   Wallet,
   Briefcase,
   Database,
+  ClipboardList,
 } from 'lucide-react';
 import { can } from './permissions';
 
@@ -35,6 +36,7 @@ export const NAV_ITEMS = [
   { id: 'teacher-attendance', label: 'Kehadiran guru', icon: UserCheck, perm: 'teachers.attendance', group: 'Guru' },
   { id: 'payroll', label: 'Gaji guru', icon: Wallet, perm: 'payroll.view', group: 'Guru' },
   { id: 'billing', label: 'Yuran & resit', icon: Receipt, perm: 'billing.view', group: 'Kewangan' },
+  { id: 'counter', label: 'Kaunter harian', icon: ClipboardList, perm: 'counter.view', group: 'Kewangan' },
   { id: 'vouchers', label: 'Baucar bayaran', icon: FileText, perm: 'vouchers.view', group: 'Kewangan' },
   { id: 'staff', label: 'Staf: kehadiran & cuti', icon: Briefcase, perm: 'staff.view', group: 'Pentadbiran' },
   { id: 'master-data', label: 'Data induk', icon: Database, perm: 'masterdata.view', group: 'Pentadbiran' },
