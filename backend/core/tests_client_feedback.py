@@ -912,6 +912,21 @@ class PhaseIQRCheckInTests(FeedbackBase):
         self.assertEqual(self.scan(cls['code'], self.kids[1], device='phone-of-aisyah-003', ic='6622').status_code, 400)  # list confirmed
         self.assertEqual(StudentAttendance.objects.count(), 3)
 
+    def test_the_teacher_s_class_page_keeps_working_while_it_refreshes(self):
+        """The page refreshes itself every 15 seconds and teachers at the centre share one address: half an hour of two
+        teachers' pages refreshing must not lock either of them out of marking and confirming their class."""
+        self.at('08:50')
+        self.as_role(MANAGEMENT)
+        tokens = [self.client.post('/api/v1/teachers/links/', {'kind': 'TEACHER', 'teacher': t.id}, format='json').data['token']
+                  for t in (self.teacher, self.other)]
+        self.client.force_authenticate(None)
+        for _ in range(120):
+            for token in tokens:
+                self.assertEqual(self.client.get(f'/api/v1/public/teacher-link/{token}/classes/').status_code, 200)
+        url = f'/api/v1/public/teacher-link/{tokens[0]}/classes/{self.fz.id}/'
+        self.assertEqual(self.client.post(url, {'action': 'mark', 'student': self.kids[0].id, 'status': 'PRESENT'}, format='json').status_code, 200)
+        self.assertEqual(self.client.post(url, {'action': 'confirm'}, format='json').status_code, 200)
+
     def test_a_class_that_ended_closes_by_itself_and_staff_saving_the_list_keeps_who_checked_in(self):
         from students.models import StudentAttendance
         p = self.at('08:50')

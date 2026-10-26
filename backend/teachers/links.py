@@ -19,7 +19,7 @@ from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from core.throttles import PublicTeacherThrottle
+from core.throttles import PublicTeacherThrottle, TeacherPagesCeilingThrottle, TeacherPageThrottle
 from core import files, notify
 from core.models import Attachment, ChangeRequest
 from core.permissions import MANAGEMENT, display_name
@@ -242,7 +242,7 @@ def _teacher_classes(link, on):
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
-@throttle_classes([PublicTeacherThrottle])
+@throttle_classes([TeacherPageThrottle, TeacherPagesCeilingThrottle])
 def teacher_classes(request, token):
     """The teacher's classes today, each with its live list and check-in code. The code is made the first time the page
     shows it while scanning is open, so a teacher opening the link early does not start check-in for every class."""
@@ -260,7 +260,7 @@ def teacher_classes(request, token):
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
-@throttle_classes([PublicTeacherThrottle])
+@throttle_classes([TeacherPageThrottle, TeacherPagesCeilingThrottle])
 def teacher_class_action(request, token, class_id):
     """{action: mark, student, status: PRESENT | LATE | ABSENT} for a pupil without a phone, or {action: confirm}."""
     from students import checkin
