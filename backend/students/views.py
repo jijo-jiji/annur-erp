@@ -8,7 +8,7 @@ from rest_framework.decorators import api_view, action, authentication_classes, 
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
+from core.throttles import PublicRegisterThrottle
 from academic.models import ClassTimetable
 from core import notify, numbering
 from core.permissions import APPROVER_ROLES, get_role, display_name, require_role
@@ -197,10 +197,6 @@ class StudentViewSet(viewsets.ModelViewSet):
         services.log(student, 'NOTE', display_name(request.user), get_date(request.data.get('date'), 'date'),
                      description=description, action=request.data.get('action', ''))
         return self._respond(student)
-
-
-class PublicRegisterThrottle(ScopedRateThrottle):
-    scope = 'public_register'
 
 
 @api_view(['POST'])

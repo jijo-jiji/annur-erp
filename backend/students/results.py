@@ -13,7 +13,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
+from core.throttles import PublicResultsThrottle
 
 from academic.models import ClassTimetable
 from business_config.models import SubjectMaster
@@ -240,10 +240,6 @@ class ResultSubmissionViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 # ---- Public form (no login) -------------------------------------------------------------------------------------
-
-class PublicResultsThrottle(ScopedRateThrottle):
-    scope = 'public_results'
-
 
 def find_student(code, ic_last4):
     """The student with this code (or the code they had before renumbering) whose IC ends in these 4 digits.
