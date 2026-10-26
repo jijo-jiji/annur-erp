@@ -58,11 +58,14 @@ class TeacherPaymentSerializer(serializers.ModelSerializer):
 class TeacherComplaintSerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source='teacher.full_name', read_only=True)
     teacher_code = serializers.CharField(source='teacher.teacher_code', read_only=True)
+    complainant_label = serializers.CharField(source='get_complainant_type_display', read_only=True)
+    student_name = serializers.CharField(source='student.full_name', read_only=True, default='')
+    student_code = serializers.CharField(source='student.student_id', read_only=True, default='')
 
     class Meta:
         model = TeacherComplaint
         fields = '__all__'
-        read_only_fields = ('recorded_by',)
+        read_only_fields = ('recorded_by', 'comments')
 
 class TeacherRateIncrementSerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source='teacher.full_name', read_only=True)

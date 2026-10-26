@@ -821,4 +821,13 @@ class Command(BaseCommand):
                         student=student, year=2026, term=term, subject_id=subject_id,
                         defaults={'mark': mark, 'grade': grade_for(mark), 'form_level': student.form_level, 'recorded_by': 'Admin 1'})
                     mark = max(0, min(100, mark + step))
+        # A few clear cases for Prestasi pelajar: in the latest exam of one subject, a sharp fall or a fail
+        for i, student in enumerate(Student.objects.filter(status='ACTIVE').order_by('student_id')[:6]):
+            latest = StudentExamResult.objects.filter(student=student, year=2026).order_by('-exam_date', 'subject_id').first()
+            if latest is None:
+                continue
+            before = StudentExamResult.objects.filter(student=student, subject=latest.subject, exam_date__lt=latest.exam_date).order_by('-exam_date').first()
+            mark = 33 if i % 2 else max(0, (before.mark if before else latest.mark) - 14)
+            latest.mark, latest.grade = mark, grade_for(mark)
+            latest.save(update_fields=['mark', 'grade'])
 

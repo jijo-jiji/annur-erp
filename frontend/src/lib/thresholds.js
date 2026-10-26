@@ -13,6 +13,9 @@ export const THRESHOLDS = {
   attendance_window_days: 30,
   nearly_full_seats: 2,
   follow_up_days: 7,
+  // School exam results: the pass mark, and a drop from the previous exam that counts as falling (marks)
+  results_pass_mark: 40,
+  results_drop_marks: 10,
   // QR self check-in (minutes)
   checkin_open_before: 15,
   checkin_open_after: 30,

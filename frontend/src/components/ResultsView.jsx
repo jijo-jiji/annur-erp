@@ -8,7 +8,7 @@ import { classLabel, grade, gradeOrder } from '../lib/domain';
 import { formLabel, FORMS, todayISO } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import { useGrades } from '../lib/grades';
-import { examsOf, isFail, isFinalYear, PASS, RESULT_GRADES, resultsFormUrl, summarize, TERMS, termLabel, termOf } from '../lib/results';
+import { examsOf, isFail, isFinalYear, passMark, RESULT_GRADES, resultsFormUrl, summarize, TERMS, termLabel, termOf } from '../lib/results';
 import { CENTRE } from '../lib/config';
 import { HBarList, TrendChart } from './charts';
 import ResultSubmissions from './ResultSubmissions';
@@ -99,7 +99,7 @@ export default function ResultsView({ role }) {
 
           <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat label="Purata markah" value={overall?.avg != null ? `${overall.avg}%` : '—'} hint={termOf(term)?.gradeOnly ? 'SPM: gred sahaja' : overall ? `${overall.n} keputusan` : 'Belum ada markah'} />
-            <Stat label="Kadar lulus" value={overall ? `${overall.pass}%` : '—'} hint={`Markah ${PASS} ke atas`} />
+            <Stat label="Kadar lulus" value={overall ? `${overall.pass}%` : '—'} hint={`Markah ${passMark()} ke atas`} />
             <Stat label="Gred A dan A+" value={overall ? overall.aCount : '—'} hint={overall ? `daripada ${overall.n} keputusan` : ''} />
             <Stat label="Kelas direkod" value={`${entered}/${visible.length}`} hint={`${termLabel(term)} ${year}`} />
           </div>

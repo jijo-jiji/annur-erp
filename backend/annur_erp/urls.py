@@ -29,6 +29,7 @@ from core.notification_views import notifications, notifications_read
 from billing.followups import follow_up_record, follow_ups
 from teachers.links import TeacherLinkViewSet, public_teacher_link, teacher_class_action, teacher_classes
 from students.checkin import public_code, public_mark, public_room, staff_checkin
+from students.teacher_reports import StudentReportViewSet, performance
 from expenses.views import VendorViewSet, PaymentVoucherViewSet
 from core.attachments import AttachmentViewSet
 from core.change_request_views import ChangeRequestViewSet
@@ -79,6 +80,7 @@ router.register(r'students/history', StudentEventViewSet)
 router.register(r'students/waitlist', ClassWaitlistViewSet)
 router.register(r'students/results', StudentExamResultViewSet)
 router.register(r'students/result-submissions', ResultSubmissionViewSet)
+router.register(r'students/reports', StudentReportViewSet)
 
 # Billing
 router.register(r'billing/invoices', InvoiceViewSet)
@@ -117,6 +119,7 @@ urlpatterns = [
     path('api/v1/dashboard/summary/', dashboard_summary),
     path('api/v1/reports/summary/', reports_summary),
     path('api/v1/students/parent-self-register/', parent_self_register),
+    path('api/v1/students/performance/', performance),
     path('api/v1/attendance/roster/', attendance_roster),
     path('api/v1/attendance/summary/', attendance_summary),
     path('api/v1/attendance/sessions/', attendance_sessions),

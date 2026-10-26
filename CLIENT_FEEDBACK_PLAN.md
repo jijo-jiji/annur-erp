@@ -1,7 +1,7 @@
 # Client feedback, October 2026
 
-**Status:** in progress. Phases are built in the order below; each phase is marked done here, with what changed while
-building it, before the next one starts.
+**Status:** all phases done (26 Oct 2026). Phases were built in the order below; each is marked done here, with what
+changed while building it.
 
 | Phase | Work | Status |
 |---|---|---|
@@ -13,7 +13,7 @@ building it, before the next one starts.
 | F | Teacher private links and the public teacher profile form | **Done** 26 Oct 2026 |
 | I | QR self check-in for student attendance | **Done** 26 Oct 2026 |
 | G | Handouts linked to classes, copy count and received list | **Done** 26 Oct 2026 |
-| H | Performance analysis dashboard and two-way reports | Planned |
+| H | Performance analysis dashboard and two-way reports | **Done** 26 Oct 2026 |
 
 ## What was already built (before this plan)
 
@@ -350,3 +350,44 @@ Tests: `PhaseGHandoutTests` (4 tests); full backend suite 288 tests OK; browser 
 A *Prestasi pelajar* dashboard of failing and falling students with subject, teacher, attendance in that class, mark
 trend, notes and likely reasons, grouped by teacher and class. Teacher-about-student reports on the student profile;
 student / parent-about-teacher reports join *Aduan*; each with details, comments, status and action (staff enter both).
+
+### Phase H: what was built
+
+| Where | What |
+|---|---|
+| **Prestasi pelajar** (new menu item under Akademik; Supervisor and Management) | Students failing (a mark below the pass mark, or grade G / TH when there is no mark) or falling (this many marks or more below the same subject in the student's previous exam), grouped by the teacher and tuition class of that subject; subjects not taken at the centre are grouped apart. Each row: the mark and grade, the change and the exam it is compared with, the subject's marks over the last five exams, attendance in that class between the previous exam and this one, open teacher reports, and likely reasons. Figures: students watched, failing and falling subjects, low class attendance. Filters: exam (default: each student's latest result, since only Tingkatan 5 sit Percubaan SPM), failing / falling, form, search. *Laporan guru* on a row writes a teacher report for that student and class. |
+| Student profile → **Laporan** tab | *Laporan guru tentang pelajar*: a teacher's report about the student (class, kind: akademik, disiplin, kehadiran, kerja rumah, lain-lain; date; details), recorded by any staff, with comments, *Kemas kini* for status (Baru, Dalam tindakan, Selesai) and the action taken, PIC and date. For Supervisor and Management, *Aduan pelajar / ibu bapa tentang guru* lists the complaints linked to this student. |
+| Guru → **Aduan & tindakan** | A complaint now records who it came from (ibu bapa, pelajar, staf, lain-lain) and the student it concerns, so a student's or parent's report about a teacher is a complaint here and shows on that student's profile. Each complaint has comments (*Komen*). |
+| Bell | A new teacher report, or a new complaint about a teacher, tells Supervisor and Management (not whoever recorded it). |
+| Laporan → *Pelajar dengan keputusan terkini D hingga G* | A link to Prestasi pelajar. |
+| Tetapan → Had & amaran → **Prestasi pelajar** | The pass mark (40) and the drop that counts as falling (10 marks). The pass mark also sets the pass rates and red marks on Keputusan peperiksaan and the student's results, which used a fixed 40 before. |
+
+Likely reasons (backend `students/performance.py`), each from a fact in the records:
+- *Tidak mengambil subjek ini di pusat*: the student has no tuition class for that subject.
+- *Kehadiran rendah dalam kelas ini (60%)*: attendance in that class between the two exams is below the low-attendance
+  setting (the same one the dashboard warnings use).
+- *Baru menyertai pusat sebelum peperiksaan ini*: the student joined after the previous exam (or after 1 January when
+  there is none).
+- *Merosot dalam 3 subjek sekali gus*: falling in three or more subjects in that exam, which points to something beyond
+  one class.
+- *Laporan guru: Disiplin / tingkah laku*: an open teacher report (up to three; resolved ones stop counting).
+
+Changes from the plan, found while building:
+- Teacher names are often stored with the title (*Cikgu Zakir*). The teacher link page (Phase F), the name recorded when
+  a teacher confirms a QR list (Phase I) and the new notices added it again (*Cikgu Cikgu Zakir*); one helper on each
+  side now adds it only when missing.
+- The demo results never failed or fell far enough, so the dashboard was empty; six demo students now have a clear fall
+  or fail in their latest exam.
+- Older complaints only named who complained in words; the migration sorts them into parent, student, staff or other
+  where the words make it clear.
+- Complaints stay with Supervisor and Management (as since the start, from j-status.doc), so Admin records teacher
+  reports but not complaints; a parent's complaint at the counter is passed to Supervisor.
+
+Data: new `students.StudentReport` (student, teacher, class, date, kind, details, status, action, PIC, action date,
+comments, recorded by); `TeacherComplaint` gains `complainant_type`, `student` and `comments`; settings
+`RESULTS_PASS_MARK`, `RESULTS_DROP_MARKS`. APIs: `/students/performance/?year=&term=` (Supervisor, Management),
+`/students/reports/` (list `?student=`, create, update, `comment`), `/teachers/complaints/` (`?student=`, `comment`).
+
+Tests: `PhaseHPerformanceAndReportsTests` (4 tests); full backend suite 292 tests OK; browser `e2e/performance.spec.js`
+(3 tests); full browser suite 104 tests OK.
+

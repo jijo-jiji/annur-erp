@@ -4,7 +4,7 @@ import { Copy, Link2, Plus } from 'lucide-react';
 import { teacherLinksApi } from '../api/client';
 import { describeError } from '../lib/apiErrors';
 import { CENTRE } from '../lib/config';
-import { clock, date, todayISO } from '../lib/format';
+import { cikgu, clock, date, todayISO } from '../lib/format';
 import { fillMessage } from '../lib/messages';
 import { publicUrl } from '../lib/nav';
 import FormModal from './FormModal';
@@ -39,7 +39,7 @@ export default function TeacherLinks({ teachers, making, onMade, onCloseMaking }
     }
   };
   const revoke = async (link) => {
-    if (!window.confirm(`Batalkan pautan ${link.teacher_name ? `Cikgu ${link.teacher_name}` : link.label}? Pautan ini tidak boleh dibuka lagi.`)) return;
+    if (!window.confirm(`Batalkan pautan ${link.teacher_name ? cikgu(link.teacher_name) : link.label}? Pautan ini tidak boleh dibuka lagi.`)) return;
     try {
       await teacherLinksApi.revoke(link.id);
       notify('Pautan dibatalkan.', 'info');
@@ -122,7 +122,7 @@ function LinkTable({ rows, onRevoke }) {
         {rows.map((l) => (
           <tr key={l.id}>
             <Td>
-              <p className="font-medium text-gray-900">{l.teacher_name ? `Cikgu ${l.teacher_name} (${l.teacher_code})` : l.label}</p>
+              <p className="font-medium text-gray-900">{l.teacher_name ? `${cikgu(l.teacher_name)} (${l.teacher_code})` : l.label}</p>
               <p className="text-[13px] text-gray-500">
                 {l.kind === 'TEACHER' ? 'Peribadi' : 'Pemohon'} · …{l.hint}{l.expires_on ? ` · tamat ${date(l.expires_on)}` : ''}
               </p>
@@ -157,7 +157,7 @@ function ShowLink({ link, url, teacher, onClose }) {
     <Modal
       open
       onClose={onClose}
-      title={link.kind === 'TEACHER' ? `Pautan Cikgu ${link.teacher_name}` : `Pautan pemohon: ${link.label}`}
+      title={link.kind === 'TEACHER' ? `Pautan ${cikgu(link.teacher_name)}` : `Pautan pemohon: ${link.label}`}
       description="Simpan atau hantar sekarang. Pautan penuh hanya dipaparkan sekali; jika hilang, buat pautan baharu."
       footer={
         <>

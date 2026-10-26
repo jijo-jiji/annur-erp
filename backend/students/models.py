@@ -351,3 +351,28 @@ class StudentDevice(models.Model):
     token_hash = models.CharField(max_length=64, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True, blank=True)
+
+
+class StudentReport(models.Model):
+    """A teacher's report about a student (Phase H): what the teacher noticed in class, entered by staff (client
+    decision 7), with comments, a status and the action taken. Shown on the student's profile and, while open, beside
+    the student on Prestasi pelajar."""
+    CATEGORIES = [('ACADEMIC', 'Akademik'), ('BEHAVIOUR', 'Disiplin / tingkah laku'), ('ATTENDANCE', 'Kehadiran'),
+                  ('HOMEWORK', 'Kerja rumah'), ('OTHER', 'Lain-lain')]
+    STATUSES = [('OPEN', 'Baru'), ('IN_PROGRESS', 'Dalam tindakan'), ('RESOLVED', 'Selesai')]
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='teacher_reports')
+    teacher = models.ForeignKey('teachers.Teacher', on_delete=models.SET_NULL, null=True, blank=True, related_name='student_reports')
+    timetable_class = models.ForeignKey(ClassTimetable, on_delete=models.SET_NULL, null=True, blank=True, related_name='student_reports')
+    date = models.DateField(default=date.today)
+    category = models.CharField(max_length=12, choices=CATEGORIES, default='ACADEMIC')
+    details = models.TextField()
+    status = models.CharField(max_length=12, choices=STATUSES, default='OPEN')
+    action_taken = models.TextField(blank=True)
+    action_pic = models.CharField(max_length=120, blank=True)
+    action_date = models.DateField(null=True, blank=True)
+    comments = models.JSONField(default=list, blank=True)  # [{by, at, text}], added one at a time, never edited
+    recorded_by = models.CharField(max_length=150, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date', '-id']

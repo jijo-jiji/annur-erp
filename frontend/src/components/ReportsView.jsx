@@ -309,9 +309,14 @@ export default function ReportsView({ role }) {
           <Card>
             <CardHeader
               title="Pelajar dengan keputusan terkini D hingga G"
-              description="Keputusan terkini setiap subjek bagi pelajar aktif"
-              actions={data.academic.at_risk.length > 0 && <CsvButton onClick={() => downloadCsv('pelajar-berisiko.csv', ['ID', 'Nama', 'Tingkatan', 'Subjek', 'Peperiksaan', 'Gred', 'Markah'],
-                data.academic.at_risk.map((s) => [s.student_id, s.name, s.form, s.subject, s.exam, s.grade, s.mark]))} />}
+              description="Keputusan terkini setiap subjek bagi pelajar aktif. Prestasi pelajar menunjukkan yang gagal atau merosot, dengan kehadiran kelas dan sebab yang mungkin."
+              actions={
+                <div className="flex gap-2">
+                  <Button size="sm" as="a" href="#/performance">Prestasi pelajar</Button>
+                  {data.academic.at_risk.length > 0 && <CsvButton onClick={() => downloadCsv('pelajar-berisiko.csv', ['ID', 'Nama', 'Tingkatan', 'Subjek', 'Peperiksaan', 'Gred', 'Markah'],
+                    data.academic.at_risk.map((s) => [s.student_id, s.name, s.form, s.subject, s.exam, s.grade, s.mark]))} />}
+                </div>
+              }
             />
             {data.academic.at_risk.length === 0 ? <EmptyState title="Tiada keputusan D hingga G direkodkan" /> : (
               <Table>

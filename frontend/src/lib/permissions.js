@@ -57,6 +57,7 @@ export const PERMISSIONS = {
     'masterdata.approve',
     'staff.manage',
     'reports.view',
+    'performance.view', // Prestasi pelajar: failing and falling students
     'settings.view',
     'settings.advanced', // fee packages, discounts, policies
     'settings.pricing',
@@ -90,6 +91,7 @@ export const PERMISSIONS = {
     'staff.manage',
     'staff.jobs', // job details, add staff
     'reports.view',
+    'performance.view', // Prestasi pelajar: failing and falling students
     'finance.summary', // collection & arrears totals
     'settings.view',
     'settings.advanced', // fee packages, discounts, policies

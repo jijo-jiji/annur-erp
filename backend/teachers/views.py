@@ -33,14 +33,27 @@ class TeacherViewSet(viewsets.ReadOnlyModelViewSet):
         return Response({'count': len(codes), 'ids': codes})
 
 class TeacherComplaintViewSet(viewsets.ModelViewSet):
-    queryset = TeacherComplaint.objects.all().select_related('teacher')
+    """Complaints about teachers, including a student's or parent's report about a teacher (Phase H): who it came from,
+    the student it concerns, comments, status and the action taken."""
+    queryset = TeacherComplaint.objects.all().select_related('teacher', 'student')
     serializer_class = TeacherComplaintSerializer
     # Complaint / action report sits with Supervisor & Management in j-status.doc
     read_roles = APPROVER_ROLES
     write_roles = APPROVER_ROLES
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        student = str(self.request.query_params.get('student') or '')
+        return qs.filter(student_id=student if student.isdigit() else 0) if student else qs
+
     def perform_create(self, serializer):
-        serializer.save(recorded_by=display_name(self.request.user))
+        complaint = serializer.save(recorded_by=display_name(self.request.user))
+        notify.teacher_complaint_added(complaint, self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def comment(self, request, pk=None):
+        from students.teacher_reports import add_comment
+        return Response(self.get_serializer(add_comment(self.get_object(), request.data.get('text'), display_name(request.user))).data)
 
 class TeacherRateIncrementViewSet(viewsets.ModelViewSet):
     queryset = TeacherRateIncrement.objects.all().select_related('teacher')

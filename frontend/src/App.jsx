@@ -18,6 +18,7 @@ import CounterView from './components/CounterView';
 import TimetableView from './components/TimetableView';
 import AttendanceView from './components/AttendanceView';
 import ResultsView from './components/ResultsView';
+import PerformanceView from './components/PerformanceView';
 import RescheduleLogView from './components/RescheduleLogView';
 import TeachersView from './components/TeachersView';
 import PaymentVoucherView from './components/PaymentVoucherView';
@@ -53,6 +54,7 @@ const VIEWS = {
   timetable: TimetableView,
   attendance: AttendanceView,
   results: ResultsView,
+  performance: PerformanceView,
   reschedules: RescheduleLogView,
   handouts: HandoutRepositoryView,
   teachers: TeachersView,

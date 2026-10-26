@@ -272,7 +272,7 @@ def teacher_class_action(request, token, class_id):
     found = checkin.checkin_for(cls, on)
     if found.confirmed_at:
         raise ValidationError('Senarai kelas ini sudah disahkan.')
-    by = f"Cikgu {link.teacher.full_name}"
+    by = link.teacher.titled
     if request.data.get('action') == 'confirm':
         checkin.confirm(found, by)
     elif request.data.get('action') == 'mark':

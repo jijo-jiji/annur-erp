@@ -30,7 +30,7 @@ test('a teacher updates their details through a private link and Management appr
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const tp = await phone.newPage();
   await tp.goto(url);
-  await expect(tp.getByRole('heading', { name: `Cikgu ${teacher.full_name}` })).toBeVisible();
+  await expect(tp.getByRole('heading', { name: `Cikgu ${teacher.full_name.replace(/^Cikgu\s+/i, '')}` })).toBeVisible();
   await tp.getByRole('button', { name: 'Maklumat saya' }).click(); // the link opens on today's classes (Phase I)
   await expect(tp.getByLabel('Nama penuh')).toHaveValue(teacher.full_name);
   await tp.getByLabel('Bank', { exact: true }).fill(bank);

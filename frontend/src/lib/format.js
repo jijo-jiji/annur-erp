@@ -174,3 +174,6 @@ export function daysAgoISO(n) {
   d.setDate(d.getDate() - n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+// 'Cikgu Zakir' from a teacher's name as the server sends it: names are often stored with the title already
+export const cikgu = (name) => `Cikgu ${String(name || '').replace(/^Cikgu\s+/i, '')}`;

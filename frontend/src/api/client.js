@@ -199,6 +199,12 @@ export const leadsApi = {
 
 // 3. Students API
 export const studentsApi = {
+  // Phase H: Prestasi pelajar, and teachers' reports about students (with comments)
+  performance: (year, term) => request(`/students/performance/?${new URLSearchParams(year ? { year, term } : {})}`),
+  reports: (params = {}) => request(`/students/reports/?${new URLSearchParams(params)}`),
+  addReport: (data) => request('/students/reports/', { method: 'POST', body: JSON.stringify(data) }),
+  updateReport: (id, data) => request(`/students/reports/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  commentReport: (id, text) => request(`/students/reports/${id}/comment/`, { method: 'POST', body: JSON.stringify({ text }) }),
   // Year-end move to the next grade; dryRun previews without saving
   promote: (dryRun, removeOldClasses) => request('/students/students/promote/', {
     method: 'POST',
@@ -410,7 +416,8 @@ export const staffApi = {
   getTeachers: () => request('/teachers/teachers/'),
   // The teachers a dashboard figure counts: { count, ids } (teacher codes; same rule as the figure)
   matchingTeachers: (params = {}) => request(`/teachers/teachers/matching/?${new URLSearchParams(params)}`),
-  getComplaints: () => request('/teachers/complaints/'),
+  getComplaints: (params = {}) => request(`/teachers/complaints/?${new URLSearchParams(params)}`),
+  commentComplaint: (id, text) => request(`/teachers/complaints/${id}/comment/`, { method: 'POST', body: JSON.stringify({ text }) }),
   createComplaint: (data) => request('/teachers/complaints/', {
     method: 'POST',
     body: JSON.stringify(data),

@@ -16,6 +16,7 @@ import { StudentFeedbackPanel } from './FeedbackViews';
 import { invoiceTitle, PaymentModal, ReceiptModal } from './BillingView';
 import StudentResultsTab from './StudentResultsTab';
 import { StudentHandouts } from './HandoutRepositoryView';
+import { StudentReportsPanel } from './StudentReports';
 import { latestSummary } from '../lib/results';
 import FormModal from './FormModal';
 import {
@@ -203,6 +204,7 @@ export default function StudentProfileView({ role, param }) {
           { value: 'attendance', label: 'Kedatangan' },
           { value: 'results', label: 'Keputusan' },
           { value: 'feedback', label: 'Maklum balas' },
+          { value: 'reports', label: 'Laporan' },
           { value: 'history', label: 'Sejarah & catatan', count: history.length },
         ]}
       />
@@ -447,6 +449,10 @@ export default function StudentProfileView({ role, param }) {
         <Card className="p-5">
           <StudentFeedbackPanel studentId={s.pk} canDelete={canApprove} onChanged={loadHistory} />
         </Card>
+      )}
+
+      {tab === 'reports' && (
+        <StudentReportsPanel student={s} role={role} classes={enrolled.map((c) => ({ id: c.id, label: classLabel(c, subjects) }))} />
       )}
 
       {tab === 'history' && (

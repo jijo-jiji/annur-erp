@@ -1,6 +1,7 @@
 // School exam results. The terms are the same fixed list as the server (backend/students/exam_terms.py):
 // four exams a year for everyone, Percubaan SPM and SPM for Tingkatan 5 only. SPM gives a grade, no mark.
 // `usual` is the month and day the exam is usually over by, to suggest the latest one already sat
+import { THRESHOLDS } from './thresholds';
 export const TERMS = [
   { code: 'PENGGAL_1', label: 'Penggal 1', short: 'P1', usual: '03-31' },
   { code: 'PERTENGAHAN', label: 'Pertengahan Tahun', short: 'PPT', usual: '06-15' },
@@ -10,7 +11,8 @@ export const TERMS = [
   { code: 'SPM', label: 'SPM', short: 'SPM', usual: '12-15', finalOnly: true, gradeOnly: true },
 ];
 export const RESULT_GRADES = ['A+', 'A', 'A-', 'B+', 'B', 'C+', 'C', 'D', 'E', 'G', 'TH']; // TH: tidak hadir
-export const PASS = 40;
+// The pass mark is a setting (Tetapan > Had & amaran > Prestasi pelajar)
+export const passMark = () => THRESHOLDS.results_pass_mark;
 
 const byCode = Object.fromEntries(TERMS.map((t, i) => [t.code, { ...t, order: i }]));
 export const termOf = (code) => byCode[code];
@@ -48,7 +50,7 @@ export function summarize(rows) {
 }
 
 // Below the pass mark, or a failing grade when only the grade is known
-export const isFail = (r) => (r.mark != null ? r.mark < PASS : ['G', 'TH'].includes(r.grade));
+export const isFail = (r) => (r.mark != null ? r.mark < passMark() : ['G', 'TH'].includes(r.grade));
 
 // The latest exam a student has results for, with its average mark (for the profile header)
 export function latestSummary(rows) {

@@ -56,6 +56,9 @@ SPECS = {
     'checkin_open_before': _spec('CHECKIN_OPEN_BEFORE', 'Imbasan kedatangan dibuka sebelum kelas bermula', 'Kedatangan QR', 15, unit='minit', low=0, high=60),
     'checkin_open_after': _spec('CHECKIN_OPEN_AFTER', 'Imbasan kedatangan ditutup selepas kelas bermula', 'Kedatangan QR', 30, unit='minit', low=5, high=180),
     'checkin_late_minutes': _spec('CHECKIN_LATE_MINUTES', 'Dikira lewat selepas kelas bermula', 'Kedatangan QR', 10, unit='minit', low=0, high=120),
+    # Prestasi pelajar (students/performance.py) and the pass rates on Keputusan peperiksaan
+    'results_pass_mark': _spec('RESULTS_PASS_MARK', 'Markah lulus peperiksaan sekolah', 'Prestasi pelajar', 40, unit='markah', low=1, high=100),
+    'results_drop_marks': _spec('RESULTS_DROP_MARKS', 'Dikira merosot jika markah turun sebanyak', 'Prestasi pelajar', 10, unit='markah', low=1, high=50),
     # Leads that finished (registered, active or not interested) leave the board after this many days;
     # they stay in the Arkib tab and on the student list
     'lead_board_days': _spec('LEAD_BOARD_DAYS', 'Prospek yang selesai kekal di papan selama', 'Peringkat prospek', 30, unit='hari', low=7, high=365),

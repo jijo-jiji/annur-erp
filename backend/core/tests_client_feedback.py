@@ -10,7 +10,7 @@ from academic.models import ClassTimetable, TimeSlot
 from business_config.models import BusinessSetting, DynamicMasterData, PricingTier, SubjectMaster
 from core.permissions import ADMIN, ALL_ROLES, MANAGEMENT, SUPERVISOR
 from expenses.models import PaymentVoucher, Vendor
-from students.models import ResultSubmission, Student
+from students.models import ResultSubmission, Student, StudentExamResult
 
 
 class FeedbackBase(APITestCase):
@@ -1049,3 +1049,122 @@ class PhaseGHandoutTests(FeedbackBase):
         gone.refresh_from_db()
         self.assertEqual((old.timetable_class_id, old.class_date, old.description), (self.fz.id, self.DAY, 'Topik daya'))
         self.assertEqual((gone.timetable_class_id, gone.class_date, gone.description), (None, None, 'Nota ringkas'))
+
+
+class PhaseHPerformanceAndReportsTests(FeedbackBase):
+    """Fizik T5 (class `fz`, Fridays). Results for Penggal 1 (31 Mar) and Pertengahan Tahun (15 Jun) 2026."""
+
+    def setUp(self):
+        super().setUp()
+        from teachers.models import Teacher
+        self.teacher = Teacher.objects.create(teacher_code='NAK', full_name='Nik Ahmad', phone_number='60123456789')
+        self.fz.teacher = self.teacher
+        self.fz.save()
+        self.kimia = SubjectMaster.objects.create(code='KM', name='Kimia', level_category='UPPER_SEC', stream='SAINS')
+        self.kids = {}
+        for name, joined in [('Ahmad', date(2026, 1, 1)), ('Aisyah', date(2026, 1, 1)), ('Haziq', date(2026, 5, 1)), ('Iman', date(2026, 1, 1))]:
+            s = Student.objects.create(student_id=f'HQ-2600{len(self.kids) + 10}', full_name=name, ic_number='0', form_level='F5', join_date=joined,
+                                       status='ACTIVE', parent1_name='P', parent1_phone='60123456789')
+            s.enrolled_classes.add(self.fz)
+            self.kids[name] = s
+        marks = {'Ahmad': (70, 55), 'Aisyah': (45, 35), 'Haziq': (None, 38), 'Iman': (80, 78)}
+        for name, (p1, ppt) in marks.items():
+            for term, mark in (('PENGGAL_1', p1), ('PERTENGAHAN', ppt)):
+                if mark is not None:
+                    StudentExamResult.objects.create(student=self.kids[name], year=2026, term=term, subject=self.fizik, mark=mark, grade='C')
+        StudentExamResult.objects.create(student=self.kids['Iman'], year=2026, term='PERTENGAHAN', subject=self.kimia, mark=30, grade='G')
+        # Fizik classes between the two exams: Aisyah came once in four, Ahmad every time
+        from students.models import ClassAttendanceSession, StudentAttendance
+        for i, day in enumerate([date(2026, 4, 3), date(2026, 4, 10), date(2026, 4, 17), date(2026, 4, 24)]):
+            session = ClassAttendanceSession.objects.create(timetable_class=self.fz, date=day, recorded_by='x')
+            StudentAttendance.objects.create(session=session, student=self.kids['Ahmad'], present=True)
+            StudentAttendance.objects.create(session=session, student=self.kids['Aisyah'], present=i == 0)
+
+    def rows(self, **params):
+        self.as_role(SUPERVISOR)
+        res = self.client.get('/api/v1/students/performance/', params)
+        self.assertEqual(res.status_code, 200, res.data)
+        return res.data, {(r['name'], r['subject']): r for r in res.data['rows']}
+
+    def test_failing_and_falling_students_with_their_class_attendance_and_likely_reasons(self):
+        from students.models import StudentReport
+        StudentReport.objects.create(student=self.kids['Aisyah'], teacher=self.teacher, category='BEHAVIOUR', details='Selalu lewat dan tidak siap kerja')
+        StudentReport.objects.create(student=self.kids['Aisyah'], category='HOMEWORK', details='Sudah selesai', status='RESOLVED')
+        data, rows = self.rows()
+        self.assertEqual(data['exam']['label'], 'Peperiksaan terakhir setiap pelajar')  # each student's latest result by default
+        self.assertEqual({r['exam'] for r in data['rows']}, {'Pertengahan Tahun 2026'})
+        self.assertEqual(set(rows), {('Ahmad', 'Fizik'), ('Aisyah', 'Fizik'), ('Haziq', 'Fizik'), ('Iman', 'Kimia')})  # Iman's Fizik is fine
+
+        ahmad = rows[('Ahmad', 'Fizik')]
+        self.assertEqual((ahmad['failing'], ahmad['falling'], ahmad['change'], ahmad['teacher'], ahmad['class_code']), (False, True, -15, 'Nik Ahmad', self.fz.class_code))
+        self.assertEqual((ahmad['attendance'], ahmad['attendance_rate'], ahmad['reasons']), ({'present': 4, 'total': 4}, 100, []))
+        self.assertEqual([t['mark'] for t in ahmad['trend']], [70, 55])
+
+        aisyah = rows[('Aisyah', 'Fizik')]
+        self.assertEqual((aisyah['failing'], aisyah['falling'], aisyah['attendance_rate']), (True, True, 25))
+        self.assertEqual(aisyah['reasons'], ['Kehadiran rendah dalam kelas ini (25%)', 'Laporan guru: Disiplin / tingkah laku'])
+        self.assertEqual([r['details'] for r in aisyah['reports']], ['Selalu lewat dan tidak siap kerja'])  # open reports only
+
+        haziq = rows[('Haziq', 'Fizik')]  # no earlier result: failing, not falling; joined after the start of the year
+        self.assertEqual((haziq['failing'], haziq['falling'], haziq['previous']), (True, False, None))
+        self.assertIn('Baru menyertai pusat sebelum peperiksaan ini', haziq['reasons'])
+        self.assertEqual(rows[('Iman', 'Kimia')]['reasons'][0], 'Tidak mengambil subjek ini di pusat')
+
+        # one exam for everyone, an earlier exam, and the two settings
+        self.assertEqual(set(self.rows(year=2026, term='PERTENGAHAN')[1]), set(rows))
+        self.assertEqual(set(self.rows(year=2026, term='PENGGAL_1')[1]), set())
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.put('/api/v1/thresholds/', {'results_pass_mark': 36, 'results_drop_marks': 20}, format='json').status_code, 200)
+        self.assertEqual(set(self.rows()[1]), {('Aisyah', 'Fizik'), ('Iman', 'Kimia')})  # Ahmad's -15 is not a fall now, Haziq's 38 a pass
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.get('/api/v1/students/performance/').status_code, 403)
+
+    def test_a_teacher_s_report_about_a_student_with_comments_and_follow_up(self):
+        from core.models import Notification
+        self.as_role(ADMIN)
+        other = ClassTimetable.objects.create(slot=self.slot, form_level='F5', section='B', max_seats=10, subject=self.kimia)
+        bad = self.client.post('/api/v1/students/reports/', {'student': self.kids['Aisyah'].id, 'timetable_class': other.id,
+                                                              'category': 'ACADEMIC', 'details': 'x'}, format='json')
+        self.assertIn('timetable_class', bad.data)  # not her class
+        made = self.client.post('/api/v1/students/reports/', {'student': self.kids['Aisyah'].id, 'timetable_class': self.fz.id,
+                                                               'category': 'BEHAVIOUR', 'details': 'Tidur dalam kelas'}, format='json').data
+        self.assertEqual((made['teacher_name'], made['recorded_by'], made['status']), ('Nik Ahmad', 'admin', 'OPEN'))  # the class's teacher
+        told = set(Notification.objects.filter(title='Laporan guru: Aisyah').values_list('user__username', flat=True))
+        self.assertEqual(told, {'supervisor', 'management'})
+        url = f"/api/v1/students/reports/{made['id']}/"
+        self.assertEqual(self.client.post(url + 'comment/', {'text': '  '}, format='json').status_code, 400)
+        self.as_role(SUPERVISOR)
+        done = self.client.post(url + 'comment/', {'text': 'Ibu bapa sudah dihubungi'}, format='json').data
+        self.assertEqual([(c['by'], c['text']) for c in done['comments']], [('supervisor', 'Ibu bapa sudah dihubungi')])
+        self.assertEqual(self.client.patch(url, {'comments': []}, format='json').data['comments'][0]['text'], 'Ibu bapa sudah dihubungi')  # never edited
+        self.client.patch(url, {'status': 'RESOLVED', 'action_taken': 'Berjumpa ibu bapa', 'action_date': '2026-10-26'}, format='json')
+        listed = self.client.get('/api/v1/students/reports/', {'student': self.kids['Aisyah'].id}).data
+        self.assertEqual([(r['status'], r['action_taken']) for r in listed], [('RESOLVED', 'Berjumpa ibu bapa')])
+        self.assertEqual(self.client.get('/api/v1/students/reports/', {'student': self.kids['Ahmad'].id}).data, [])
+
+    def test_a_parent_s_report_about_a_teacher_is_a_complaint_linked_to_the_student(self):
+        from core.models import Notification
+        self.as_role(SUPERVISOR)
+        made = self.client.post('/api/v1/teachers/complaints/', {
+            'teacher': self.teacher.id, 'date_reported': '2026-10-26', 'complained_by': 'Puan Rohani', 'complainant_type': 'PARENT',
+            'student': self.kids['Ahmad'].id, 'description': 'Kerja rumah tidak disemak', 'severity': 'MEDIUM'}, format='json').data
+        self.assertEqual((made['complainant_label'], made['student_name']), ('Ibu bapa', 'Ahmad'))
+        self.assertEqual(set(Notification.objects.filter(title='Aduan tentang Cikgu Nik Ahmad').values_list('user__username', flat=True)), {'management'})
+        from teachers.models import Teacher
+        self.assertEqual(Teacher(full_name='Cikgu Zakir').titled, 'Cikgu Zakir')  # a name stored with the title gets it once
+        self.client.post('/api/v1/teachers/complaints/', {'teacher': self.teacher.id, 'date_reported': '2026-10-20', 'complained_by': 'Staf',
+                                                           'description': 'Lewat'}, format='json')
+        mine = self.client.get('/api/v1/teachers/complaints/', {'student': self.kids['Ahmad'].id}).data
+        self.assertEqual([c['description'] for c in mine], ['Kerja rumah tidak disemak'])
+        commented = self.client.post(f"/api/v1/teachers/complaints/{made['id']}/comment/", {'text': 'Guru sudah diberi teguran'}, format='json').data
+        self.assertEqual(commented['comments'][0]['by'], 'supervisor')
+        self.as_role(ADMIN)  # complaints stay with Supervisor and Management
+        self.assertEqual(self.client.get('/api/v1/teachers/complaints/', {'student': self.kids['Ahmad'].id}).status_code, 403)
+
+    def test_older_complaints_are_sorted_by_who_made_them(self):
+        from teachers.models import TeacherComplaint
+        made = {who: TeacherComplaint.objects.create(teacher=self.teacher, date_reported=date(2026, 1, 5), complained_by=who, description='x')
+                for who in ('Ibu bapa pelajar', 'Pelajar T5', 'Staf kaunter', 'Jiran')}
+        import_module('teachers.migrations.0010_complaints_from_students').guess_complainant(django_apps, None)
+        self.assertEqual({who: TeacherComplaint.objects.get(pk=c.pk).complainant_type for who, c in made.items()},
+                         {'Ibu bapa pelajar': 'PARENT', 'Pelajar T5': 'STUDENT', 'Staf kaunter': 'STAFF', 'Jiran': 'OTHER'})

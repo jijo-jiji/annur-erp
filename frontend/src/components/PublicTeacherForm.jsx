@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { publicTeacherApi } from '../api/client';
 import { describeError } from '../lib/apiErrors';
+import { cikgu } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { BrandMark } from './Sidebar';
 import TeacherClassesToday from './TeacherClassesToday';
@@ -118,7 +119,7 @@ export default function PublicTeacherForm({ token }) {
   return (
     <div className="mx-auto max-w-2xl">
       {header}
-      <h1 className="text-xl font-semibold text-gray-900">{applicant ? 'Borang permohonan guru' : `Cikgu ${info.teacher.full_name}`}</h1>
+      <h1 className="text-xl font-semibold text-gray-900">{applicant ? 'Borang permohonan guru' : cikgu(info.teacher.full_name)}</h1>
       {!applicant && (
         <Segmented className="my-4" value={view} onChange={setView} items={[{ value: 'classes', label: 'Kelas hari ini' }, { value: 'profile', label: 'Maklumat saya' }]} />
       )}

@@ -18,6 +18,8 @@ for is decided. This file is the one place that says who hears about what:
 | The counter is closed / returned or verified | approvers (not the closer) / the closer |
 | A parent sends results on the public form | Admin and Supervisor |
 | Week 5 unpaid fees become tasks | Supervisor (Management when there is none) |
+| A teacher's report about a student is recorded | Supervisor and Management (not whoever recorded it) |
+| A complaint about a teacher is recorded (from a parent, student or staff) | Supervisor and Management (not the recorder) |
 
 A notification is saved in the same transaction as the action, so an action that fails leaves no notice behind; a
 notice that cannot be saved never stops the action (it is logged instead)."""
@@ -191,3 +193,18 @@ def week5_tasks(count, today):
         send(users_with((SUPERVISOR,)) or users_with((MANAGEMENT,)), f"{count} yuran perlu dihubungi (minggu 5)",
              'Yuran bulanan yang masih belum dibayar selepas peringatan minggu 2 hingga 4.', '#/billing?tab=arrears', 'followup',
              f"week5:{today.isoformat()}")
+
+
+# ---- Two-way reports (Phase H) --------------------------------------------------------------------------------------
+
+def student_report_added(report, by):
+    send(users_with(APPROVER_ROLES, exclude=by), f"Laporan guru: {report.student.full_name}",
+         f"{report.get_category_display()}{f' · {report.teacher.titled}' if report.teacher else ''} · {report.details[:120]}",
+         f"#/students/{report.student.student_id}?tab=reports", 'report')
+
+
+def teacher_complaint_added(complaint, by):
+    send(users_with(APPROVER_ROLES, exclude=by), f"Aduan tentang {complaint.teacher.titled}",
+         f"{complaint.get_complainant_type_display()}: {complaint.complained_by} · {complaint.description[:120]}",
+         '#/teachers?tab=complaints', 'complaint')
+

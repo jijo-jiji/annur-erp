@@ -6,7 +6,7 @@ import { useStore } from '../store';
 import { can } from '../lib/permissions';
 import { navigate } from '../lib/nav';
 import { classLabel } from '../lib/domain';
-import { CURRENT_MONTH, date, DAY_LABEL, fmtPhone, FORMS, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
+import { cikgu, CURRENT_MONTH, date, DAY_LABEL, fmtPhone, FORMS, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import { describeTeacherFilters, TEACHER_FILTERS, useDrill, useMatching } from '../lib/drilldown';
 import { THRESHOLDS } from '../lib/thresholds';
@@ -15,6 +15,8 @@ import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
 import { AttachmentList, PhotoBox } from './Attachments';
 import TeacherLinks from './TeacherLinks';
+import { ReportItem } from './StudentReports';
+import { COMPLAINANTS } from '../lib/reports';
 import { Avatar, Badge, Button, Card, CardHeader, Checkbox, EmptyState, filterClass, Modal, PageHeader, SearchInput, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon } from './ui';
 
 const WEEKS_PER_MONTH = 4;
@@ -81,7 +83,7 @@ export default function TeachersView({ role }) {
   // Rates, complaints and increments are for Supervisor and Management; the server leaves them out for Admin
   const showPay = can(role, 'teachers.pay');
   const canDecide = can(role, 'payroll.approve');
-  const { teachers, classes, subjects, submitChangeRequest, days: DAYS } = useStore();
+  const { teachers, classes, subjects, students, submitChangeRequest, days: DAYS } = useStore();
   const { refreshTeachers, refreshAllData } = useApp();
   const notify = useToast();
   const [tab, setView] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'directory');
@@ -455,7 +457,10 @@ export default function TeachersView({ role }) {
                     <Td className="max-w-xs text-gray-700">
                       {c.category && <p className="font-medium text-gray-900">{c.category}</p>}
                       <p>{c.description}</p>
-                      <p className="text-[13px] text-gray-500">Diadu oleh {c.complained_by}</p>
+                      <p className="text-[13px] text-gray-500">
+                        {c.complainant_label}: {c.complained_by}
+                        {c.student_code && <> · <a href={`#/students/${c.student_code}?tab=reports`} className="hover:text-brand-700 hover:underline">{c.student_name}</a></>}
+                      </p>
                     </Td>
                     <Td><Badge tone={SEVERITY[c.severity]?.tone}>{SEVERITY[c.severity]?.label}</Badge></Td>
                     <Td><Badge tone={c.status === 'RESOLVED' ? 'green' : 'amber'}>{COMPLAINT_STATUS[c.status]}</Badge></Td>
@@ -467,7 +472,12 @@ export default function TeachersView({ role }) {
                         </>
                       ) : '—'}
                     </Td>
-                    <Td><Button size="sm" onClick={() => setDialog({ type: 'action', complaint: c })}>Kemas kini</Button></Td>
+                    <Td>
+                      <div className="flex flex-col items-stretch gap-1.5">
+                        <Button size="sm" onClick={() => setDialog({ type: 'action', complaint: c })}>Kemas kini</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setDialog({ type: 'comments', complaint: c })}>Komen ({(c.comments || []).length})</Button>
+                      </div>
+                    </Td>
                   </tr>
                 ))}
               </tbody>
@@ -531,19 +541,35 @@ export default function TeachersView({ role }) {
       {dialog?.type === 'complaint' && (
         <FormModal
           title="Rekod aduan guru"
-          initial={{ teacher: '', date_reported: todayISO(), severity: 'LOW', complained_by: '', category: '', description: '' }}
+          description="Termasuk laporan pelajar atau ibu bapa tentang guru. Pautkan kepada pelajar supaya ia kelihatan pada profil pelajar itu."
+          initial={{ teacher: '', date_reported: todayISO(), severity: 'LOW', complainant_type: 'PARENT', complained_by: '', student: '', category: '', description: '' }}
           fields={[
             { name: 'teacher', label: 'Guru', type: 'select', required: true, options: teacherOptions.map((t) => ({ value: t.pk, label: `Cikgu ${t.name} (${t.code})` })) },
             { name: 'date_reported', label: 'Tarikh aduan', type: 'date', required: true },
             { name: 'severity', label: 'Tahap', type: 'select', required: true, options: Object.entries(SEVERITY).map(([value, s]) => ({ value, label: s.label })) },
-            { name: 'complained_by', label: 'Diadu oleh', required: true, hint: 'cth. ibu bapa, pelajar, staf' },
+            { name: 'complainant_type', label: 'Daripada', type: 'select', required: true, options: COMPLAINANTS },
+            { name: 'complained_by', label: 'Nama pengadu', required: true, hint: 'cth. Puan Rohani (ibu), Ahmad, Admin kaunter' },
+            { name: 'student', label: 'Pelajar berkaitan', type: 'select', options: [{ value: '', label: 'Tiada' },
+              ...students.filter((s) => s.status === 'ACTIVE').sort((a, b) => a.name.localeCompare(b.name)).map((s) => ({ value: s.pk, label: `${s.name} (${s.id})` }))] },
             { name: 'category', label: 'Kategori' },
             { name: 'description', label: 'Keterangan', type: 'textarea', required: true },
           ]}
-          onSubmit={(v) => run(() => staffApi.createComplaint({ ...v, teacher: Number(v.teacher) }), 'Aduan direkodkan.')}
+          onSubmit={(v) => run(() => staffApi.createComplaint({ ...v, teacher: Number(v.teacher), student: v.student ? Number(v.student) : null }), 'Aduan direkodkan.')}
           onClose={() => setDialog(null)}
         />
       )}
+      {dialog?.type === 'comments' && (() => {
+        const c = complaints.find((x) => x.id === dialog.complaint.id) || dialog.complaint; // the fresh copy after a comment
+        return (
+          <Modal open onClose={() => setDialog(null)} title={`Aduan: ${cikgu(c.teacher_name)}`} description={`${date(c.date_reported)} · ${c.complainant_label}: ${c.complained_by}`}
+            footer={<Button onClick={() => setDialog(null)}>Tutup</Button>}>
+            <ul className="-mx-5">
+              <ReportItem title={c.category || 'Aduan'} meta={c.student_name ? `Pelajar: ${c.student_name}` : ''} item={{ ...c, details: c.description }}
+                onComment={(text) => staffApi.commentComplaint(c.id, text).then(loadExtras)} />
+            </ul>
+          </Modal>
+        );
+      })()}
       {dialog?.type === 'action' && (
         <FormModal
           title="Kemas kini tindakan aduan"

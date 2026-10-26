@@ -1,3 +1,4 @@
+import re
 from datetime import time
 from django.db import models
 from business_config.models import SubjectMaster
@@ -24,6 +25,11 @@ class Teacher(models.Model):
 
     def __str__(self):
         return f"[{self.teacher_code}] {self.full_name} ({self.teacher_type})"
+
+    @property
+    def titled(self):
+        """'Cikgu Zakir': names are often stored with the title already, so it is never added twice."""
+        return f"Cikgu {re.sub(r'^cikgu\s+', '', self.full_name, flags=re.IGNORECASE)}"
 
 class TeacherLink(models.Model):
     """A private link a teacher opens on their phone without a login (Phase F): their details, bank account, subjects,
@@ -148,9 +154,15 @@ class TeacherComplaint(models.Model):
         ('IN_PROGRESS', 'Dalam Tindakan'),
         ('RESOLVED', 'Selesai'),
     ]
+    # Who it came from (Phase H): a student's or parent's report about a teacher is a complaint here, linked to the
+    # student it concerns when there is one
+    COMPLAINANTS = [('PARENT', 'Ibu bapa'), ('STUDENT', 'Pelajar'), ('STAFF', 'Staf'), ('OTHER', 'Lain-lain')]
     teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='complaints')
     date_reported = models.DateField()
     complained_by = models.CharField(max_length=150)
+    complainant_type = models.CharField(max_length=10, choices=COMPLAINANTS, default='OTHER')
+    student = models.ForeignKey('students.Student', on_delete=models.SET_NULL, null=True, blank=True, related_name='teacher_complaints')
+    comments = models.JSONField(default=list, blank=True)  # [{by, at, text}], added one at a time, never edited
     category = models.CharField(max_length=100, blank=True)
     description = models.TextField()
     severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES, default='LOW')
