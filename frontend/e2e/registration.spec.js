@@ -107,6 +107,9 @@ test.describe('Parents register from the QR code', () => {
     // No login is asked for, and no staff menu is shown
     await expect(page.getByRole('heading', { name: 'Borang pendaftaran pelajar' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Menu utama' })).toHaveCount(0);
+    // One scroll in sections, with a header naming them; no consent or terms to tick
+    await expect(page.getByRole('navigation', { name: 'Bahagian borang' }).getByRole('button')).toHaveText([/Pelajar/, /Penjaga/, /Subjek/]);
+    await expect(page.getByLabel(/^Saya bersetuju/)).toHaveCount(0);
 
     await page.getByLabel('Nama penuh pelajar').fill(child);
     await page.getByLabel(/^No\. kad pengenalan/).fill(newIc());
@@ -116,13 +119,13 @@ test.describe('Parents register from the QR code', () => {
     await page.getByLabel(/^Nama ibu bapa/).fill('Puan Ujian');
     await page.getByLabel(/^No\. telefon \(WhatsApp\)/).fill('013-9876543');
     await page.locator('button[aria-pressed]').first().click();
-    await page.getByLabel(/^Saya bersetuju/).check();
     await page.getByRole('button', { name: 'Hantar pendaftaran' }).click();
 
     await expect(page.getByRole('heading', { name: 'Pendaftaran diterima' })).toBeVisible();
     await expect(page.getByText(/HQ-\d{6,}/).first()).toBeVisible();
     const saved = (await api(page.request, 'SUPERVISOR', 'GET', '/students/students/')).find((x) => x.full_name === child);
     expect(saved.phone_number).toBe('');
+    expect(saved.saps_consent).toBe(false); // not asked on the form, so not recorded as given
 
     // At the counter the form is waiting for approval, marked as coming from the QR code
     const supervisor = await openAs(browser, 'SUPERVISOR');
@@ -133,7 +136,7 @@ test.describe('Parents register from the QR code', () => {
     await supervisor.close();
   });
 
-  test('the public form does not let a parent skip the agreement or give no guardian', async ({ page }) => {
+  test('the public form is not sent while the student or guardian details are missing', async ({ page }) => {
     await page.goto('/#/daftar');
     await page.getByLabel('Nama penuh pelajar').fill('Tidak Lengkap');
     await page.getByRole('button', { name: 'Hantar pendaftaran' }).click();
@@ -164,7 +167,6 @@ test.describe('When the server refuses a form', () => {
     await page.getByLabel(/^Sekolah/).fill('SMK Telipot');
     await page.getByLabel(/^Nama ibu bapa/).fill('Puan Ujian');
     await page.getByLabel(/^No\. telefon \(WhatsApp\)/).fill('013-9876543');
-    await page.getByLabel(/^Saya bersetuju/).check();
     await page.getByRole('button', { name: 'Hantar pendaftaran' }).click();
 
     const alert = page.getByRole('alert');

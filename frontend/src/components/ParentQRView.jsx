@@ -7,8 +7,9 @@ import { fillMessage } from '../lib/messages';
 import { useStore } from '../store';
 import { date, formLabel, STUDENT_STATUS, waLink, fmtPhone } from '../lib/format';
 import { useGrades } from '../lib/grades';
-import { Badge, Button, Card, CardHeader, Checkbox, cx, EmptyState, Input, PageHeader, Select, Table, Td, Th, useToast, WhatsAppIcon } from './ui';
+import { Badge, Button, Card, CardHeader, cx, EmptyState, Input, PageHeader, Select, Table, Td, Th, useToast, WhatsAppIcon } from './ui';
 import { BrandMark } from './Sidebar';
+import SectionedForm from './FormSections';
 import { describeError } from '../lib/apiErrors';
 
 function registrationUrl() {
@@ -128,7 +129,7 @@ export default function ParentQRView() {
 const EMPTY = {
   full_name: '', ic_number: '', form_level: 'F5', school_name: '', phone_number: '',
   parent1_name: '', parent1_phone: '', parent1_email: '', parent1_relation: 'Bapa',
-  interested_subjects: [], saps_consent: true, terms: false,
+  interested_subjects: [],
 };
 
 export function ParentRegistrationForm() {
@@ -156,15 +157,15 @@ export function ParentRegistrationForm() {
     interested_subjects: f.interested_subjects.includes(name) ? f.interested_subjects.filter((x) => x !== name) : [...f.interested_subjects, name],
   });
 
-  const submit = async (e) => {
-    e.preventDefault();
+  const submit = async () => {
     setError('');
     setBusy(true);
-    const { terms: _terms, ...payload } = f;
     try {
+      // The form no longer asks for SAPS permission or agreement to the terms, so neither is recorded as given;
+      // the counter goes through them with the parent when confirming classes and the first payment
       setDone(await studentsApi.parentSelfRegister({
-        ...payload,
-        agree_terms_7th_payment: true, agree_terms_2months_auto_drop: true, agree_terms_2weeks_notice: true,
+        ...f,
+        saps_consent: false, agree_terms_7th_payment: false, agree_terms_2months_auto_drop: false, agree_terms_2weeks_notice: false,
         lead_source: 'QR_CODE',
       }));
       window.scrollTo(0, 0);
@@ -223,81 +224,82 @@ export function ParentRegistrationForm() {
       <h1 className="text-xl font-semibold text-gray-900">Borang pendaftaran pelajar</h1>
       <p className="mt-1 text-sm text-gray-600">Isi maklumat di bawah. Pihak kaunter akan menghubungi anda untuk kelas dan bayaran.</p>
 
-      <form onSubmit={submit} className="mt-6 space-y-6">
-        <Card>
-          <CardHeader title="Maklumat pelajar" />
-          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-            <Input label="Nama penuh pelajar" required className="sm:col-span-2" value={f.full_name} onChange={(e) => set({ full_name: e.target.value })} autoComplete="off" />
-            <Input label="No. kad pengenalan / sijil lahir" required value={f.ic_number} onChange={(e) => set({ ic_number: e.target.value })} inputMode="numeric" placeholder="090101-03-1234" />
-            <Select label="Tingkatan / darjah" required value={f.form_level} onChange={(e) => set({ form_level: e.target.value })}>
-              {forms.map((x) => (
-                <option key={x.value} value={x.value}>{x.label}</option>
-              ))}
-            </Select>
-            <Input label="Sekolah" required value={f.school_name} onChange={(e) => set({ school_name: e.target.value })} />
-            <Input label="No. telefon pelajar" type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} placeholder="Jika ada" />
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader title="Maklumat penjaga" />
-          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-            <Input label="Nama ibu bapa / penjaga" required value={f.parent1_name} onChange={(e) => set({ parent1_name: e.target.value })} autoComplete="name" />
-            <Select label="Hubungan" value={f.parent1_relation} onChange={(e) => set({ parent1_relation: e.target.value })}>
-              <option>Bapa</option>
-              <option>Ibu</option>
-              <option>Penjaga</option>
-            </Select>
-            <Input label="No. telefon (WhatsApp)" required type="tel" value={f.parent1_phone} onChange={(e) => set({ parent1_phone: e.target.value })} autoComplete="tel" />
-            <Input label="E-mel" type="email" value={f.parent1_email} onChange={(e) => set({ parent1_email: e.target.value })} autoComplete="email" />
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader title="Subjek diminati" description="Pilih subjek yang ingin diikuti. Waktu kelas disahkan oleh kaunter." />
-          <div className="space-y-4 p-5">
-            {subjectGroups === null && <p className="text-sm text-gray-500">Memuatkan subjek…</p>}
-            {subjectGroups?.length === 0 && <p className="text-sm text-gray-500">Tiada subjek ditawarkan untuk {formLabel(f.form_level)} buat masa ini. Kaunter akan menghubungi anda.</p>}
-            {subjectGroups?.map((group) => (
-              <fieldset key={group.code || 'other'}>
-                <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{group.label}</legend>
-                <div className="flex flex-wrap gap-2">
-                  {group.subjects.map(({ name }) => {
-                    const on = f.interested_subjects.includes(name);
-                    return (
-                      <button
-                        type="button"
-                        key={name}
-                        onClick={() => toggleSubject(name)}
-                        aria-pressed={on}
-                        className={cx('rounded-md border px-3 py-2 text-sm font-medium transition-colors', on ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')}
-                      >
-                        {name}
-                      </button>
-                    );
-                  })}
+      <SectionedForm
+        className="mt-6"
+        submitLabel="Hantar pendaftaran"
+        busy={busy}
+        error={error}
+        onSubmit={submit}
+        sections={[
+          {
+            id: 'student', title: 'Pelajar', content: (
+              <Card>
+                <CardHeader title="Maklumat pelajar" />
+                <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+                  <Input label="Nama penuh pelajar" required className="sm:col-span-2" value={f.full_name} onChange={(e) => set({ full_name: e.target.value })} autoComplete="off" />
+                  <Input label="No. kad pengenalan / sijil lahir" required value={f.ic_number} onChange={(e) => set({ ic_number: e.target.value })} inputMode="numeric" placeholder="090101-03-1234" />
+                  <Select label="Tingkatan / darjah" required value={f.form_level} onChange={(e) => set({ form_level: e.target.value })}>
+                    {forms.map((x) => (
+                      <option key={x.value} value={x.value}>{x.label}</option>
+                    ))}
+                  </Select>
+                  <Input label="Sekolah" required value={f.school_name} onChange={(e) => set({ school_name: e.target.value })} />
+                  <Input label="No. telefon pelajar" type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} placeholder="Jika ada" />
                 </div>
-              </fieldset>
-            ))}
-          </div>
-        </Card>
-
-        <Card className="space-y-4 p-5">
-          <Checkbox label="Kebenaran semakan SAPS" description="Membenarkan pusat tuisyen menyemak keputusan peperiksaan anak di sapsnkra.moe.gov.my." checked={f.saps_consent} onChange={(e) => set({ saps_consent: e.target.checked })} />
-          <Checkbox
-            required
-            label="Saya bersetuju dengan syarat pendaftaran"
-            description="Yuran dijelaskan sebelum 7 haribulan setiap bulan; tunggakan dua bulan menyebabkan pelajar diberhentikan; notis berhenti dua minggu."
-            checked={f.terms}
-            onChange={(e) => set({ terms: e.target.checked })}
-          />
-        </Card>
-
-        {error && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-        <Button type="submit" variant="primary" size="lg" className="w-full" disabled={busy}>
-          {busy ? 'Menghantar…' : 'Hantar pendaftaran'}
-        </Button>
-      </form>
+              </Card>
+            ),
+          },
+          {
+            id: 'parent', title: 'Penjaga', content: (
+              <Card>
+                <CardHeader title="Maklumat penjaga" />
+                <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+                  <Input label="Nama ibu bapa / penjaga" required value={f.parent1_name} onChange={(e) => set({ parent1_name: e.target.value })} autoComplete="name" />
+                  <Select label="Hubungan" value={f.parent1_relation} onChange={(e) => set({ parent1_relation: e.target.value })}>
+                    <option>Bapa</option>
+                    <option>Ibu</option>
+                    <option>Penjaga</option>
+                  </Select>
+                  <Input label="No. telefon (WhatsApp)" required type="tel" value={f.parent1_phone} onChange={(e) => set({ parent1_phone: e.target.value })} autoComplete="tel" />
+                  <Input label="E-mel" type="email" value={f.parent1_email} onChange={(e) => set({ parent1_email: e.target.value })} autoComplete="email" />
+                </div>
+              </Card>
+            ),
+          },
+          {
+            id: 'subjects', title: 'Subjek', content: (
+              <Card>
+                <CardHeader title="Subjek diminati" description="Pilih subjek yang ingin diikuti. Waktu kelas disahkan oleh kaunter." />
+                <div className="space-y-4 p-5">
+                  {subjectGroups === null && <p className="text-sm text-gray-500">Memuatkan subjek…</p>}
+                  {subjectGroups?.length === 0 && <p className="text-sm text-gray-500">Tiada subjek ditawarkan untuk {formLabel(f.form_level)} buat masa ini. Kaunter akan menghubungi anda.</p>}
+                  {subjectGroups?.map((group) => (
+                    <fieldset key={group.code || 'other'}>
+                      <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{group.label}</legend>
+                      <div className="flex flex-wrap gap-2">
+                        {group.subjects.map(({ name }) => {
+                          const on = f.interested_subjects.includes(name);
+                          return (
+                            <button
+                              type="button"
+                              key={name}
+                              onClick={() => toggleSubject(name)}
+                              aria-pressed={on}
+                              className={cx('rounded-md border px-3 py-2 text-sm font-medium transition-colors', on ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')}
+                            >
+                              {name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </fieldset>
+                  ))}
+                </div>
+              </Card>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

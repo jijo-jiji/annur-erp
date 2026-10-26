@@ -5,6 +5,7 @@ import { describeError } from '../lib/apiErrors';
 import { cikgu } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { BrandMark } from './Sidebar';
+import SectionedForm from './FormSections';
 import TeacherClassesToday from './TeacherClassesToday';
 import { Button, Card, CardHeader, Checkbox, Input, Segmented, Textarea } from './ui';
 
@@ -83,8 +84,7 @@ export default function PublicTeacherForm({ token }) {
     );
   }
 
-  const submit = async (e) => {
-    e.preventDefault();
+  const submit = async () => {
     setError('');
     setBusy(true);
     try {
@@ -134,67 +134,84 @@ export default function PublicTeacherForm({ token }) {
         </p>
       )}
 
-      <form onSubmit={submit} className="mt-6 space-y-4">
-        <Card>
-          <CardHeader title="Maklumat diri" />
-          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-            <Input label="Nama penuh" required value={f.full_name} onChange={(e) => set({ full_name: e.target.value })} autoComplete="name" />
-            <Input label="No. telefon (WhatsApp)" required type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} autoComplete="tel" />
-            <Input label="E-mel" type="email" value={f.email} onChange={(e) => set({ email: e.target.value })} autoComplete="email" className="sm:col-span-2" />
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader title="Akaun bank" description="Untuk bayaran elaun mengajar." />
-          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-            <Input label="Bank" value={f.bank_name} onChange={(e) => set({ bank_name: e.target.value })} placeholder="cth. Maybank" />
-            <Input label="No. akaun" inputMode="numeric" value={f.bank_account} onChange={(e) => set({ bank_account: e.target.value })} />
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader title="Pengajaran" description="Subjek yang boleh anda ajar dan pengalaman mengajar." />
-          <div className="space-y-4 p-5">
-            {byLevel.map((g) => (
-              <fieldset key={g.label}>
-                <legend className="mb-1.5 text-[13px] font-medium text-gray-700">{g.label}</legend>
-                <div className="grid grid-cols-1 gap-2 rounded-md border border-gray-200 p-3 sm:grid-cols-2">
-                  {g.subjects.map((s) => (
-                    <Checkbox key={s.id} label={s.name} checked={f.subjects_qualified.includes(s.id)} onChange={(e) => toggle(s.id, e.target.checked)} />
+      <SectionedForm
+        className="mt-6"
+        submitLabel={applicant ? 'Hantar permohonan' : 'Hantar untuk semakan'}
+        busy={busy}
+        error={error}
+        onSubmit={submit}
+        sections={[
+          {
+            id: 'self', title: 'Maklumat diri', content: (
+              <Card>
+                <CardHeader title="Maklumat diri" />
+                <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+                  <Input label="Nama penuh" required value={f.full_name} onChange={(e) => set({ full_name: e.target.value })} autoComplete="name" />
+                  <Input label="No. telefon (WhatsApp)" required type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} autoComplete="tel" />
+                  <Input label="E-mel" type="email" value={f.email} onChange={(e) => set({ email: e.target.value })} autoComplete="email" className="sm:col-span-2" />
+                </div>
+              </Card>
+            ),
+          },
+          {
+            id: 'bank', title: 'Akaun bank', content: (
+              <Card>
+                <CardHeader title="Akaun bank" description="Untuk bayaran elaun mengajar." />
+                <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+                  <Input label="Bank" value={f.bank_name} onChange={(e) => set({ bank_name: e.target.value })} placeholder="cth. Maybank" />
+                  <Input label="No. akaun" inputMode="numeric" value={f.bank_account} onChange={(e) => set({ bank_account: e.target.value })} />
+                </div>
+              </Card>
+            ),
+          },
+          {
+            id: 'teaching', title: 'Pengajaran', content: (
+              <Card>
+                <CardHeader title="Pengajaran" description="Subjek yang boleh anda ajar dan pengalaman mengajar." />
+                <div className="space-y-4 p-5">
+                  {byLevel.map((g) => (
+                    <fieldset key={g.label}>
+                      <legend className="mb-1.5 text-[13px] font-medium text-gray-700">{g.label}</legend>
+                      <div className="grid grid-cols-1 gap-2 rounded-md border border-gray-200 p-3 sm:grid-cols-2">
+                        {g.subjects.map((s) => (
+                          <Checkbox key={s.id} label={s.name} checked={f.subjects_qualified.includes(s.id)} onChange={(e) => toggle(s.id, e.target.checked)} />
+                        ))}
+                      </div>
+                    </fieldset>
+                  ))}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Input label="Mula mengajar" type="date" value={f.teaching_since || ''} onChange={(e) => set({ teaching_since: e.target.value })} hint="Tarikh anda mula mengajar, di mana-mana." />
+                    <Input label="Permit mengajar luput" type="date" value={f.teaching_permit_expiry || ''} onChange={(e) => set({ teaching_permit_expiry: e.target.value })} />
+                  </div>
+                  {applicant && (
+                    <Textarea label="Pengalaman & kelayakan" rows={3} value={f.remarks} onChange={(e) => set({ remarks: e.target.value })}
+                      hint="Sekolah atau pusat tuisyen tempat anda mengajar, kelulusan, kepakaran." />
+                  )}
+                </div>
+              </Card>
+            ),
+          },
+          {
+            id: 'documents', title: 'Dokumen', content: (
+              <Card>
+                <CardHeader title="Dokumen" description="Gambar atau PDF. Dokumen disimpan secara peribadi dan hanya dilihat oleh pihak pengurusan." />
+                <div className="space-y-4 p-5">
+                  {DOCS.map((d) => (
+                    <label key={d.field} className="block">
+                      <span className="mb-1.5 block text-[13px] font-medium text-gray-700">
+                        {d.label}{d.has(info.teacher) && <span className="font-normal text-gray-500"> · sudah ada dalam rekod</span>}
+                      </span>
+                      <input type="file" accept={d.accept} onChange={(e) => setUploads((u) => ({ ...u, [d.field]: e.target.files?.[0] || null }))}
+                        className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-800 hover:file:bg-gray-200" />
+                      <span className="mt-1 block text-[13px] text-gray-500">{d.hint}</span>
+                    </label>
                   ))}
                 </div>
-              </fieldset>
-            ))}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input label="Mula mengajar" type="date" value={f.teaching_since || ''} onChange={(e) => set({ teaching_since: e.target.value })} hint="Tarikh anda mula mengajar, di mana-mana." />
-              <Input label="Permit mengajar luput" type="date" value={f.teaching_permit_expiry || ''} onChange={(e) => set({ teaching_permit_expiry: e.target.value })} />
-            </div>
-            {applicant && (
-              <Textarea label="Pengalaman & kelayakan" rows={3} value={f.remarks} onChange={(e) => set({ remarks: e.target.value })}
-                hint="Sekolah atau pusat tuisyen tempat anda mengajar, kelulusan, kepakaran." />
-            )}
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader title="Dokumen" description="Gambar atau PDF. Dokumen disimpan secara peribadi dan hanya dilihat oleh pihak pengurusan." />
-          <div className="space-y-4 p-5">
-            {DOCS.map((d) => (
-              <label key={d.field} className="block">
-                <span className="mb-1.5 block text-[13px] font-medium text-gray-700">
-                  {d.label}{d.has(info.teacher) && <span className="font-normal text-gray-500"> · sudah ada dalam rekod</span>}
-                </span>
-                <input type="file" accept={d.accept} onChange={(e) => setUploads((u) => ({ ...u, [d.field]: e.target.files?.[0] || null }))}
-                  className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-800 hover:file:bg-gray-200" />
-                <span className="mt-1 block text-[13px] text-gray-500">{d.hint}</span>
-              </label>
-            ))}
-          </div>
-        </Card>
-
-        {error && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-        <Button type="submit" variant="primary" size="lg" className="w-full" disabled={busy}>{busy ? 'Menghantar…' : applicant ? 'Hantar permohonan' : 'Hantar untuk semakan'}</Button>
-      </form>
+              </Card>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

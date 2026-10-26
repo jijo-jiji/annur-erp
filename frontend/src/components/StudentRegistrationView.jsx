@@ -14,6 +14,7 @@ import { can } from '../lib/permissions';
 import { downloadCsv } from '../lib/csv';
 import { FeedbackGallery } from './FeedbackViews';
 import PromotionPanel from './PromotionPanel';
+import SectionedForm from './FormSections';
 import {
   Avatar, Badge, Button, Card, CardHeader, Checkbox, cx, EmptyState, Input, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs, Td, Textarea, Th,
   useToast, WhatsAppIcon,
@@ -713,11 +714,10 @@ function RegistrationForm({ onCancel, onDone }) {
   const sibling = f.parent1.phone && students.find((s) => s.parent1.phone === f.parent1.phone && s.status !== 'TERMINATED');
   const belowMin = !walkIn && f.classes.length > 0 && f.classes.length < min;
 
-  const submit = async (e) => {
-    e.preventDefault();
+  const submit = async () => {
     if (!walkIn && f.classes.length + f.waitlist.length === 0) {
       setError('Sila pilih sekurang-kurangnya satu kelas.');
-      document.getElementById('pilihan-kelas')?.scrollIntoView({ behavior: 'smooth' });
+      document.getElementById('pilihan-kelas')?.scrollIntoView({ block: 'center' });
       return;
     }
     if (f.preferred === 2 && !f.parent2.phone) {
@@ -746,7 +746,7 @@ function RegistrationForm({ onCancel, onDone }) {
   };
 
   return (
-    <form onSubmit={submit}>
+    <>
       <button type="button" onClick={cancel} className="mb-4 flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900">
         <ArrowLeft className="size-4" /> {lead ? 'Senarai prospek' : 'Senarai pelajar'}
       </button>
@@ -764,173 +764,193 @@ function RegistrationForm({ onCancel, onDone }) {
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <Card>
-            <CardHeader title="Maklumat pelajar" />
-            <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-              <Input label="Nama penuh" required className="sm:col-span-2" value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder="Seperti dalam kad pengenalan" />
-              <Input label="No. kad pengenalan / sijil lahir" required value={f.ic} onChange={(e) => set({ ic: e.target.value })} placeholder="090101-03-1234" />
-              <Select label="Jenis pelajar" value={f.type} onChange={(e) => set({ type: e.target.value, classes: [], waitlist: [] })}>
-                <option value="MONTHLY">Bulanan (tetap)</option>
-                <option value="WALK_IN">Walk-in (bayar setiap sesi)</option>
-              </Select>
-              <Select
-                label="Tingkatan / darjah"
-                required
-                value={f.form}
-                onChange={(e) => {
-                  set({ form: e.target.value, classes: [], waitlist: [] });
-                  setError('');
-                }}
-              >
-                {FORMS.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.label}
-                  </option>
-                ))}
-              </Select>
-              <Select label="Aliran" value={upper ? f.stream : 'GENERAL'} onChange={(e) => set({ stream: e.target.value })} disabled={!upper}>
-                <option value="SAINS">Sains</option>
-                <option value="SASTERA">Sastera / Akaun</option>
-                <option value="GENERAL">Umum</option>
-              </Select>
-              <Select label="Sekolah" required value={f.schoolKey} onChange={(e) => set({ schoolKey: e.target.value })}>
-                <option value="">Pilih sekolah</option>
-                {schools.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-                <option value={OTHER_SCHOOL}>Lain-lain (taip nama)</option>
-              </Select>
-              {f.schoolKey === OTHER_SCHOOL ? (
-                <Input label="Nama sekolah" required value={f.school} onChange={(e) => set({ school: e.target.value })} hint="Cadangkan sekolah baharu di Data induk supaya ia muncul dalam senarai." />
-              ) : (
-                <Select label="Sumber (bagaimana tahu tentang kami)" value={f.source} onChange={(e) => set({ source: e.target.value })}>
-                  <option value="">Tidak dinyatakan</option>
-                  {sources.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </Select>
-              )}
-              <Input label="No. telefon pelajar" type="tel" value={f.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="Jika ada" />
-              <Input label="E-mel pelajar" type="email" value={f.email} onChange={(e) => set({ email: e.target.value })} placeholder="Jika ada" />
-              {f.schoolKey === OTHER_SCHOOL && (
-                <Select label="Sumber (bagaimana tahu tentang kami)" value={f.source} onChange={(e) => set({ source: e.target.value })}>
-                  <option value="">Tidak dinyatakan</option>
-                  {sources.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </Select>
-              )}
-              <Textarea label="Alamat rumah" className="sm:col-span-2" rows={2} value={f.address} onChange={(e) => set({ address: e.target.value })} />
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader title="Ibu bapa / penjaga" description="Pilih satu penjaga sebagai hubungan utama untuk resit dan makluman WhatsApp." />
-            <div className="grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
-              {[1, 2].map((n) => {
-                const key = `parent${n}`;
-                const p = f[key];
-                return (
-                  <fieldset key={n} className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <legend className="text-sm font-semibold text-gray-900">Penjaga {n}</legend>
-                      <label className="flex items-center gap-2 text-[13px] text-gray-700">
-                        <input type="radio" name="preferred" checked={f.preferred === n} onChange={() => set({ preferred: n })} className="size-4" />
-                        Hubungan utama
-                      </label>
-                    </div>
-                    <Select label="Hubungan" value={p.relation} onChange={(e) => setParent(key, { relation: e.target.value })}>
-                      <option>Bapa</option>
-                      <option>Ibu</option>
-                      <option>Penjaga</option>
-                    </Select>
-                    <Input label="Nama" required={n === 1} value={p.name} onChange={(e) => setParent(key, { name: e.target.value })} />
-                    <Input label="No. telefon (WhatsApp)" type="tel" required={n === 1} value={p.phone} onChange={(e) => setParent(key, { phone: e.target.value })} />
-                    <Input label="E-mel" type="email" value={p.email} onChange={(e) => setParent(key, { email: e.target.value })} />
-                    <Select label="Umur" value={p.age} onChange={(e) => setParent(key, { age: e.target.value })}>
+        <SectionedForm
+          id="registration-form"
+          className="lg:col-span-2"
+          headerTop="top-14 lg:top-0"
+          showSubmit={false}
+          onSubmit={submit}
+          sections={[
+            {
+              id: 'student', title: 'Pelajar', content: (
+              <Card>
+                <CardHeader title="Maklumat pelajar" />
+                <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+                  <Input label="Nama penuh" required className="sm:col-span-2" value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder="Seperti dalam kad pengenalan" />
+                  <Input label="No. kad pengenalan / sijil lahir" required value={f.ic} onChange={(e) => set({ ic: e.target.value })} placeholder="090101-03-1234" />
+                  <Select label="Jenis pelajar" value={f.type} onChange={(e) => set({ type: e.target.value, classes: [], waitlist: [] })}>
+                    <option value="MONTHLY">Bulanan (tetap)</option>
+                    <option value="WALK_IN">Walk-in (bayar setiap sesi)</option>
+                  </Select>
+                  <Select
+                    label="Tingkatan / darjah"
+                    required
+                    value={f.form}
+                    onChange={(e) => {
+                      set({ form: e.target.value, classes: [], waitlist: [] });
+                      setError('');
+                    }}
+                  >
+                    {FORMS.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.label}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select label="Aliran" value={upper ? f.stream : 'GENERAL'} onChange={(e) => set({ stream: e.target.value })} disabled={!upper}>
+                    <option value="SAINS">Sains</option>
+                    <option value="SASTERA">Sastera / Akaun</option>
+                    <option value="GENERAL">Umum</option>
+                  </Select>
+                  <Select label="Sekolah" required value={f.schoolKey} onChange={(e) => set({ schoolKey: e.target.value })}>
+                    <option value="">Pilih sekolah</option>
+                    {schools.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                    <option value={OTHER_SCHOOL}>Lain-lain (taip nama)</option>
+                  </Select>
+                  {f.schoolKey === OTHER_SCHOOL ? (
+                    <Input label="Nama sekolah" required value={f.school} onChange={(e) => set({ school: e.target.value })} hint="Cadangkan sekolah baharu di Data induk supaya ia muncul dalam senarai." />
+                  ) : (
+                    <Select label="Sumber (bagaimana tahu tentang kami)" value={f.source} onChange={(e) => set({ source: e.target.value })}>
                       <option value="">Tidak dinyatakan</option>
-                      {ageBands.map((a) => (
-                        <option key={a.value} value={a.value}>{a.label}</option>
+                      {sources.map((s) => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
                       ))}
                     </Select>
-                    <Input label="Pekerjaan" value={p.occupation} onChange={(e) => setParent(key, { occupation: e.target.value })} />
-                  </fieldset>
-                );
-              })}
-            </div>
-            {sibling && (
-              <p className="border-t border-gray-200 bg-sky-50/60 px-5 py-3 text-[13px] text-sky-900">
-                Penjaga ini sudah berdaftar untuk <strong>{sibling.name}</strong> ({sibling.id}). Diskaun adik-beradik boleh ditetapkan oleh Supervisor dalam profil pelajar.
-              </p>
-            )}
-          </Card>
-
-          {walkIn ? (
-            <Card>
-              <CardHeader title="Walk-in" description="Pelajar walk-in membayar setiap sesi; tiada invois bulanan dijana." />
-              <div className="space-y-4 p-5">
-                <Textarea label="Keterangan" required value={f.walkInDescription} onChange={(e) => set({ walkInDescription: e.target.value })} placeholder="cth. Hadir kelas intensif Sabtu sahaja sebelum peperiksaan" />
-                <div>
-                  <p className="mb-1.5 text-[13px] font-medium text-gray-700">Subjek walk-in</p>
-                  <div className="flex flex-wrap gap-2">
-                    {subjects.filter((s) => s.active).map((s) => {
-                      const on = f.walkInSubjects.includes(s.pk);
-                      return (
-                        <button
-                          key={s.pk}
-                          type="button"
-                          aria-pressed={on}
-                          onClick={() => set({ walkInSubjects: on ? f.walkInSubjects.filter((x) => x !== s.pk) : [...f.walkInSubjects, s.pk] })}
-                          className={cx('rounded-md border px-3 py-1.5 text-[13px] font-medium', on ? 'border-brand-600 bg-brand-50 text-brand-900 ring-1 ring-brand-600' : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400')}
-                        >
-                          {s.name}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  )}
+                  <Input label="No. telefon pelajar" type="tel" value={f.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="Jika ada" />
+                  <Input label="E-mel pelajar" type="email" value={f.email} onChange={(e) => set({ email: e.target.value })} placeholder="Jika ada" />
+                  {f.schoolKey === OTHER_SCHOOL && (
+                    <Select label="Sumber (bagaimana tahu tentang kami)" value={f.source} onChange={(e) => set({ source: e.target.value })}>
+                      <option value="">Tidak dinyatakan</option>
+                      {sources.map((s) => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </Select>
+                  )}
+                  <Textarea label="Alamat rumah" className="sm:col-span-2" rows={2} value={f.address} onChange={(e) => set({ address: e.target.value })} />
                 </div>
-              </div>
-            </Card>
-          ) : (
-            <Card id="pilihan-kelas">
-              <CardHeader
-                title="Pilihan kelas"
-                description={min > 1
-                  ? `Pakej biasa bermula ${min} subjek. Pilih satu kumpulan bagi setiap subjek; kelas penuh boleh dimasukkan ke senarai menunggu.`
-                  : 'Pilih kelas yang dihadiri; kelas penuh boleh dimasukkan ke senarai menunggu.'}
-              />
-              <div className="px-5 pb-2">
-                <ClassPicker
-                  form={f.form}
-                  value={f.classes}
-                  waitlist={f.waitlist}
-                  onChange={(classes) => { set({ classes }); setError(''); }}
-                  onWaitlistChange={(waitlist) => set({ waitlist })}
-                />
-              </div>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader title="Perakuan" />
-            <div className="space-y-4 p-5">
-              <Checkbox
-                label="Kebenaran semakan SAPS"
-                description="Membenarkan pihak tuisyen menyemak keputusan peperiksaan pelajar di sapsnkra.moe.gov.my untuk pemantauan prestasi."
-                checked={f.saps}
-                onChange={(e) => set({ saps: e.target.checked })}
-              />
-              <Checkbox
-                required
-                label="Syarat pembayaran dan peraturan"
-                description={`Yuran dijelaskan sebelum ${settings.dueDay} haribulan setiap bulan; notis berhenti ${settings.noticeWeeks} minggu lebih awal; pelajar diberhentikan jika yuran tertunggak ${settings.unpaidMonthsLimit} bulan tanpa makluman.`}
-                checked={f.terms}
-                onChange={(e) => set({ terms: e.target.checked })}
-              />
-            </div>
-          </Card>
-        </div>
+              </Card>
+              ),
+            },
+            {
+              id: 'parents', title: 'Penjaga', content: (
+              <Card>
+                <CardHeader title="Ibu bapa / penjaga" description="Pilih satu penjaga sebagai hubungan utama untuk resit dan makluman WhatsApp." />
+                <div className="grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
+                  {[1, 2].map((n) => {
+                    const key = `parent${n}`;
+                    const p = f[key];
+                    return (
+                      <fieldset key={n} className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <legend className="text-sm font-semibold text-gray-900">Penjaga {n}</legend>
+                          <label className="flex items-center gap-2 text-[13px] text-gray-700">
+                            <input type="radio" name="preferred" checked={f.preferred === n} onChange={() => set({ preferred: n })} className="size-4" />
+                            Hubungan utama
+                          </label>
+                        </div>
+                        <Select label="Hubungan" value={p.relation} onChange={(e) => setParent(key, { relation: e.target.value })}>
+                          <option>Bapa</option>
+                          <option>Ibu</option>
+                          <option>Penjaga</option>
+                        </Select>
+                        <Input label="Nama" required={n === 1} value={p.name} onChange={(e) => setParent(key, { name: e.target.value })} />
+                        <Input label="No. telefon (WhatsApp)" type="tel" required={n === 1} value={p.phone} onChange={(e) => setParent(key, { phone: e.target.value })} />
+                        <Input label="E-mel" type="email" value={p.email} onChange={(e) => setParent(key, { email: e.target.value })} />
+                        <Select label="Umur" value={p.age} onChange={(e) => setParent(key, { age: e.target.value })}>
+                          <option value="">Tidak dinyatakan</option>
+                          {ageBands.map((a) => (
+                            <option key={a.value} value={a.value}>{a.label}</option>
+                          ))}
+                        </Select>
+                        <Input label="Pekerjaan" value={p.occupation} onChange={(e) => setParent(key, { occupation: e.target.value })} />
+                      </fieldset>
+                    );
+                  })}
+                </div>
+                {sibling && (
+                  <p className="border-t border-gray-200 bg-sky-50/60 px-5 py-3 text-[13px] text-sky-900">
+                    Penjaga ini sudah berdaftar untuk <strong>{sibling.name}</strong> ({sibling.id}). Diskaun adik-beradik boleh ditetapkan oleh Supervisor dalam profil pelajar.
+                  </p>
+                )}
+              </Card>
+              ),
+            },
+            {
+              id: 'classes', title: walkIn ? 'Walk-in' : 'Kelas', content: (
+              walkIn ? (
+                <Card>
+                  <CardHeader title="Walk-in" description="Pelajar walk-in membayar setiap sesi; tiada invois bulanan dijana." />
+                  <div className="space-y-4 p-5">
+                    <Textarea label="Keterangan" required value={f.walkInDescription} onChange={(e) => set({ walkInDescription: e.target.value })} placeholder="cth. Hadir kelas intensif Sabtu sahaja sebelum peperiksaan" />
+                    <div>
+                      <p className="mb-1.5 text-[13px] font-medium text-gray-700">Subjek walk-in</p>
+                      <div className="flex flex-wrap gap-2">
+                        {subjects.filter((s) => s.active).map((s) => {
+                          const on = f.walkInSubjects.includes(s.pk);
+                          return (
+                            <button
+                              key={s.pk}
+                              type="button"
+                              aria-pressed={on}
+                              onClick={() => set({ walkInSubjects: on ? f.walkInSubjects.filter((x) => x !== s.pk) : [...f.walkInSubjects, s.pk] })}
+                              className={cx('rounded-md border px-3 py-1.5 text-[13px] font-medium', on ? 'border-brand-600 bg-brand-50 text-brand-900 ring-1 ring-brand-600' : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400')}
+                            >
+                              {s.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ) : (
+                <Card id="pilihan-kelas">
+                  <CardHeader
+                    title="Pilihan kelas"
+                    description={min > 1
+                      ? `Pakej biasa bermula ${min} subjek. Pilih satu kumpulan bagi setiap subjek; kelas penuh boleh dimasukkan ke senarai menunggu.`
+                      : 'Pilih kelas yang dihadiri; kelas penuh boleh dimasukkan ke senarai menunggu.'}
+                  />
+                  <div className="px-5 pb-2">
+                    <ClassPicker
+                      form={f.form}
+                      value={f.classes}
+                      waitlist={f.waitlist}
+                      onChange={(classes) => { set({ classes }); setError(''); }}
+                      onWaitlistChange={(waitlist) => set({ waitlist })}
+                    />
+                  </div>
+                </Card>
+              )
+              ),
+            },
+            {
+              id: 'consent', title: 'Perakuan', content: (
+              <Card>
+                <CardHeader title="Perakuan" />
+                <div className="space-y-4 p-5">
+                  <Checkbox
+                    label="Kebenaran semakan SAPS"
+                    description="Membenarkan pihak tuisyen menyemak keputusan peperiksaan pelajar di sapsnkra.moe.gov.my untuk pemantauan prestasi."
+                    checked={f.saps}
+                    onChange={(e) => set({ saps: e.target.checked })}
+                  />
+                  <Checkbox
+                    required
+                    label="Syarat pembayaran dan peraturan"
+                    description={`Yuran dijelaskan sebelum ${settings.dueDay} haribulan setiap bulan; notis berhenti ${settings.noticeWeeks} minggu lebih awal; pelajar diberhentikan jika yuran tertunggak ${settings.unpaidMonthsLimit} bulan tanpa makluman.`}
+                    checked={f.terms}
+                    onChange={(e) => set({ terms: e.target.checked })}
+                  />
+                </div>
+              </Card>
+              ),
+            },
+          ]}
+        />
 
         {/* Summary */}
         <div className="lg:sticky lg:top-8 lg:self-start">
@@ -978,7 +998,7 @@ function RegistrationForm({ onCancel, onDone }) {
             </div>
             <div className="border-t border-gray-200 p-5">
               {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p>}
-              <Button type="submit" variant="primary" className="w-full" disabled={busy}>
+              <Button type="submit" form="registration-form" variant="primary" className="w-full" disabled={busy}>
                 {busy ? 'Mendaftar…' : 'Daftar pelajar'}
               </Button>
               <Button onClick={cancel} variant="ghost" className="mt-2 w-full">
@@ -988,6 +1008,6 @@ function RegistrationForm({ onCancel, onDone }) {
           </Card>
         </div>
       </div>
-    </form>
+    </>
   );
 }

@@ -391,3 +391,23 @@ comments, recorded by); `TeacherComplaint` gains `complainant_type`, `student` a
 Tests: `PhaseHPerformanceAndReportsTests` (4 tests); full backend suite 292 tests OK; browser `e2e/performance.spec.js`
 (3 tests); full browser suite 104 tests OK.
 
+## After the phases: audit and form changes (26 Oct 2026)
+
+Checked on the office PC after pulling the cloud work: full backend suite and the full browser suite in Chrome, a
+review of the money, public-page and permission code, and the Phase A-C screens by hand.
+
+- **Fixed: the teacher's class page locked teachers out.** It refreshes every 15 seconds (240 calls an hour) but shared
+  the teacher link's limit of 60 calls an hour per address, and teachers at the centre share one address. After about
+  15 minutes the page, marking pupils and confirming the list all failed. The class page now has its own limit per link
+  (`public_teacher_page`, 600 an hour) under a ceiling per address (`public_teacher_pages`, 5000 an hour); the form
+  behind the link keeps 60 an hour. Test: `test_the_teacher_s_class_page_keeps_working_while_it_refreshes`.
+- **Registration forms in sections** (client request): the staff student form, the parents' form (`#/daftar`) and the
+  teacher's form (`#/guru/...`) stay one scroll, with a header that follows the screen, names every section, underlines
+  the one in view, ticks a section once its required fields are filled and jumps to a section when tapped
+  (`components/FormSections.jsx`). On the staff page it sits under the phone's top bar.
+- **Parents' form: SAPS permission and the agreement to the terms removed** (client request). Registrations from it are
+  saved with `saps_consent` and the `agree_terms_*` fields false, since the parent was not asked; the counter goes
+  through them when confirming classes and the first payment. The staff form still has its *Perakuan* section.
+- Still open, for the client: a teacher's private link shows their full bank account number to whoever opens it
+  (the link is long, random and can be cancelled); showing only the last digits would be safer.
+
