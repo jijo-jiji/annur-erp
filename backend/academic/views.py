@@ -219,7 +219,9 @@ class ClassRescheduleLogViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(log).data)
 
 class LessonHandoutViewSet(viewsets.ModelViewSet):
-    queryset = LessonHandout.objects.all().order_by('-upload_date')
+    """Handouts of real classes (Phase G): copies from the class's students, and who has a copy from that class's
+    attendance plus copies given out later (academic/handouts.py)."""
+    queryset = LessonHandout.objects.select_related('timetable_class__subject', 'timetable_class__teacher').order_by('-upload_date', '-id')
     serializer_class = LessonHandoutSerializer
 
     def perform_create(self, serializer):
@@ -228,10 +230,38 @@ class LessonHandoutViewSet(viewsets.ModelViewSet):
         generated_id = f"HND-{next_num:03d}"
         serializer.save(handout_id=serializer.validated_data.get('handout_id') or generated_id)
 
+    @action(detail=True, methods=['get'])
+    def recipients(self, request, pk=None):
+        """The class's students: who got it in class, who was given a copy later, and who still waits."""
+        from .handouts import recipients
+        return Response(recipients(self.get_object()))
+
+    @action(detail=True, methods=['post'])
+    def give(self, request, pk=None):
+        """{student, given}: a copy given to a student who was not in class (given: false takes it back)."""
+        from .handouts import give
+        return Response(give(self.get_object(), request.data.get('student'), request.data.get('given', True) is not False, display_name(request.user)))
+
+    @action(detail=False, methods=['get'])
+    def for_student(self, request):
+        """?student=<id>: the handouts of the student's classes and whether the student has each."""
+        from students.models import Student
+        from .handouts import for_student
+        raw = str(request.query_params.get('student') or '')
+        student = Student.objects.filter(pk=raw).first() if raw.isdigit() else None
+        if student is None:
+            raise ValidationError({'student': 'Pelajar tidak dijumpai.'})
+        return Response(for_student(student))
+
     @action(detail=True, methods=['post'])
     def record_print(self, request, pk=None):
         handout = self.get_object()
-        copies = int(request.data.get('copies', handout.copies_needed))
+        try:
+            copies = int(request.data.get('copies', handout.copies_needed))
+        except (TypeError, ValueError):
+            copies = -1
+        if not 0 < copies <= 500:
+            raise ValidationError({'copies': 'Bilangan salinan tidak sah.'})
         handout.copies_printed = copies
         handout.status = 'PRINT_READY'
         handout.save()

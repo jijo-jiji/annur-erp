@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
-from datetime import date
+from datetime import date, timedelta
 from business_config.models import SubjectMaster, PricingTier, BusinessSetting, TeacherRateSetting, DynamicMasterData
 from teachers.models import Teacher, StaffMember, LeaveRequest
 from academic.models import Classroom, TimeSlot, ClassTimetable, ClassRescheduleLog, LessonHandout
@@ -752,26 +752,43 @@ class Command(BaseCommand):
 
         # 15. Lesson Handouts Repository
         self.stdout.write("Seeding Lesson Handouts...")
+        # Each belongs to a real class (form, subject, section) and the date of the class it is handed out in: the last
+        # time that class met before today, or the next time for the one still to be printed
         sample_handouts = [
-            ("HND-001", "Modul SPM 2026: Gelombang, Cahaya & Optik", "F5", "FIZIK", "F5 FIZIK (A) NAK", "Nik Ahmad Khan (NAK)", "Modul_Fizik_F5_Optik.pdf", "3.4 MB", 20, 20, "PRINT_READY", "Latihan intensif Kertas 2 Bahagian B & C untuk persediaan peperiksaan percubaan."),
-            ("HND-002", "Nota Ringkas & Formula Lanjutan: Pembezaan & Pengamiran", "F5", "ADDMT", "F5 ADDMT (A) Z", "Zamri / Zakir (Z)", "AddMath_Form5_Calculus.pdf", "2.1 MB", 22, 22, "PRINT_READY", "Kompilasi rumus penting dan teknik menjawab soalan graf fungsi kuadratik."),
-            ("HND-003", "Topical Drill: Thermochemistry & Electrochemistry", "F4", "KIMIA", "F4 KIM (B) SF", "Saiful (SF)", "Kimia_F4_Elektrokimia.pdf", "4.2 MB", 18, 0, "NEEDS_PRINTING", "Soalan ramalan bertopik untuk kelas Sabtu pagi. Perlu dicetak sebelum Jumaat petang."),
-            ("HND-004", "Model Essay Bank: SPM Continuous Writing & Directed Writing", "F5", "BI", "F5 BI (B) Z", "Zakir (Z)", "SPM_English_Essays.pdf", "1.8 MB", 18, 18, "PRINT_READY", "Contoh karangan Gred A+ beserta senarai kosa kata aras tinggi (CEFR C1)."),
-            ("HND-005", "Latihan Topikal: Operasi Pecahan & Perpuluhan Lanjutan", "S6", "MATH", "S6 MATH FQ", "Faqihah (FQ)", "Math_Darjah6_Pecahan.pdf", "1.5 MB", 15, 15, "PRINT_READY", "Modul asas pengukuhan Matematik Darjah 6 untuk sesi intensif Sabtu."),
+            ("HND-001", "Modul Fizik T4: Daya & Gerakan", ("F4", "FZ", "A"), -1, "Modul_Fizik_F4_Daya.pdf", "3.4 MB", "PRINT_READY", "Latihan Kertas 2 Bahagian B & C dengan skema jawapan."),
+            ("HND-002", "Nota Ringkas & Formula Lanjutan: Pembezaan & Pengamiran", ("F5", "ADDMT", "A"), -1, "AddMath_Form5_Calculus.pdf", "2.1 MB", "PRINT_READY", "Kompilasi rumus penting dan teknik menjawab soalan graf fungsi kuadratik."),
+            ("HND-003", "Latihan Topikal: Kebangkitan Nasionalisme", ("F5", "SEJ", "B"), 1, "Sejarah_F5_Bab5.pdf", "1.5 MB", "NEEDS_PRINTING", "Soalan struktur dan esei Bab 5. Perlu dicetak sebelum kelas."),
+            ("HND-004", "Model Essay Bank: SPM Continuous Writing & Directed Writing", ("F5", "BI", "B"), -1, "SPM_English_Essays.pdf", "1.8 MB", "PRINT_READY", "Contoh karangan Gred A+ beserta senarai kosa kata aras tinggi (CEFR C1)."),
+            ("HND-005", "Soalan Ramalan SPM: Sejarah Kertas 2", ("F5", "SEJ", "C"), -1, "Sejarah_SPM_Ramalan.pdf", "2.4 MB", "PRINT_READY", "Soalan ramalan bertopik dengan panduan menjawab."),
         ]
-        for hid, tit, flvl, sname, ccode, tname, fname, fsz, cneed, cprt, st, desc in sample_handouts:
+        from teachers.payroll import WEEKDAY_TO_DAY
+        def class_day(cls, direction):
+            """The class's last meeting before today (direction -1) or its next one after today (1)."""
+            on = date.today()
+            for _ in range(7):
+                on += timedelta(days=direction)
+                if WEEKDAY_TO_DAY[on.weekday()] == cls.slot.day:
+                    return on
+            return date.today()
+        for hid, tit, (flvl, scode, sec), direction, fname, fsz, st, desc in sample_handouts:
+            cls = ClassTimetable.objects.filter(form_level=flvl, subject__code=scode, section=sec).select_related("slot", "subject", "teacher").first()
+            if cls is None:
+                continue
+            need = cls.students.filter(status="ACTIVE").count() or 1  # one copy for each of the class's students
             LessonHandout.objects.update_or_create(
                 handout_id=hid,
                 defaults={
                     "title": tit,
-                    "form_level": flvl,
-                    "subject_name": sname,
-                    "class_code": ccode,
-                    "teacher_name": tname,
+                    "timetable_class": cls,
+                    "class_date": class_day(cls, direction),
+                    "form_level": cls.form_level,
+                    "subject_name": cls.subject.name,
+                    "class_code": cls.class_code,
+                    "teacher_name": cls.teacher.full_name if cls.teacher else "",
                     "file_name": fname,
                     "file_size": fsz,
-                    "copies_needed": cneed,
-                    "copies_printed": cprt,
+                    "copies_needed": need,
+                    "copies_printed": need if st == "PRINT_READY" else 0,
                     "status": st,
                     "description": desc
                 }

@@ -66,11 +66,31 @@ class LessonHandoutSerializer(serializers.ModelSerializer):
     handout_id = serializers.CharField(read_only=True)
     # The uploaded file, if any (older records only have a file name)
     file = serializers.SerializerMethodField()
+    # Of the class's students, how many have a copy (in class or given later) and how many wait (academic/handouts.py)
+    tally = serializers.SerializerMethodField()
 
     class Meta:
         model = LessonHandout
         fields = '__all__'
-        read_only_fields = ('file_name', 'file_size', 'file_type')
+        # the class's name, subject, form and teacher are copied from the class itself (Phase G)
+        read_only_fields = ('file_name', 'file_size', 'file_type', 'form_level', 'subject_name', 'class_code', 'teacher_name')
+
+    def validate(self, attrs):
+        cls = attrs.get('timetable_class', getattr(self.instance, 'timetable_class', None))
+        if cls is None:
+            raise serializers.ValidationError({'timetable_class': 'Pilih kelas handout ini.'})
+        if not attrs.get('class_date', getattr(self.instance, 'class_date', None)):
+            raise serializers.ValidationError({'class_date': 'Pilih tarikh kelas handout ini diberi.'})
+        attrs.update(form_level=cls.form_level, subject_name=cls.subject.name if cls.subject else '', class_code=cls.class_code,
+                     teacher_name=cls.teacher.full_name if cls.teacher else '')
+        if self.instance is None and not attrs.get('copies_needed'):
+            from .handouts import class_students
+            attrs['copies_needed'] = len(class_students(cls)) or 1
+        return attrs
+
+    def get_tally(self, obj):
+        from .handouts import tally
+        return tally(obj)
 
     def get_file(self, obj):
         from core.attachments import AttachmentSerializer

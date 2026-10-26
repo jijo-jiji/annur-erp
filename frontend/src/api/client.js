@@ -380,6 +380,11 @@ export const academicApi = {
     method: 'POST',
     body: JSON.stringify({ copies }),
   }),
+  // Phase G: who has a copy (from the class's attendance, plus copies given later)
+  getHandout: (id) => request(`/academic/handouts/${id}/`),
+  handoutRecipients: (id) => request(`/academic/handouts/${id}/recipients/`),
+  giveHandout: (id, student, given = true) => request(`/academic/handouts/${id}/give/`, { method: 'POST', body: JSON.stringify({ student, given }) }),
+  handoutsForStudent: (studentId) => request(`/academic/handouts/for_student/?student=${studentId}`),
 };
 
 // 7. Teachers & Staff HR API

@@ -34,12 +34,13 @@ def default_subject_category(stream):
 
 # The office's daily checklist (core.DailyChecklist). `meta_info.order` sets the order; `meta_info.auto` names what the
 # system can see for that item, shown beside it as a hint (the person still ticks it): `cash_close` (the day's counter
-# is closed), `attendance` (classes held that day with attendance taken), `reminders` (fee reminders recorded that day).
+# is closed), `attendance` (classes held that day with attendance taken), `reminders` (fee reminders recorded that day),
+# `handouts` (handouts recorded for tomorrow's classes and how many are not yet printed).
 DAILY_CHECKLIST = '27_daily_checklist'
 DAILY_CHECKLIST_DEFAULTS = [
     ('TUTUP_KAUNTER', 'Tutup kaunter & kira tunai', 'cash_close'),
     ('KEDATANGAN', 'Kedatangan semua kelas diambil', 'attendance'),
     ('PERINGATAN_YURAN', 'Peringatan yuran dihantar', 'reminders'),
-    ('NOTA_ESOK', 'Nota / modul kelas esok disediakan', ''),
+    ('NOTA_ESOK', 'Nota / modul kelas esok disediakan', 'handouts'),
     ('MESEJ_IBU_BAPA', 'Mesej ibu bapa dibalas', ''),
 ]

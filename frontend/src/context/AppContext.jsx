@@ -56,11 +56,13 @@ export function AppProvider({ children, notify }) {
   // request is back, so a prospect saved or moved meanwhile would be overwritten by the older list; when this count
   // moved during the load, the prospects are fetched again instead.
   const leadEdits = useRef(0);
+  const handoutEdits = useRef(0); // the same for handouts (added, printed, a copy given out)
 
   // Initial Load from Django REST backend
   const refreshAllData = useCallback(async () => {
     setIsLoading(true);
     const leadEditsAtStart = leadEdits.current;
+    const handoutEditsAtStart = handoutEdits.current;
     try {
       const [
         masterRes, studentsRes, leadsRes, invoicesRes, receiptsRes,
@@ -100,7 +102,9 @@ export function AppProvider({ children, notify }) {
       if (vendorsRes.status === 'fulfilled') setVendors(vendorsRes.value || []);
       if (timetableRes.status === 'fulfilled') setTimetable(timetableRes.value || []);
       if (reschedulesRes.status === 'fulfilled') setReschedules(reschedulesRes.value || []);
-      if (handoutsRes.status === 'fulfilled') setHandouts(handoutsRes.value || []);
+      // a handout added, printed or given out meanwhile: fetch the list again rather than put back the older one
+      if (handoutEdits.current !== handoutEditsAtStart) academicApi.getHandouts().then(setHandouts).catch(() => {});
+      else if (handoutsRes.status === 'fulfilled') setHandouts(handoutsRes.value || []);
       if (teachersRes.status === 'fulfilled') setTeachers(teachersRes.value || []);
       if (staffRes.status === 'fulfilled') setStaff(staffRes.value || []);
       if (leavesRes.status === 'fulfilled') setLeaveRequests(leavesRes.value || []);
@@ -521,6 +525,7 @@ export function AppProvider({ children, notify }) {
   const createHandout = async (handoutPayload) => {
     try {
       const newHnd = await academicApi.createHandout(handoutPayload);
+      handoutEdits.current += 1;
       setHandouts((prev) => [newHnd, ...prev]);
       showToast(`Modul/Handout berjaya dimuat naik: ${newHnd.handout_id}`);
       return newHnd;
@@ -530,9 +535,27 @@ export function AppProvider({ children, notify }) {
     }
   };
 
+  // The handout list again (its tallies follow attendance taken elsewhere), or one handout after a copy is given
+  // A list fetched before a change here would put the old tallies back, so it is dropped (handoutEdits).
+  const reloadHandouts = useCallback(async () => {
+    const at = handoutEdits.current;
+    try {
+      const list = await academicApi.getHandouts();
+      if (handoutEdits.current === at) setHandouts(list);
+    } catch { /* the list on screen stays */ }
+  }, []);
+  const reloadHandout = useCallback(async (id) => {
+    handoutEdits.current += 1;
+    try {
+      const fresh = await academicApi.getHandout(id);
+      setHandouts((prev) => prev.map((h) => (h.id === id ? fresh : h)));
+    } catch { /* the list on screen stays */ }
+  }, []);
+
   const recordPrint = async (handoutId, copies) => {
     try {
       const updated = await academicApi.recordPrint(handoutId, copies);
+      handoutEdits.current += 1;
       setHandouts((prev) => prev.map((h) => (h.id === handoutId ? updated : h)));
       showToast(`Cetakan direkod: ${copies} salinan untuk ${updated.handout_id}`);
       return updated;
@@ -614,6 +637,8 @@ export function AppProvider({ children, notify }) {
     refreshStaff,
     staffAction,
     createHandout,
+    reloadHandouts,
+    reloadHandout,
     recordPrint,
     saveClass,
     deleteClass,

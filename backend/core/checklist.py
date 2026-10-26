@@ -2,7 +2,8 @@
 tick them through the day and Supervisor or Management checks the day once, after which the ticks are kept as they were.
 
 Some items show what the system can see beside them (`meta_info.auto`, see business_config.setup_lists): whether the
-counter was closed, how many of the day's classes have attendance, how many fee reminders were recorded. The person
+counter was closed, how many of the day's classes have attendance, how many fee reminders were recorded, whether
+tomorrow's handouts are printed (Phase G). The person
 still ticks the item; the hint only helps them check."""
 from datetime import date
 from django.db import transaction
@@ -45,6 +46,9 @@ def hint(auto, on):
             return 'Tiada kelas pada hari ini'
         taken = ClassAttendanceSession.objects.filter(date=on, timetable_class_id__in=held).count()
         return f"{taken}/{len(held)} kelas sudah diambil kedatangan"
+    if auto == 'handouts':
+        from academic.handouts import tomorrow_hint
+        return tomorrow_hint(on)
     if auto == 'reminders':
         from billing.models import Invoice
         n = Invoice.objects.filter(last_reminder_at=on).count()

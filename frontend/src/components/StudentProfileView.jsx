@@ -15,6 +15,7 @@ import { PhotoBox } from './Attachments';
 import { StudentFeedbackPanel } from './FeedbackViews';
 import { invoiceTitle, PaymentModal, ReceiptModal } from './BillingView';
 import StudentResultsTab from './StudentResultsTab';
+import { StudentHandouts } from './HandoutRepositoryView';
 import { latestSummary } from '../lib/results';
 import FormModal from './FormModal';
 import {
@@ -347,6 +348,7 @@ export default function StudentProfileView({ role, param }) {
               </ul>
             </Card>
           )}
+          {can(role, 'handouts.view') && <StudentHandouts student={s.pk} />}
         </div>
       )}
 

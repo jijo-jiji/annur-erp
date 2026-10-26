@@ -125,6 +125,10 @@ class ClassRescheduleLog(models.Model):
         return f"{extra}{self.timetable_class.class_code} | Batal: {self.tarikh_batal} -> Ganti: {self.tarikh_ganti}"
 
 class LessonHandout(models.Model):
+    """Notes or a module for one class (Phase G): the class and the date it is for, the file, copies needed (the class's
+    students when it was recorded) and printed. Who has a copy comes from that class's attendance and from copies given
+    out later (HandoutReceipt), see academic/handouts.py. The text fields keep the class's name for older records and for
+    a class later removed."""
     STATUS_CHOICES = [
         ('PRINT_READY', 'Sedia Dicetak'),
         ('NEEDS_PRINTING', 'Perlu Dicetak'),
@@ -132,6 +136,8 @@ class LessonHandout(models.Model):
     ]
     handout_id = models.CharField(max_length=30, unique=True)
     title = models.CharField(max_length=200)
+    timetable_class = models.ForeignKey(ClassTimetable, on_delete=models.SET_NULL, null=True, blank=True, related_name='handouts')
+    class_date = models.DateField(null=True, blank=True)  # the class it is handed out in
     form_level = models.CharField(max_length=20)
     subject_name = models.CharField(max_length=100)
     class_code = models.CharField(max_length=100)
@@ -151,6 +157,17 @@ class LessonHandout(models.Model):
 
     def __str__(self):
         return f"[{self.handout_id}] {self.title} ({self.form_level})"
+
+
+class HandoutReceipt(models.Model):
+    """A copy given to a student who was not in the class it was handed out in: at the counter or in a later class."""
+    handout = models.ForeignKey(LessonHandout, on_delete=models.CASCADE, related_name='receipts')
+    student = models.ForeignKey('students.Student', on_delete=models.CASCADE, related_name='handout_receipts')
+    given_at = models.DateTimeField(auto_now_add=True)
+    given_by = models.CharField(max_length=150)
+
+    class Meta:
+        unique_together = ('handout', 'student')
 
 
 

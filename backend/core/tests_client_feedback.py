@@ -963,3 +963,89 @@ class PhaseIQRCheckInTests(FeedbackBase):
         self.assertNotEqual(new, old)
         self.client.force_authenticate(None)
         self.assertEqual(self.client.get(f'/api/v1/public/checkin/room/{old}/').status_code, 404)
+
+
+class PhaseGHandoutTests(FeedbackBase):
+    """A handout belongs to a real class: Fizik T5 on Fridays; 30 Oct 2026 is a Friday."""
+    DAY = date(2026, 10, 30)
+
+    def setUp(self):
+        super().setUp()
+        from teachers.models import Teacher
+        self.fz.teacher = Teacher.objects.create(teacher_code='NAK', full_name='Nik Ahmad', phone_number='60123456789')
+        self.fz.save()
+        self.kids = []
+        for i, (name, status) in enumerate([('Ahmad', 'ACTIVE'), ('Aisyah', 'ACTIVE'), ('Haziq', 'ACTIVE'), ('Iman', 'ON_HOLD')]):
+            s = Student.objects.create(student_id=f'HQ-26000{i + 1}', full_name=name, ic_number='0', form_level='F5', join_date=date(2026, 1, 1),
+                                       status=status, parent1_name='P', parent1_phone='60123456789')
+            s.enrolled_classes.add(self.fz)
+            self.kids.append(s)
+
+    def add(self, **fields):
+        self.as_role(ADMIN)
+        return self.client.post('/api/v1/academic/handouts/', {'title': 'Bab 3', 'timetable_class': self.fz.id, 'class_date': self.DAY.isoformat(), **fields}, format='json')
+
+    def take_attendance(self, marks):
+        self.as_role(ADMIN)
+        res = self.client.post('/api/v1/attendance/roster/', {'class_id': self.fz.id, 'date': self.DAY.isoformat(), 'marks': [
+            {'student': self.kids[i].id, 'present': present} for i, present in marks]}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+
+    def test_a_handout_needs_a_class_and_a_date_and_copies_come_from_the_class(self):
+        self.assertIn('timetable_class', self.add(timetable_class=None).data)
+        self.assertIn('class_date', self.add(class_date=None).data)
+        made = self.add(class_code='palsu', form_level='F1').data
+        # the class's own details, and one copy for each active student (Iman is on hold)
+        self.assertEqual((made['class_code'], made['form_level'], made['subject_name'], made['teacher_name'], made['copies_needed']),
+                         ('F5 FZ (A) NAK', 'F5', 'Fizik', 'Nik Ahmad', 3))
+        self.assertEqual(self.add(copies_needed=5).data['copies_needed'], 5)  # spare copies
+        self.assertEqual(made['tally'], {'students': 3, 'received': 0, 'waiting': 0, 'pending': 3})  # the class is not held yet
+        self.assertEqual(self.client.post(f"/api/v1/academic/handouts/{made['id']}/record_print/", {'copies': 'x'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(f"/api/v1/academic/handouts/{made['id']}/record_print/", {}, format='json').data['copies_printed'], 3)
+
+    def test_who_has_a_copy_comes_from_the_class_s_attendance_and_copies_given_later(self):
+        hid = self.add().data['id']
+        url = f'/api/v1/academic/handouts/{hid}/'
+        before = self.client.get(url + 'recipients/').data
+        self.assertEqual({(r['state'], r['why']) for r in before['students']}, {('PENDING', 'Kelas belum berlangsung')})
+        self.take_attendance([(0, True), (1, False), (2, True)])
+        got = self.client.get(url + 'recipients/').data
+        self.assertEqual(got['session_date'], self.DAY)
+        self.assertEqual([(r['name'], r['state'], r['why']) for r in got['students']],
+                         [('Ahmad', 'IN_CLASS', ''), ('Aisyah', 'WAITING', 'Tidak hadir'), ('Haziq', 'IN_CLASS', '')])
+
+        # Aisyah's mother collects a copy at the counter
+        given = self.client.post(url + 'give/', {'student': self.kids[1].id}, format='json').data
+        aisyah = next(r for r in given['students'] if r['name'] == 'Aisyah')
+        self.assertEqual((aisyah['state'], aisyah['given_by']), ('GIVEN', 'admin'))
+        self.assertEqual(self.client.get(url).data['tally'], {'students': 3, 'received': 3, 'waiting': 0, 'pending': 0})
+        self.assertEqual(self.client.post(url + 'give/', {'student': self.kids[3].id}, format='json').status_code, 400)  # on hold
+        self.client.post(url + 'give/', {'student': self.kids[1].id, 'given': False}, format='json')  # recorded by mistake
+        self.assertEqual(self.client.get(url).data['tally']['waiting'], 1)
+
+        # the student's profile lists the handouts of their classes
+        mine = self.client.get('/api/v1/academic/handouts/for_student/', {'student': self.kids[1].id}).data
+        self.assertEqual([(h['title'], h['state'], h['why']) for h in mine], [('Bab 3', 'WAITING', 'Tidak hadir')])
+        self.assertEqual(self.client.get('/api/v1/academic/handouts/for_student/', {'student': self.kids[3].id}).data, [])
+        self.assertEqual(self.client.get('/api/v1/academic/handouts/for_student/', {'student': 'HQ-260001'}).status_code, 400)
+
+    def test_the_office_checklist_shows_tomorrow_s_handouts_not_yet_printed(self):
+        from core.checklist import hint
+        self.assertEqual(hint('handouts', date(2026, 10, 29)), 'Tiada handout direkod untuk kelas esok')
+        hid = self.add(status='NEEDS_PRINTING').data['id']
+        self.assertEqual(hint('handouts', date(2026, 10, 29)), '1 handout untuk esok, 1 belum dicetak')
+        self.client.post(f'/api/v1/academic/handouts/{hid}/record_print/', {}, format='json')
+        self.assertEqual(hint('handouts', date(2026, 10, 29)), '1 handout untuk esok, semua sudah dicetak')
+        self.assertEqual(hint('handouts', date(2026, 10, 28)), 'Tiada handout direkod untuk kelas esok')  # Thursday's classes
+
+    def test_older_handouts_are_linked_to_their_class_and_date_by_the_migration(self):
+        from academic.models import LessonHandout
+        old = LessonHandout.objects.create(handout_id='HND-001', title='Lama', form_level='F5', subject_name='Fizik', class_code='F5 FZ (A) NAK',
+                                           teacher_name='Nik Ahmad', description='Untuk kelas 30 Okt 2026. Topik daya')
+        gone = LessonHandout.objects.create(handout_id='HND-002', title='Kelas lama', form_level='F4', subject_name='Kimia', class_code='F4 KIM (B) SF',
+                                            teacher_name='Saiful', description='Nota ringkas')
+        import_module('academic.migrations.0009_handout_class_and_receipts').link_to_classes(django_apps, None)
+        old.refresh_from_db()
+        gone.refresh_from_db()
+        self.assertEqual((old.timetable_class_id, old.class_date, old.description), (self.fz.id, self.DAY, 'Topik daya'))
+        self.assertEqual((gone.timetable_class_id, gone.class_date, gone.description), (None, None, 'Nota ringkas'))

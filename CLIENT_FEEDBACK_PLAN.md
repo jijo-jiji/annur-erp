@@ -12,7 +12,7 @@ building it, before the next one starts.
 | E | Notifications and the week-5 unpaid rule for Supervisor | **Done** 26 Oct 2026 |
 | F | Teacher private links and the public teacher profile form | **Done** 26 Oct 2026 |
 | I | QR self check-in for student attendance | **Done** 26 Oct 2026 |
-| G | Handouts linked to classes, copy count and received list | Planned |
+| G | Handouts linked to classes, copy count and received list | **Done** 26 Oct 2026 |
 | H | Performance analysis dashboard and two-way reports | Planned |
 
 ## What was already built (before this plan)
@@ -309,6 +309,41 @@ makes its own class that started a few minutes ago, with `e2e/support/checkin_cl
 
 A handout belongs to a real class; copies needed come from the class's students; a received list per student, from
 the last class's attendance, shows who still needs a copy.
+
+### Phase G: what was built
+
+| Where | What |
+|---|---|
+| Nota & modul → **Rekod handout** | A handout is recorded for a class from the timetable and the date of the class it is handed out in. The number of copies starts at the class's active students (shown under the field; extra copies can be added). The class's name, subject, form and teacher come from the class itself. |
+| Nota & modul list | Each handout shows its class and class date, printing, and a received tally (*12/15 terima*, *3 belum* in red, *Menunggu kedatangan* before the class is held, *Lengkap*). A new figure, *Pelajar belum terima*, counts students who missed a handout and have no copy yet, and a filter shows only handouts with such students. The list reloads on opening, since attendance taken elsewhere changes the tallies. |
+| Nota & modul → tally → **Senarai terima** | Every active student of the class: *Terima di kelas* (present, or late, at that day's class, including QR check-ins), *Diberi kemudian* (a copy given later, with who and when), *Belum terima* (absent or not marked) or *Menunggu kedatangan* (the class not held or its attendance not taken yet). *Tandakan diterima* records a copy given at the counter; *Batal* takes it back. |
+| Student profile → **Kelas** → Nota & modul | The handouts of the student's classes and whether the student has each one, with the same buttons, so the counter can hand over what an absent student missed. |
+| Admin daily checklist → *Nota / modul kelas esok disediakan* | Now shows what the system sees: the handouts recorded for tomorrow's classes and how many are not printed yet. |
+
+Rules (backend `academic/handouts.py`):
+- Who needs a copy: the class's active students (students on hold are not attending), as the class stands now.
+- Who has one: present at the class on the handout's date (the attendance of that day, however it was taken), or a copy
+  recorded as given later. Without a class date (older records), the class's latest attendance on or before today counts.
+- A class later removed keeps its handouts with the class's name as text; they show *Tiada kelas* and no tally.
+
+Changes from the plan, found while building:
+- The form used to keep only the class's name as text and put the class date at the start of the description. The
+  migration links older handouts whose name still matches a class and moves the date out of the description; the rest
+  stay as they were.
+- Students whose class has not been held (or whose attendance is not taken) are shown apart from those who missed it, so
+  the red figure only counts copies the counter actually owes.
+- The page's first load could finish after a copy was given and put the old tally back; changes to handouts on screen
+  now make that load fetch the list again (the same guard the lead board uses).
+- *Rekod cetak* refuses a copy count that is not a number from 1 to 500 instead of failing.
+
+Data: `LessonHandout` gains `timetable_class` (kept as text if the class is removed) and `class_date`; new
+`academic.HandoutReceipt` (handout, student, given at / by; one per student). The checklist item `NOTA_ESOK` gets the
+hint `handouts` unless the centre had set another. APIs: `/academic/handouts/` (create needs `timetable_class` and
+`class_date`; each row has `tally`), `/academic/handouts/<id>/recipients/` (GET), `/academic/handouts/<id>/give/` (POST
+`student`, `given`), `/academic/handouts/for_student/?student=<id>` (GET). Demo data: the five sample handouts belong to
+real classes with students.
+
+Tests: `PhaseGHandoutTests` (4 tests); full backend suite 288 tests OK; browser `e2e/handouts.spec.js` (1 test).
 
 ## Phase H: performance analysis and two-way reports
 
