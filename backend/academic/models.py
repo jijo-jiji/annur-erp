@@ -6,6 +6,8 @@ class Classroom(models.Model):
     name = models.CharField(max_length=50, unique=True)
     capacity = models.IntegerField(default=20)
     is_active = models.BooleanField(default=True)
+    # the address behind the room's printed check-in QR (Phase I); made when first printed, can be made again
+    checkin_key = models.CharField(max_length=32, unique=True, null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} (Max {self.capacity})"

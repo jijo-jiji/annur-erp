@@ -10,6 +10,7 @@ const WEEK = ['Isnin', 'Selasa', 'Rabu', 'Khamis', 'Jumaat', 'Sabtu', 'Ahad'];
 const GROUPS = [
   ['Baucar', 'Had kelulusan baucar', 'Amaun yang menentukan siapa meluluskan baucar. Had baharu terpakai kepada baucar yang dibuat selepas perubahan; baucar yang sedang menunggu kekal dengan pelulusnya.'],
   ['Amaran', 'Amaran dan peringatan', 'Berapa awal amaran dipaparkan pada dashboard dan bila kehadiran dianggap rendah.'],
+  ['Kedatangan QR', 'Kedatangan melalui imbasan QR', 'Bila pelajar boleh mengimbas QR bilik darjah untuk kelas, dan bila mereka dikira lewat. Pelajar yang tidak mengimbas ditanda tidak hadir apabila kelas tamat atau apabila guru mengesahkan senarai.'],
   ['Staf baharu', 'Nilai awal untuk staf baharu', 'Cuti setahun dan waktu bekerja yang diberikan kepada staf yang ditambah selepas ini. Staf sedia ada tidak berubah, dan nilai setiap staf boleh diubah pada profil mereka.'],
   ['Muat naik fail', 'Had saiz muat naik', 'Saiz fail terbesar yang diterima. Jenis fail yang dibenarkan tidak boleh diubah di sini kerana ia peraturan keselamatan.'],
   ['Nombor dokumen', 'Awalan nombor dokumen', 'Huruf di permulaan nombor baharu. Tahun dan nombor turutan diteruskan, dan nombor yang telah dikeluarkan tidak berubah. Awalan baharu memulakan turutan di 1.'],

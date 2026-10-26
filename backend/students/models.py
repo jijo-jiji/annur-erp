@@ -314,11 +314,40 @@ class ClassAttendanceSession(models.Model):
 
 
 class StudentAttendance(models.Model):
+    # Who made the mark (Phase I): staff on Kedatangan, the teacher on their link, the student by QR, or the end of class
+    SOURCES = [('STAFF', 'Staf'), ('TEACHER', 'Guru'), ('QR', 'Imbasan QR'), ('AUTO', 'Senarai ditutup')]
     session = models.ForeignKey(ClassAttendanceSession, on_delete=models.CASCADE, related_name='marks')
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='attendance')
     present = models.BooleanField(default=True)
     late = models.BooleanField(default=False)  # present but arrived late
     note = models.CharField(max_length=200, blank=True)
+    source = models.CharField(max_length=10, choices=SOURCES, default='STAFF')
+    marked_at = models.DateTimeField(null=True, blank=True)
+    device_hash = models.CharField(max_length=64, blank=True)  # the phone a QR mark came from
+    flag = models.CharField(max_length=200, blank=True)  # e.g. a second name checked in from the same phone
 
     class Meta:
         unique_together = ('session', 'student')
+
+
+class ClassCheckIn(models.Model):
+    """QR self check-in for one class on one day (Phase I): the 4-digit code the teacher writes on the whiteboard, and
+    whether the day's list has been confirmed (students not checked in are then marked absent)."""
+    timetable_class = models.ForeignKey(ClassTimetable, on_delete=models.CASCADE, related_name='checkins')
+    date = models.DateField()
+    code = models.CharField(max_length=4)
+    opened_at = models.DateTimeField(auto_now_add=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirmed_by = models.CharField(max_length=150, blank=True)
+
+    class Meta:
+        unique_together = ('timetable_class', 'date')
+
+
+class StudentDevice(models.Model):
+    """A phone a student has checked in from with the last 4 digits of their IC; that phone is not asked again.
+    Only a fingerprint of the phone's own random number is kept."""
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='devices')
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)

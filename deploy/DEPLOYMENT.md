@@ -126,6 +126,7 @@ anyone opening Ringkasan or Yuran & resit, schedule these once a day (for exampl
 ```
 15 1 1 * * bash /opt/annur/deploy/manage.sh generate_monthly_invoices   # 1st of the month: monthly invoices
 30 7 * * * bash /opt/annur/deploy/manage.sh week5_followups             # daily: week-5 fee follow-ups for Supervisor
+45 22 * * * bash /opt/annur/deploy/manage.sh close_checkins              # nightly: QR check-in, absent for those who did not scan
 ```
 
 ## Backups

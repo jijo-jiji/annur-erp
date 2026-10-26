@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CalendarDays, CheckCheck, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarDays, CheckCheck, ChevronLeft, ChevronRight, Download, QrCode, RefreshCw } from 'lucide-react';
 import { attendanceApi } from '../api/client';
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { useStore } from '../store';
 import { classLabel, preferredContact, timetableDay } from '../lib/domain';
-import { dateLong, fmtPhone, initials, timeRange, todayISO } from '../lib/format';
+import { clock, dateLong, fmtPhone, initials, timeRange, todayISO } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import { navigate } from '../lib/nav';
 import { attendanceHref, ATTENDANCE_FILTERS, describeAttendanceFilters, useDrill, useMatching } from '../lib/drilldown';
@@ -208,6 +208,8 @@ function Roster({ cls, day, teacher, onBack }) {
   const [existing, setExisting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [closed, setClosed] = useState('');
+  const [reloads, setReloads] = useState(0); // the QR check-in panel asks for the list again as students scan
+  const [codeOpen, setCodeOpen] = useState(false); // today's check-in code is out: unmarked students have not checked in yet
   const future = day > todayISO();
   const label = classLabel(cls, subjects);
 
@@ -216,7 +218,11 @@ function Roster({ cls, day, teacher, onBack }) {
     attendanceApi.roster(cls.id, day)
       .then((r) => {
         if (cancelled) return;
-        setRoster(r.students.map((s) => ({ id: s.student_id, name: s.name, status: s.status, phone: s.parent_phone })).sort((a, b) => a.name.localeCompare(b.name)));
+        setRoster(r.students.map((s) => ({
+          id: s.student_id, name: s.name, status: s.status, phone: s.parent_phone, marked: s.present !== null,
+          // who made the mark and when: a QR check-in, the teacher's link, staff, or the end of class
+          source: s.source, sourceLabel: s.source_label, markedAt: s.marked_at, flag: s.flag,
+        })).sort((a, b) => a.name.localeCompare(b.name)));
         // A class not yet recorded starts with everyone present, so only absentees are ticked
         setMarks(Object.fromEntries(r.students.map((s) => [s.student_id, s.present === false ? 'A' : s.late ? 'L' : 'P'])));
         setNotes(Object.fromEntries(r.students.map((s) => [s.student_id, s.note || ''])));
@@ -229,7 +235,7 @@ function Roster({ cls, day, teacher, onBack }) {
         if (!cancelled) { setRoster([]); notify('Gagal memuat senarai kelas.', 'error'); }
       });
     return () => { cancelled = true; };
-  }, [cls.id, day, notify]);
+  }, [cls.id, day, notify, reloads]);
 
   if (!roster) return <p className="py-10 text-center text-sm text-gray-500">Memuatkan…</p>;
 
@@ -298,10 +304,15 @@ function Roster({ cls, day, teacher, onBack }) {
                   <span className="hidden sm:block">
                     <Avatar text={initials(s.name)} />
                   </span>
-                  <p className="min-w-0 flex-1 text-sm font-medium text-gray-900">
-                    {s.name}
-                    {s.status === 'ON_HOLD' && <span className="ml-2 text-xs font-normal text-amber-700">Ditangguh</span>}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      {s.name}
+                      {s.status === 'ON_HOLD' && <span className="ml-2 text-xs font-normal text-amber-700">Ditangguh</span>}
+                    </p>
+                    {s.source && s.source !== 'STAFF' && <p className="text-xs text-gray-500">{s.sourceLabel}{s.markedAt ? ` · ${clock(s.markedAt)}` : ''}</p>}
+                    {!s.marked && (existing || codeOpen) && <p className="text-xs text-gray-500">Belum direkod</p>}
+                    {s.flag && <p className="flex items-center gap-1 text-xs text-amber-800"><AlertTriangle className="size-3.5" /> {s.flag}</p>}
+                  </div>
                   <div className="grid w-full grid-cols-3 gap-1 sm:flex sm:w-auto" role="radiogroup" aria-label={`Kedatangan ${s.name}`}>
                     {STATES.map((st) => (
                       <button
@@ -345,7 +356,9 @@ function Roster({ cls, day, teacher, onBack }) {
             </div>
           </Card>
 
-          <Card className="self-start">
+          <div className="space-y-6 self-start">
+          {day === todayISO() && <CheckInPanel cls={cls} day={day} onCode={setCodeOpen} onChanged={() => setReloads((n) => n + 1)} />}
+          <Card>
             <CardHeader title="Maklumkan ibu bapa" description="Hantar makluman kepada penjaga pelajar yang tidak hadir." />
             {!saved ? (
               <p className="px-5 py-6 text-sm text-gray-500">Simpan kedatangan dahulu.</p>
@@ -372,8 +385,71 @@ function Roster({ cls, day, teacher, onBack }) {
               </ul>
             )}
           </Card>
+          </div>
         </div>
       )}
     </>
+  );
+}
+
+// QR self check-in for today's class (Phase I): the code for the whiteboard, who has scanned, and confirming the list
+// (students not checked in become absent). Students scan the classroom's QR or open #/hadir and type the code.
+function CheckInPanel({ cls, day, onCode, onChanged }) {
+  const notify = useToast();
+  const [info, setInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    attendanceApi.checkin(cls.id, day).then((d) => { if (!cancelled) setInfo(d); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [cls.id, day]);
+  useEffect(() => { onCode(Boolean(info?.code)); }, [info, onCode]);
+
+  const run = async (action) => {
+    setBusy(true);
+    try {
+      setInfo(await attendanceApi.checkinAction(cls.id, day, action));
+      onChanged();
+      if (action === 'confirm') notify('Senarai disahkan. Pelajar yang tidak mengimbas ditanda tidak hadir.');
+    } catch (err) {
+      notify(err?.data?.detail || err.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const refresh = async () => {
+    setInfo(await attendanceApi.checkin(cls.id, day).catch(() => info));
+    onChanged();
+  };
+
+  if (!info) return null;
+  const scanned = info.students.filter((s) => s.source === 'QR').length;
+  return (
+    <Card>
+      <CardHeader title="Kedatangan QR" description={`Imbasan ${info.opens}–${info.closes}, lewat selepas ${info.late_after}.`} />
+      <div className="space-y-3 px-5 pb-5 pt-4">
+        {info.confirmed_at ? (
+          <p className="text-sm text-gray-600">{info.closed_note}</p>
+        ) : info.code ? (
+          <>
+            <div>
+              <p className="text-xs font-medium text-gray-500">Kod untuk papan putih</p>
+              <p className="font-mono text-4xl font-bold tracking-[0.2em] text-gray-900">{info.code}</p>
+            </div>
+            <p className="text-sm text-gray-600">{scanned} pelajar sudah mengimbas.</p>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" icon={RefreshCw} onClick={refresh}>Muat semula</Button>
+              <Button size="sm" variant="primary" icon={CheckCheck} disabled={busy} onClick={() => {
+                if (window.confirm('Sahkan senarai? Pelajar yang belum ditanda akan ditanda tidak hadir.')) run('confirm');
+              }}>Sahkan senarai</Button>
+            </div>
+          </>
+        ) : info.state === 'CLOSED' ? (
+          <p className="text-sm text-gray-600">Imbasan untuk kelas ini sudah ditutup.</p>
+        ) : (
+          <Button icon={QrCode} disabled={busy} onClick={() => run('open')}>Buka kod kelas</Button>
+        )}
+      </div>
+    </Card>
   );
 }

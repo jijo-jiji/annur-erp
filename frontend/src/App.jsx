@@ -27,6 +27,7 @@ import ManagementConfigView from './components/ManagementConfigView';
 import ParentQRView, { ParentRegistrationForm } from './components/ParentQRView';
 import PublicResultsForm from './components/PublicResultsForm';
 import PublicTeacherForm from './components/PublicTeacherForm';
+import PublicCheckIn from './components/PublicCheckIn';
 import LeadFunnelView from './components/LeadFunnelView';
 import HandoutRepositoryView from './components/HandoutRepositoryView';
 import TeacherAttendanceView from './components/TeacherAttendanceView';
@@ -114,12 +115,13 @@ function Shell() {
   }, [role]);
 
   // Public pages: parents arrive from a QR code or a link, teachers from their private link; no login needed
-  if (route.base === 'daftar' || route.base === 'keputusan' || route.base === 'guru') {
+  if (route.base === 'daftar' || route.base === 'keputusan' || route.base === 'guru' || route.base === 'hadir') {
     return (
       <div className="min-h-dvh bg-gray-50 px-4 py-6 sm:py-10">
         {route.base === 'daftar' && <ParentRegistrationForm />}
         {route.base === 'keputusan' && <PublicResultsForm />}
         {route.base === 'guru' && <PublicTeacherForm token={route.param || ''} />}
+        {route.base === 'hadir' && <PublicCheckIn room={route.param || ''} />}
       </div>
     );
   }

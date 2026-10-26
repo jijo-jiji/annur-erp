@@ -11,7 +11,7 @@ building it, before the next one starts.
 | D | Fees: payment proof, receipt correction, unpaid invoice edit; daily counter close; Admin daily checklist | **Done** 26 Oct 2026 |
 | E | Notifications and the week-5 unpaid rule for Supervisor | **Done** 26 Oct 2026 |
 | F | Teacher private links and the public teacher profile form | **Done** 26 Oct 2026 |
-| I | QR self check-in for student attendance | Planned |
+| I | QR self check-in for student attendance | **Done** 26 Oct 2026 |
 | G | Handouts linked to classes, copy count and received list | Planned |
 | H | Performance analysis dashboard and two-way reports | Planned |
 
@@ -259,6 +259,51 @@ Printed QR per classroom → the class running there now → 4-digit class code 
 page shows the code, the live list, marks pupils without phones and confirms; staff can do the same on Kedatangan.
 One student per phone per class (second name flagged), wrong-IC lockout, rate limits, auto-absent at the end of class,
 and each mark records its source (QR, teacher, staff) and time.
+
+### Phase I: what was built
+
+| Where | What |
+|---|---|
+| Tetapan → **Slot & bilik** → *QR kehadiran* on a room (Supervisor, Management) | A poster with the centre's name, the room and its QR, to print and put up in the room. *Buat QR baharu* replaces it; the old poster then says it is no longer used and to ask the teacher for the code. |
+| `#/hadir/<room>` (public, phone-first, no login) | Shows the class running in that room now (or when scanning opens for the next one). The student types the 4-digit code from the whiteboard, taps their name in a list of short names (*Ahmad D.*), and the first time on that phone types the last 4 digits of their IC. They see a large **Hadir** or **Lewat** with the time; *Pelajar lain* lets a friend without a phone use the same phone. `#/hadir` without a room works with the code alone. |
+| `#/guru/<link>` → **Kelas hari ini** (the teacher's private link from Phase F now opens here) | Each of the teacher's classes today: times, when scanning opens and closes, the code for the whiteboard once scanning is open, the live list (refreshed every 15 seconds) with how each student was marked and when, any shared-phone flag, buttons to mark a pupil Hadir / Lewat / Tidak hadir, and *Sahkan senarai*: students still not marked become absent and the list is locked. *Maklumat saya* is the Phase F form. |
+| Kedatangan pelajar → today's class → **Kedatangan QR** | Staff can open the code (*Buka kod kelas*), see how many have scanned, reload, and confirm the list. Each student's row shows how they were marked (*Imbasan QR · 08:50*, *Guru*, *Senarai ditutup*), any flag, and *Belum direkod* while not yet marked. Staff can still change any mark and save as before; a mark staff leave as it was keeps who made it. |
+| Tetapan → Had & amaran → **Kedatangan QR** | Scanning opens 15 minutes before the start and closes 30 minutes after; a student is late after 10 minutes (client decision 12). All three are settings; late cannot be after closing. |
+
+Rules and safeguards (backend `students/checkin.py`):
+- A new 4-digit code for each class each day, unique among the day's classes; it only works while scanning is open and
+  until the list is confirmed, and from a room's QR only for a class in that room.
+- The phone keeps a random number of its own; the server stores only a fingerprint of it per student, so a student is
+  asked for the IC digits once per phone. A second name checked in from the same phone in the same class is recorded
+  with a flag for the teacher (*Telefon yang sama dengan Ahmad D.*); the teacher or staff marking that student clears it.
+- Five wrong IC tries lock that student's check-in for an hour (the teacher can still mark them). The public check-in
+  calls are rate limited per address at 600 an hour, since a whole class on the centre's wifi shares one address.
+- A QR scan never changes a student already marked present; it can turn an absent mark into present (they came late).
+- At the end of class an open list closes by itself (whenever the day's attendance is looked at, and nightly by
+  `manage.py close_checkins`): students not checked in become absent, source *Senarai ditutup*.
+- Every mark records its source (Staf, Guru, Imbasan QR, Senarai ditutup) and time. Absences from QR count everywhere
+  attendance already counts: the class and student attendance figures, the low-attendance warnings, and *Maklumkan ibu
+  bapa*.
+
+Changes from the plan, found while building:
+- The code is made only once scanning is open. At first the teacher's page made codes for every class as soon as the
+  link was opened, so a teacher looking at it in the morning would have started check-in for classes that took
+  attendance on paper, and those classes would then have been marked absent at the end. A list nobody used (no scans,
+  no marks) now closes without marking anyone absent and says so.
+- The rate limit tests of the older public forms could fail depending on test order, because the limits (working since
+  Phase F) counted posts across tests. The test bases now reset them before each test. The Phase F browser test could
+  also pick the file row inside a teacher's request instead of the request itself; it now picks the request.
+
+Data: `students.ClassCheckIn` (class, date, code, opened, confirmed at / by), `students.StudentDevice` (student, phone
+fingerprint, first and last use); `StudentAttendance` gains source, marked at, phone fingerprint and flag (existing marks
+become *Staf*); `Classroom.checkin_key`; settings `CHECKIN_OPEN_BEFORE`, `CHECKIN_OPEN_AFTER`, `CHECKIN_LATE_MINUTES`.
+APIs: `/public/checkin/room/<key>/` (GET), `/public/checkin/code/` and `/public/checkin/mark/` (POST),
+`/public/teacher-link/<link>/classes/` (GET) and `.../classes/<id>/` (POST mark / confirm), `/attendance/checkin/` (GET,
+POST open / confirm), `/academic/classrooms/<id>/checkin_key/` (POST, Supervisor and Management); the roster API returns
+each mark's source, time and flag. Cron: `close_checkins` nightly (deploy/DEPLOYMENT.md).
+
+Tests: `PhaseIQRCheckInTests` (6 tests); full backend suite 284 tests OK; browser `e2e/checkin.spec.js` (1 test, which
+makes its own class that started a few minutes ago, with `e2e/support/checkin_class.py`, and removes it afterwards).
 
 ## Phase G: handouts
 

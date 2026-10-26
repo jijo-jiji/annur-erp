@@ -114,6 +114,8 @@ REST_FRAMEWORK = {
         'public_register': '20/hour',
         'public_results': '30/hour',  # the public school-results form (#/keputusan)
         'public_teacher': '60/hour',  # the teacher's private link (#/guru/...): opening it and sending the form
+        # QR check-in (#/hadir/...): a class on the centre's wifi shares one address, so this allows a full room
+        'public_checkin': '600/hour',
     },
     'DEFAULT_PAGINATION_CLASS': None,
 }

@@ -17,6 +17,13 @@ class ClassroomViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Classroom.objects.all()
     serializer_class = ClassroomSerializer
 
+    @action(detail=True, methods=['post'])
+    def checkin_key(self, request, pk=None):
+        """The key behind the room's printed check-in QR (Phase I); {renew: true} makes a new one and stops the old QR."""
+        from students.checkin import room_key
+        require_role(request, *APPROVER_ROLES)
+        return Response({'key': room_key(self.get_object(), renew=bool(request.data.get('renew')))})
+
 class ClosedDateViewSet(viewsets.ReadOnlyModelViewSet):
     """Closed days are changed through change requests (Supervisor asks, Management approves), never here."""
     queryset = ClosedDate.objects.all()

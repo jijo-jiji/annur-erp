@@ -52,6 +52,10 @@ SPECS = {
     'prefix_invoice': _spec('PREFIX_INVOICE', 'Nombor invois (cth. INV-2026-0001)', 'Nombor dokumen', 'INV', kind='text', pattern=r'[A-Z]{1,6}'),
     'prefix_receipt': _spec('PREFIX_RECEIPT', 'Nombor resit (cth. REC-2026-0001)', 'Nombor dokumen', 'REC', kind='text', pattern=r'[A-Z]{1,6}'),
     'prefix_voucher': _spec('PREFIX_VOUCHER', 'Nombor baucar (cth. PV26-0901)', 'Nombor dokumen', 'PV', kind='text', pattern=r'[A-Z]{1,6}'),
+    # QR self check-in (students/checkin.py), client decision 12; every one editable
+    'checkin_open_before': _spec('CHECKIN_OPEN_BEFORE', 'Imbasan kedatangan dibuka sebelum kelas bermula', 'Kedatangan QR', 15, unit='minit', low=0, high=60),
+    'checkin_open_after': _spec('CHECKIN_OPEN_AFTER', 'Imbasan kedatangan ditutup selepas kelas bermula', 'Kedatangan QR', 30, unit='minit', low=5, high=180),
+    'checkin_late_minutes': _spec('CHECKIN_LATE_MINUTES', 'Dikira lewat selepas kelas bermula', 'Kedatangan QR', 10, unit='minit', low=0, high=120),
     # Leads that finished (registered, active or not interested) leave the board after this many days;
     # they stay in the Arkib tab and on the student list
     'lead_board_days': _spec('LEAD_BOARD_DAYS', 'Prospek yang selesai kekal di papan selama', 'Peringkat prospek', 30, unit='hari', low=7, high=365),
@@ -165,6 +169,8 @@ def save(changes, user):
         raise ValidationError({'voucher_tier2': 'Had baucar Supervisor mesti lebih tinggi daripada had baucar Admin.'})
     if merged['default_work_start'] >= merged['default_work_end']:
         raise ValidationError({'default_work_end': 'Waktu keluar mesti selepas waktu masuk.'})
+    if merged['checkin_late_minutes'] > merged['checkin_open_after']:
+        raise ValidationError({'checkin_late_minutes': 'Masa dikira lewat mesti sebelum imbasan ditutup.'})
     for name, new in cleaned.items():
         if new == current[name]:
             continue

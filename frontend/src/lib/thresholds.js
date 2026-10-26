@@ -13,6 +13,10 @@ export const THRESHOLDS = {
   attendance_window_days: 30,
   nearly_full_seats: 2,
   follow_up_days: 7,
+  // QR self check-in (minutes)
+  checkin_open_before: 15,
+  checkin_open_after: 30,
+  checkin_late_minutes: 10,
   // Upload size limits (MB)
   upload_photo_mb: 5,
   upload_document_mb: 10,

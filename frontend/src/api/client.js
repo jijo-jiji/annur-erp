@@ -260,6 +260,18 @@ export const attendanceApi = {
   summary: (start, end, classId) => request(`/attendance/summary/?${new URLSearchParams(Object.entries({ start, end, class_id: classId }).filter(([, v]) => v))}`),
   // The recorded sessions of a period (one class with class_id): who was on the roster, absent and late
   sessions: (params = {}) => request(`/attendance/sessions/?${new URLSearchParams(params)}`),
+  // QR self check-in (Phase I): the class's code, timing and live list; open the code today, or confirm the list
+  checkin: (classId, date) => request(`/attendance/checkin/?class_id=${classId}&date=${date}`),
+  checkinAction: (classId, date, action) => request('/attendance/checkin/', { method: 'POST', body: JSON.stringify({ class_id: classId, date, action }) }),
+  // The key behind a classroom's printed check-in QR; renew stops the old QR
+  roomKey: (roomId, renew = false) => request(`/academic/classrooms/${roomId}/checkin_key/`, { method: 'POST', body: JSON.stringify({ renew }) }),
+};
+
+// QR check-in from a student's phone, without a login (#/hadir)
+export const publicCheckInApi = {
+  room: (key) => request(`/public/checkin/room/${encodeURIComponent(key)}/`),
+  code: (code, room) => request('/public/checkin/code/', { method: 'POST', body: JSON.stringify({ code, room: room || undefined }) }),
+  mark: (body) => request('/public/checkin/mark/', { method: 'POST', body: JSON.stringify(body) }),
 };
 
 // 4. Billing API
@@ -474,6 +486,9 @@ export const teacherLinksApi = {
 // The form behind a teacher link, opened without a login (Phase F); files go up with the form
 export const publicTeacherApi = {
   get: (token) => request(`/public/teacher-link/${encodeURIComponent(token)}/`),
+  // The teacher's classes today with their check-in code and live list (Phase I); mark a pupil or confirm the list
+  classes: (token) => request(`/public/teacher-link/${encodeURIComponent(token)}/classes/`),
+  classAction: (token, classId, body) => request(`/public/teacher-link/${encodeURIComponent(token)}/classes/${classId}/`, { method: 'POST', body: JSON.stringify(body) }),
   send: async (token, fields, uploads = {}) => {
     const form = new FormData();
     Object.entries(fields).forEach(([k, v]) => (Array.isArray(v) ? v.forEach((x) => form.append(k, x)) : form.append(k, v ?? '')));

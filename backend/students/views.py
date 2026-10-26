@@ -2,6 +2,7 @@ from datetime import date
 from django.db import transaction
 from django.db.models import Count, OuterRef, Q, Subquery, Value
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action, authentication_classes, permission_classes, throttle_classes
@@ -404,17 +405,23 @@ def attendance_roster(request):
                 timetable_class=cls, date=on,
                 defaults={'note': request.data.get('note', ''), 'recorded_by': display_name(request.user)},
             )
+            existing = {m.student_id: m for m in session.marks.all()}
+            now = timezone.now()
             for mark in request.data.get('marks', []):
                 sid = int(mark.get('student'))
                 if sid not in students:
                     raise ValidationError({'marks': f'Pelajar {sid} tiada dalam kelas ini.'})
-                StudentAttendance.objects.update_or_create(
-                    session=session, student_id=sid,
-                    defaults={'present': bool(mark.get('present')),
-                              'late': bool(mark.get('present')) and bool(mark.get('late')),
-                              'note': mark.get('note', '')},
-                )
+                present = bool(mark.get('present'))
+                late = present and bool(mark.get('late'))
+                values = {'present': present, 'late': late, 'note': mark.get('note', '')}
+                before = existing.get(sid)
+                # a mark staff change becomes theirs; one they leave as it was keeps who made it (a QR check-in) and when
+                if before is None or (before.present, before.late) != (present, late):
+                    values.update(source='STAFF', marked_at=now, flag='')
+                StudentAttendance.objects.update_or_create(session=session, student_id=sid, defaults=values)
 
+    from .checkin import close_due
+    close_due()  # classes that have ended with check-in open: students not checked in are marked absent first
     session = ClassAttendanceSession.objects.filter(timetable_class=cls, date=on).first()
     marks = {m.student_id: m for m in session.marks.all()} if session else {}
     rows = [{
@@ -426,6 +433,11 @@ def attendance_roster(request):
         'present': marks[s.id].present if s.id in marks else None,
         'late': marks[s.id].late if s.id in marks else False,
         'note': marks[s.id].note if s.id in marks else '',
+        # who made the mark and when (QR check-in, teacher, staff, end of class), and a flag for a shared phone
+        'source': marks[s.id].source if s.id in marks else None,
+        'source_label': marks[s.id].get_source_display() if s.id in marks else None,
+        'marked_at': timezone.localtime(marks[s.id].marked_at) if s.id in marks and marks[s.id].marked_at else None,
+        'flag': marks[s.id].flag if s.id in marks else '',
     } for s in _roster_students(cls)]
     return Response({
         'class_id': cls.id,

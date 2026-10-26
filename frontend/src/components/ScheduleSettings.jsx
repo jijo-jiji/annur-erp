@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus } from 'lucide-react';
-import { academicApi } from '../api/client';
+import QRCode from 'qrcode';
+import { Plus, Printer, QrCode, RefreshCw } from 'lucide-react';
+import { academicApi, attendanceApi } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { useStore } from '../store';
 import { DAYS } from '../lib/config';
 import { DAY_LABEL, date, dateLong } from '../lib/format';
+import { CENTRE } from '../lib/config';
+import { publicUrl } from '../lib/nav';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
-import { Badge, Button, Card, CardHeader, EmptyState, Table, Td, Th, useToast } from './ui';
+import { Badge, Button, Card, CardHeader, EmptyState, Modal, Table, Td, Th, useToast } from './ui';
 
 const REASON = { name: 'note', label: 'Sebab permohonan', type: 'textarea', required: true, hint: 'Pengurusan akan melihat sebab ini semasa membuat keputusan.' };
 const DAY_OPTIONS = DAYS.map((d) => ({ value: d, label: DAY_LABEL[d] }));
@@ -41,6 +44,7 @@ export default function ScheduleSettings({ role }) {
   const closedRequests = useChangeRequests('CLOSED_DATE');
   const [closedDates, setClosedDates] = useState([]);
   const [dialog, setDialog] = useState(null); // { kind, type: 'add' | 'edit' | 'remove' | 'active', item }
+  const [qrRoom, setQrRoom] = useState(null);
 
   const loadClosed = useCallback(() => academicApi.getClosedDates().then(setClosedDates).catch(() => setClosedDates([])), []);
   useEffect(() => { loadClosed(); }, [loadClosed]);
@@ -125,6 +129,7 @@ export default function ScheduleSettings({ role }) {
                     <Td>{isWaiting ? <Badge tone="amber">Menunggu kelulusan</Badge> : r.is_active === false ? <Badge>Tidak aktif</Badge> : <Badge tone="green">Aktif</Badge>}</Td>
                     <Td className="text-right">
                       <div className="flex justify-end gap-1.5">
+                        {r.is_active !== false && <Button size="sm" variant="ghost" icon={QrCode} onClick={() => setQrRoom(r)}>QR kehadiran</Button>}
                         <Button size="sm" variant="ghost" disabled={isWaiting} onClick={() => setDialog({ kind: 'CLASSROOM', type: 'edit', item: r })}>Ubah</Button>
                         <Button size="sm" variant="ghost" disabled={isWaiting} onClick={() => setDialog({ kind: 'CLASSROOM', type: 'active', item: r })}>{r.is_active === false ? 'Aktifkan' : 'Nyahaktif'}</Button>
                         {roomUse(r.id) === 0 && <Button size="sm" variant="ghost" disabled={isWaiting} onClick={() => setDialog({ kind: 'CLASSROOM', type: 'remove', item: r })}>Padam</Button>}
@@ -227,6 +232,49 @@ export default function ScheduleSettings({ role }) {
           onClose={() => setDialog(null)}
         />
       )}
+      {qrRoom && <RoomQrModal room={qrRoom} onClose={() => setQrRoom(null)} />}
     </div>
+  );
+}
+
+// The QR poster for a classroom's door or wall (Phase I). Students scan it, see the class running in that room now and
+// type the 4-digit code the teacher writes on the whiteboard. Making a new QR stops the old poster from working.
+function RoomQrModal({ room, onClose }) {
+  const notify = useToast();
+  const [url, setUrl] = useState('');
+  const [qr, setQr] = useState('');
+  const load = useCallback((renew) => attendanceApi.roomKey(room.id, renew)
+    .then(({ key }) => setUrl(publicUrl(`hadir/${key}`)))
+    .catch((err) => notify(err?.data?.detail || err.message, 'error')), [room.id, notify]);
+  useEffect(() => { load(false); }, [load]);
+  useEffect(() => {
+    if (url) QRCode.toDataURL(url, { width: 480, margin: 1, color: { dark: '#133b2c', light: '#ffffff' } }).then(setQr).catch(() => setQr(''));
+  }, [url]);
+  const renew = async () => {
+    if (!window.confirm(`Buat QR baharu untuk ${room.name}? Poster lama tidak lagi berfungsi dan perlu diganti.`)) return;
+    await load(true);
+    notify('QR baharu dibuat. Cetak dan tampal poster baharu.');
+  };
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`QR kehadiran: ${room.name}`}
+      description="Cetak dan tampal di bilik. Pelajar mengimbas, memilih nama dan merekod kehadiran dengan kod kelas di papan putih."
+      footer={
+        <>
+          <Button icon={RefreshCw} onClick={renew}>Buat QR baharu</Button>
+          <Button variant="primary" icon={Printer} disabled={!qr} onClick={() => window.print()}>Cetak poster</Button>
+        </>
+      }
+    >
+      <div className="print-area text-center">
+        <p className="text-sm font-semibold text-gray-900">{CENTRE.name}</p>
+        <p className="mt-1 text-2xl font-bold text-gray-900">{room.name}</p>
+        <p className="mt-0.5 text-[13px] text-gray-500">Imbas untuk merekod kehadiran kelas</p>
+        {qr ? <img src={qr} alt={`Kod QR kehadiran ${room.name}`} className="mx-auto mt-4 size-56" /> : <div className="mx-auto mt-4 size-56 rounded bg-gray-100" />}
+        <p className="mt-3 break-all text-xs text-gray-500">{url}</p>
+      </div>
+    </Modal>
   );
 }

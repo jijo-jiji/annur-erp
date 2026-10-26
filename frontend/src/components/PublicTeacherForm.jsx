@@ -4,7 +4,8 @@ import { publicTeacherApi } from '../api/client';
 import { describeError } from '../lib/apiErrors';
 import { CENTRE } from '../lib/config';
 import { BrandMark } from './Sidebar';
-import { Button, Card, CardHeader, Checkbox, Input, Textarea } from './ui';
+import TeacherClassesToday from './TeacherClassesToday';
+import { Button, Card, CardHeader, Checkbox, Input, Segmented, Textarea } from './ui';
 
 // The page behind a teacher's private link (#/guru/<link>), opened on a phone without a login (Phase F).
 // A teacher updates their own details, bank account, subjects, experience, permit, photo and IC; an applicant (general
@@ -24,6 +25,7 @@ export default function PublicTeacherForm({ token }) {
   const [uploads, setUploads] = useState({});
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
+  const [view, setView] = useState('classes'); // a teacher's link opens on today's classes (Phase I)
 
   useEffect(() => {
     publicTeacherApi.get(token).then((data) => {
@@ -102,10 +104,24 @@ export default function PublicTeacherForm({ token }) {
   const byLevel = Object.entries(LEVELS).map(([level, label]) => ({ label, subjects: info.subjects.filter((s) => s.level === level) })).filter((g) => g.subjects.length);
   const toggle = (id, on) => set({ subjects_qualified: on ? [...f.subjects_qualified, id] : f.subjects_qualified.filter((x) => x !== id) });
 
+  if (!applicant && view === 'classes') {
+    return (
+      <div className="mx-auto max-w-2xl">
+        {header}
+        <h1 className="text-xl font-semibold text-gray-900">Cikgu {info.teacher.full_name}</h1>
+        <Segmented className="my-4" value={view} onChange={setView} items={[{ value: 'classes', label: 'Kelas hari ini' }, { value: 'profile', label: 'Maklumat saya' }]} />
+        <TeacherClassesToday token={token} />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-2xl">
       {header}
       <h1 className="text-xl font-semibold text-gray-900">{applicant ? 'Borang permohonan guru' : `Cikgu ${info.teacher.full_name}`}</h1>
+      {!applicant && (
+        <Segmented className="my-4" value={view} onChange={setView} items={[{ value: 'classes', label: 'Kelas hari ini' }, { value: 'profile', label: 'Maklumat saya' }]} />
+      )}
       <p className="mt-1 text-sm text-gray-600">
         {applicant
           ? 'Isi maklumat anda. Pengurusan akan menyemak permohonan ini.'

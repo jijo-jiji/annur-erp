@@ -27,7 +27,8 @@ from billing.counter import cash_close, cash_close_history, cash_close_return, c
 from core.checklist import checklist, checklist_check, checklist_tick
 from core.notification_views import notifications, notifications_read
 from billing.followups import follow_up_record, follow_ups
-from teachers.links import TeacherLinkViewSet, public_teacher_link
+from teachers.links import TeacherLinkViewSet, public_teacher_link, teacher_class_action, teacher_classes
+from students.checkin import public_code, public_mark, public_room, staff_checkin
 from expenses.views import VendorViewSet, PaymentVoucherViewSet
 from core.attachments import AttachmentViewSet
 from core.change_request_views import ChangeRequestViewSet
@@ -107,6 +108,12 @@ urlpatterns = [
     path('api/v1/public/results/check/', public_results_check),
     path('api/v1/public/results/', public_results_submit),
     path('api/v1/public/teacher-link/<str:token>/', public_teacher_link),
+    path('api/v1/public/teacher-link/<str:token>/classes/', teacher_classes),
+    path('api/v1/public/teacher-link/<str:token>/classes/<int:class_id>/', teacher_class_action),
+    path('api/v1/public/checkin/room/<str:key>/', public_room),
+    path('api/v1/public/checkin/code/', public_code),
+    path('api/v1/public/checkin/mark/', public_mark),
+    path('api/v1/attendance/checkin/', staff_checkin),
     path('api/v1/dashboard/summary/', dashboard_summary),
     path('api/v1/reports/summary/', reports_summary),
     path('api/v1/students/parent-self-register/', parent_self_register),

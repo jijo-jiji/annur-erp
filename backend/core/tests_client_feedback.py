@@ -4,6 +4,7 @@ from datetime import date
 from importlib import import_module
 from django.apps import apps as django_apps
 from django.contrib.auth.models import Group, User
+from django.core.cache import cache
 from rest_framework.test import APITestCase
 from academic.models import ClassTimetable, TimeSlot
 from business_config.models import BusinessSetting, DynamicMasterData, PricingTier, SubjectMaster
@@ -14,6 +15,7 @@ from students.models import ResultSubmission, Student
 
 class FeedbackBase(APITestCase):
     def setUp(self):
+        cache.clear()  # the public pages' rate limits count every test's posts from the same address
         self.users = {}
         for role in ALL_ROLES:
             g, _ = Group.objects.get_or_create(name=role)
@@ -184,8 +186,6 @@ class PhaseBStudentCodeTests(FeedbackBase):
 class PhaseCSchoolResultsTests(FeedbackBase):
     def setUp(self):
         super().setUp()
-        from django.core.cache import cache
-        cache.clear()  # the wrong-IC counter of the public form
         self.kimia = SubjectMaster.objects.create(code='KM', name='Kimia', level_category='UPPER_SEC', stream='SAINS')
         self.student = self.register('Ali')
         self.pk = self.student['id']
@@ -681,9 +681,7 @@ class PhaseENotificationsAndWeek5Tests(FeedbackBase):
 class PhaseFTeacherLinkTests(FeedbackBase):
     def setUp(self):
         super().setUp()
-        from django.core.cache import cache
         from teachers.models import Teacher
-        cache.clear()  # the public pages' rate limits
         self.teacher = Teacher.objects.create(teacher_code='NAK', full_name='Nik Ahmad', phone_number='60123456789', rate_per_session=60)
 
     def png(self, name='x.png'):
@@ -807,3 +805,161 @@ class PhaseFTeacherLinkTests(FeedbackBase):
         codes = [self.client.post('/api/v1/students/parent-self-register/', {}, format='json').status_code for _ in range(21)]
         self.assertEqual(codes[-1], 429)  # 20 an hour
         self.assertNotIn(429, codes[:20])
+
+
+class PhaseIQRCheckInTests(FeedbackBase):
+    """The class is Fizik T5 on Fridays 09:00-10:30 in Bilik 1; 30 Oct 2026 is a Friday."""
+    DAY = date(2026, 10, 30)
+
+    def setUp(self):
+        super().setUp()
+        from academic.models import Classroom
+        from teachers.models import Teacher
+        self.teacher = Teacher.objects.create(teacher_code='NAK', full_name='Nik Ahmad', phone_number='60123456789')
+        self.other = Teacher.objects.create(teacher_code='ZZ', full_name='Zakir', phone_number='60123456780')
+        self.room = Classroom.objects.create(name='Bilik 1', capacity=20)
+        self.fz.classroom, self.fz.teacher = self.room, self.teacher
+        self.fz.save()
+        self.kids = []
+        for i, (name, ic) in enumerate([('Ahmad Daniyal bin Razali', '090514-03-5511'), ('Nur Aisyah binti Zaki', '090822-03-6622'),
+                                         ('Muhammad Haziq bin Imran', '100311-03-7733')]):
+            s = Student.objects.create(student_id=f'HQ-26000{i + 1}', full_name=name, ic_number=ic, form_level='F5', join_date=date(2026, 1, 1),
+                                       status='ACTIVE', parent1_name='P', parent1_phone='60123456789')
+            s.enrolled_classes.add(self.fz)
+            self.kids.append(s)
+
+    def at(self, hhmm):
+        from datetime import datetime
+        from unittest import mock
+        from django.utils import timezone
+        h, m = map(int, hhmm.split(':'))
+        moment = timezone.make_aware(datetime(2026, 10, 30, h, m))
+        patcher = mock.patch('django.utils.timezone.now', return_value=moment)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return patcher
+
+    def open_code(self):
+        self.as_role(ADMIN)
+        res = self.client.post('/api/v1/attendance/checkin/', {'class_id': self.fz.id, 'date': self.DAY.isoformat(), 'action': 'open'}, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        return res.data['code']
+
+    def scan(self, code, student, device='phone-of-ahmad-0001', ic=None, room=None):
+        self.client.force_authenticate(None)
+        body = {'code': code, 'student': student.id, 'device': device, **({'ic_last4': ic} if ic else {}), **({'room': room} if room else {})}
+        return self.client.post('/api/v1/public/checkin/mark/', body, format='json')
+
+    def test_a_student_checks_in_with_the_code_on_the_board_and_is_late_after_ten_minutes(self):
+        p = self.at('08:40')
+        code = self.open_code()
+        self.assertEqual(self.scan(code, self.kids[0], ic='5511').status_code, 400)  # opens at 08:45
+        p.stop()
+        p = self.at('08:50')
+        self.as_role(SUPERVISOR)
+        key = self.client.post(f'/api/v1/academic/classrooms/{self.room.id}/checkin_key/', {}, format='json').data['key']
+        self.client.force_authenticate(None)
+        room = self.client.get(f'/api/v1/public/checkin/room/{key}/').data
+        self.assertEqual((room['room'], room['classes'][0]['state'], 'code' in room['classes'][0]), ('Bilik 1', 'OPEN', False))
+        self.assertEqual(self.client.post('/api/v1/public/checkin/code/', {'code': '0000' if code != '0000' else '1111', 'room': key}, format='json').status_code, 400)
+        listed = self.client.post('/api/v1/public/checkin/code/', {'code': code, 'room': key}, format='json').data
+        self.assertEqual([s['name'] for s in listed['students']], ['Ahmad D.', 'Muhammad H.', 'Nur A.'])
+
+        first = self.scan(code, self.kids[0], room=key)
+        self.assertEqual((first.status_code, first.data['needs_ic']), (400, True))  # the first time on this phone
+        self.assertEqual(self.scan(code, self.kids[0], ic='0000').status_code, 400)
+        ok = self.scan(code, self.kids[0], ic='5511')
+        self.assertEqual((ok.data['status'], ok.data['already']), ('PRESENT', False))
+        self.assertTrue(self.scan(code, self.kids[0]).data['already'])  # this phone is remembered for Ahmad
+        # a second name from the same phone is recorded, with a flag for the teacher
+        self.assertEqual(self.scan(code, self.kids[1], ic='6622').data['status'], 'PRESENT')
+        from students.models import StudentAttendance
+        self.assertEqual(StudentAttendance.objects.get(student=self.kids[1]).flag, 'Telefon yang sama dengan Ahmad D.')
+        p.stop()
+        p = self.at('09:15')
+        self.assertEqual(self.scan(code, self.kids[2], device='phone-of-haziq-0002', ic='7733').data['status'], 'LATE')
+        p.stop()
+        self.at('09:31')
+        self.assertEqual(self.scan(code, self.kids[2], device='phone-of-haziq-0002').status_code, 400)  # closed 30 minutes after the start
+
+    def test_five_wrong_ic_tries_lock_the_student(self):
+        self.at('08:55')
+        code = self.open_code()
+        for _ in range(5):
+            self.assertEqual(self.scan(code, self.kids[0], ic='0000').status_code, 400)
+        locked = self.scan(code, self.kids[0], ic='5511')
+        self.assertIn('Terlalu banyak cubaan', str(locked.data))
+
+    def test_the_teacher_s_link_shows_the_code_marks_pupils_without_phones_and_confirms_the_list(self):
+        from students.models import StudentAttendance
+        self.at('08:50')
+        self.as_role(MANAGEMENT)
+        token = self.client.post('/api/v1/teachers/links/', {'kind': 'TEACHER', 'teacher': self.teacher.id}, format='json').data['token']
+        other = self.client.post('/api/v1/teachers/links/', {'kind': 'TEACHER', 'teacher': self.other.id}, format='json').data['token']
+        self.client.force_authenticate(None)
+        page = self.client.get(f'/api/v1/public/teacher-link/{token}/classes/').data
+        cls = page['classes'][0]
+        self.assertEqual((cls['class_id'], len(cls['code']), cls['state']), (self.fz.id, 4, 'OPEN'))
+        self.assertEqual(self.client.get(f'/api/v1/public/teacher-link/{other}/classes/').data['classes'], [])  # not their class
+        self.assertEqual(self.client.post(f'/api/v1/public/teacher-link/{other}/classes/{self.fz.id}/', {'action': 'confirm'}, format='json').status_code, 400)
+
+        self.scan(cls['code'], self.kids[0], ic='5511')
+        url = f'/api/v1/public/teacher-link/{token}/classes/{self.fz.id}/'
+        self.client.post(url, {'action': 'mark', 'student': self.kids[2].id, 'status': 'LATE'}, format='json')  # no phone
+        done = self.client.post(url, {'action': 'confirm'}, format='json').data
+        self.assertEqual({s['code']: (s['status'], s['source']) for s in done['students']},
+                         {'HQ-260001': ('PRESENT', 'QR'), 'HQ-260002': ('ABSENT', 'AUTO'), 'HQ-260003': ('LATE', 'TEACHER')})
+        self.assertEqual(self.scan(cls['code'], self.kids[1], device='phone-of-aisyah-003', ic='6622').status_code, 400)  # list confirmed
+        self.assertEqual(StudentAttendance.objects.count(), 3)
+
+    def test_a_class_that_ended_closes_by_itself_and_staff_saving_the_list_keeps_who_checked_in(self):
+        from students.models import StudentAttendance
+        p = self.at('08:50')
+        code = self.open_code()
+        self.scan(code, self.kids[0], ic='5511')
+        p.stop()
+        self.at('10:31')
+        self.as_role(ADMIN)
+        rows = {r['student_id']: r for r in self.client.get('/api/v1/attendance/roster/', {'class_id': self.fz.id, 'date': self.DAY.isoformat()}).data['students']}
+        self.assertEqual((rows['HQ-260001']['source'], rows['HQ-260002']['present'], rows['HQ-260002']['source']), ('QR', False, 'AUTO'))
+        self.assertEqual(str(rows['HQ-260001']['marked_at'])[:16], '2026-10-30 08:50')
+        self.client.post('/api/v1/attendance/roster/', {'class_id': self.fz.id, 'date': self.DAY.isoformat(), 'marks': [
+            {'student': self.kids[0].id, 'present': True}, {'student': self.kids[1].id, 'present': True, 'late': True},
+            {'student': self.kids[2].id, 'present': False}]}, format='json')
+        sources = dict(StudentAttendance.objects.values_list('student__student_id', 'source'))
+        self.assertEqual(sources, {'HQ-260001': 'QR', 'HQ-260002': 'STAFF', 'HQ-260003': 'AUTO'})
+
+    def test_opening_the_teacher_s_link_early_starts_nothing_and_an_unused_check_in_marks_nobody_absent(self):
+        from students.models import ClassCheckIn, StudentAttendance
+        p = self.at('07:30')
+        self.as_role(MANAGEMENT)
+        token = self.client.post('/api/v1/teachers/links/', {'kind': 'TEACHER', 'teacher': self.teacher.id}, format='json').data['token']
+        self.client.force_authenticate(None)
+        cls = self.client.get(f'/api/v1/public/teacher-link/{token}/classes/').data['classes'][0]
+        self.assertEqual((cls['state'], cls['code']), ('SOON', None))  # no code before scanning opens at 08:45
+        self.assertFalse(ClassCheckIn.objects.exists())
+        p.stop()
+        p = self.at('08:50')
+        self.assertEqual(len(self.client.get(f'/api/v1/public/teacher-link/{token}/classes/').data['classes'][0]['code']), 4)
+        p.stop()
+        self.at('10:31')  # nobody scanned and nobody was marked: the class took attendance some other way
+        self.as_role(ADMIN)
+        rows = self.client.get('/api/v1/attendance/roster/', {'class_id': self.fz.id, 'date': self.DAY.isoformat()}).data['students']
+        self.assertEqual({r['present'] for r in rows}, {None})
+        self.assertFalse(StudentAttendance.objects.exists())
+        self.assertEqual(ClassCheckIn.objects.get().confirmed_by, 'Ditutup (tiada imbasan)')
+        self.assertIn('tiada yang ditanda tidak hadir', self.client.get('/api/v1/attendance/checkin/', {'class_id': self.fz.id, 'date': self.DAY.isoformat()}).data['closed_note'])
+
+    def test_the_timings_are_settings_and_a_room_s_qr_can_be_replaced(self):
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.put('/api/v1/thresholds/', {'checkin_late_minutes': 45}, format='json').status_code, 400)  # after closing
+        self.assertEqual(self.client.put('/api/v1/thresholds/', {'checkin_late_minutes': 5}, format='json').status_code, 200)
+        self.as_role(ADMIN)
+        self.assertEqual(self.client.post(f'/api/v1/academic/classrooms/{self.room.id}/checkin_key/', {}, format='json').status_code, 403)
+        self.as_role(SUPERVISOR)
+        old = self.client.post(f'/api/v1/academic/classrooms/{self.room.id}/checkin_key/', {}, format='json').data['key']
+        self.assertEqual(self.client.post(f'/api/v1/academic/classrooms/{self.room.id}/checkin_key/', {}, format='json').data['key'], old)
+        new = self.client.post(f'/api/v1/academic/classrooms/{self.room.id}/checkin_key/', {'renew': True}, format='json').data['key']
+        self.assertNotEqual(new, old)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(f'/api/v1/public/checkin/room/{old}/').status_code, 404)

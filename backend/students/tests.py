@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 from django.contrib.auth.models import Group, User
+from django.core.cache import cache
 from rest_framework.test import APITestCase
 from academic.models import TimeSlot, ClassTimetable
 from billing.models import Invoice, PaymentReceipt
@@ -12,6 +13,7 @@ from students.models import Lead, Student, StudentEvent
 
 class Phase2Base(APITestCase):
     def setUp(self):
+        cache.clear()  # the public registration form's rate limit counts every test's posts from the same address
         self.users = {}
         for role in ALL_ROLES:
             g, _ = Group.objects.get_or_create(name=role)

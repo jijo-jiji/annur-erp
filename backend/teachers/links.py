@@ -218,3 +218,73 @@ def submit(link, request):
         if not pending:
             notify.change_request_submitted(req)
     return {'success': True, 'replaced': bool(pending), 'reference': f"GR-{req.pk:05d}"}
+
+
+# ---- Public: the teacher's classes today (Phase I) ------------------------------------------------------------------
+
+def _teacher_link(token):
+    link = working(token)
+    if link is None or link.kind != 'TEACHER':
+        raise _gone()
+    return link
+
+
+def _teacher_classes(link, on):
+    """Today's classes this teacher takes: their own, and those they cover as the replacement."""
+    from academic.models import ClassTimetable
+    from students import checkin
+    rows = [r for r in checkin.held_on(on)
+            if r.get('teacher_id') == link.teacher_id or (r.get('record') and r['record'].get('replacement_teacher') == link.teacher_id)]
+    classes = ClassTimetable.objects.select_related('slot', 'subject', 'classroom').in_bulk([r['class_id'] for r in rows])
+    return sorted((classes[r['class_id']] for r in rows if r['class_id'] in classes), key=lambda c: c.slot.start_time)
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([PublicTeacherThrottle])
+def teacher_classes(request, token):
+    """The teacher's classes today, each with its live list and check-in code. The code is made the first time the page
+    shows it while scanning is open, so a teacher opening the link early does not start check-in for every class."""
+    from students import checkin
+    link = _teacher_link(token)
+    on = timezone.localdate()
+    checkin.close_due()
+    out = []
+    for cls in _teacher_classes(link, on):
+        found = checkin.checkin_for(cls, on) if checkin.state(cls, on) == 'OPEN' else checkin.ClassCheckIn.objects.filter(timetable_class=cls, date=on).first()
+        out.append(checkin.checkin_data(cls, on, found))
+    return Response({'date': on, 'teacher': link.teacher.full_name, 'classes': out})
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([PublicTeacherThrottle])
+def teacher_class_action(request, token, class_id):
+    """{action: mark, student, status: PRESENT | LATE | ABSENT} for a pupil without a phone, or {action: confirm}."""
+    from students import checkin
+    link = _teacher_link(token)
+    on = timezone.localdate()
+    cls = next((c for c in _teacher_classes(link, on) if c.pk == int(class_id)), None)
+    if cls is None:
+        raise ValidationError('Kelas ini bukan kelas anda hari ini.')
+    found = checkin.checkin_for(cls, on)
+    if found.confirmed_at:
+        raise ValidationError('Senarai kelas ini sudah disahkan.')
+    by = f"Cikgu {link.teacher.full_name}"
+    if request.data.get('action') == 'confirm':
+        checkin.confirm(found, by)
+    elif request.data.get('action') == 'mark':
+        status_ = request.data.get('status')
+        if status_ not in ('PRESENT', 'LATE', 'ABSENT'):
+            raise ValidationError({'status': 'Pilih Hadir, Lewat atau Tidak hadir.'})
+        student = next((s for s in checkin.students_of(cls) if str(s.pk) == str(request.data.get('student'))), None)
+        if student is None:
+            raise ValidationError({'student': 'Pelajar ini tiada dalam kelas.'})
+        checkin.mark(cls, on, student, status_, 'TEACHER', by)
+    else:
+        raise ValidationError({'action': 'Tindakan tidak sah.'})
+    link.last_used_at = timezone.now()
+    link.save(update_fields=['last_used_at'])
+    return Response(checkin.checkin_data(cls, on, found))

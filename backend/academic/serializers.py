@@ -8,6 +8,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
     class Meta:
         model = Classroom
         fields = '__all__'
+        read_only_fields = ['checkin_key']  # made through the room's check-in QR action only
 
 class ClosedDateSerializer(serializers.ModelSerializer):
     class Meta:

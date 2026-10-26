@@ -31,6 +31,7 @@ test('a teacher updates their details through a private link and Management appr
   const tp = await phone.newPage();
   await tp.goto(url);
   await expect(tp.getByRole('heading', { name: `Cikgu ${teacher.full_name}` })).toBeVisible();
+  await tp.getByRole('button', { name: 'Maklumat saya' }).click(); // the link opens on today's classes (Phase I)
   await expect(tp.getByLabel('Nama penuh')).toHaveValue(teacher.full_name);
   await tp.getByLabel('Bank', { exact: true }).fill(bank);
   await tp.getByLabel(/^Gambar diri/).setInputFiles({ name: 'cikgu.png', mimeType: 'image/png', buffer: PHOTO });
@@ -41,7 +42,8 @@ test('a teacher updates their details through a private link and Management appr
   // Nothing changes until Management approves; the photo waits with the request
   expect((await api(page.request, 'MANAGEMENT', 'GET', `/teachers/teachers/${teacher.id}/`)).bank_name).not.toBe(bank);
   await page.getByRole('tab', { name: /^Permohonan/ }).click();
-  const request = page.getByRole('listitem').filter({ hasText: `${teacher.full_name} (pautan guru)` });
+  // the request itself, not the row of the file sent with it (which also names who sent it)
+  const request = page.getByRole('listitem').filter({ hasText: `${teacher.full_name} (pautan guru)` }).filter({ has: page.getByRole('button', { name: 'Luluskan' }) });
   await expect(request).toContainText('Dokumen');
   await expect(request.getByText('cikgu.png')).toBeVisible();
   await request.getByRole('button', { name: 'Luluskan' }).click();
