@@ -1408,7 +1408,7 @@ class MessageTemplateTests(RoleTestBase):
 
     def test_every_original_message_is_consistent(self):
         from core.messages import PLACEHOLDER, TEMPLATES
-        self.assertEqual(len(TEMPLATES), 14)  # 14th: the week-5 fee follow-up (Phase E)
+        self.assertEqual(len(TEMPLATES), 15)  # Phase E: week-5 fee follow-up; Phase F: teacher link
         for key, spec in TEMPLATES.items():
             names = {n for n, _, _ in spec['placeholders']}
             used = set(PLACEHOLDER.findall(spec['text']))
@@ -1424,7 +1424,7 @@ class MessageTemplateTests(RoleTestBase):
         for role in ALL_ROLES:
             self.as_role(role)
             rows = self.client.get(self.URL).data
-            self.assertEqual(len(rows), 14)
+            self.assertEqual(len(rows), 15)
             self.assertTrue(all(not r['customised'] and r['text'] == r['default'] for r in rows))
 
     def test_supervisor_and_management_edit_and_every_change_is_recorded(self):

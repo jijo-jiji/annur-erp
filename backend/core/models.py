@@ -143,11 +143,16 @@ class Attachment(models.Model):
         ('HANDOUT', 'Fail Nota / Modul'),
         ('RESULT_SLIP', 'Slip Keputusan Peperiksaan'),
         ('PAYMENT_PROOF', 'Bukti Bayaran'),
+        ('TEACHER_PHOTO', 'Gambar Guru'),
+        ('TEACHER_DOC', 'Dokumen Guru'),
+        ('TEACHER_FORM', 'Dokumen dari borang guru'),  # on the change request until it is approved
     ]
     DOC_TYPES = [
         ('IC', 'Salinan Kad Pengenalan'),
         ('RESUME', 'Resume'),
         ('OFFER_LETTER', 'Surat Tawaran'),
+        ('PERMIT', 'Permit Mengajar'),
+        ('PHOTO', 'Gambar'),
         ('OTHER', 'Lain-lain'),
     ]
     kind = models.CharField(max_length=20, choices=KINDS)

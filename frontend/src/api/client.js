@@ -464,6 +464,32 @@ export const dashboardApi = {
 };
 
 // Changes to setup data (subjects, ...): Admin proposes, Supervisor / Management decides
+// Teacher private links (Phase F): Management makes and cancels them; the token is shown only when a link is made
+export const teacherLinksApi = {
+  list: () => request('/teachers/links/'),
+  create: (data) => request('/teachers/links/', { method: 'POST', body: JSON.stringify(data) }),
+  revoke: (id) => request(`/teachers/links/${id}/revoke/`, { method: 'POST', body: JSON.stringify({}) }),
+};
+
+// The form behind a teacher link, opened without a login (Phase F); files go up with the form
+export const publicTeacherApi = {
+  get: (token) => request(`/public/teacher-link/${encodeURIComponent(token)}/`),
+  send: async (token, fields, uploads = {}) => {
+    const form = new FormData();
+    Object.entries(fields).forEach(([k, v]) => (Array.isArray(v) ? v.forEach((x) => form.append(k, x)) : form.append(k, v ?? '')));
+    Object.entries(uploads).forEach(([k, file]) => file && form.append(k, file));
+    const res = await fetch(`${BASE_URL}/public/teacher-link/${encodeURIComponent(token)}/`, { method: 'POST', body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.detail || (res.status === 413 ? 'Fail terlalu besar.' : res.status === 429 ? 'Terlalu banyak cubaan. Cuba lagi sebentar lagi.' : `Penghantaran gagal (${res.status})`));
+      err.data = data;
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  },
+};
+
 // The bell: the signed-in person's own notifications (what waits for them, decisions on what they asked)
 export const notificationsApi = {
   list: () => request('/notifications/'),
@@ -483,7 +509,8 @@ export const changeRequestApi = {
   list: (kind, target) => request(`/change-requests/?kind=${encodeURIComponent(kind)}${target ? `&target=${target}` : ''}`),
   create: (body) => request('/change-requests/', { method: 'POST', body: JSON.stringify(body) }),
   revise: (id, payload, note) => request(`/change-requests/${id}/`, { method: 'PATCH', body: JSON.stringify({ payload, note }) }),
-  approve: (id, comment = '') => request(`/change-requests/${id}/approve/`, { method: 'POST', body: JSON.stringify({ comment }) }),
+  // changes: values the person deciding fills in (a new teacher's code and rate, from an applicant's form)
+  approve: (id, comment = '', changes) => request(`/change-requests/${id}/approve/`, { method: 'POST', body: JSON.stringify({ comment, ...(changes ? { changes } : {}) }) }),
   reject: (id, comment) => request(`/change-requests/${id}/reject/`, { method: 'POST', body: JSON.stringify({ comment }) }),
   withdraw: (id) => request(`/change-requests/${id}/withdraw/`, { method: 'POST', body: JSON.stringify({}) }),
   acknowledge: () => request('/change-requests/acknowledge/', { method: 'POST', body: JSON.stringify({}) }),

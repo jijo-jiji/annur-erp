@@ -10,7 +10,7 @@ building it, before the next one starts.
 | C | School exam results: terms per year, grid entry, public results form + review queue, student and class statistics | **Done** 25 Oct 2026 |
 | D | Fees: payment proof, receipt correction, unpaid invoice edit; daily counter close; Admin daily checklist | **Done** 26 Oct 2026 |
 | E | Notifications and the week-5 unpaid rule for Supervisor | **Done** 26 Oct 2026 |
-| F | Teacher private links and the public teacher profile form | Planned |
+| F | Teacher private links and the public teacher profile form | **Done** 26 Oct 2026 |
 | I | QR self check-in for student attendance | Planned |
 | G | Handouts linked to classes, copy count and received list | Planned |
 | H | Performance analysis dashboard and two-way reports | Planned |
@@ -224,6 +224,33 @@ Tests: `PhaseENotificationsAndWeek5Tests` (9 tests); full backend suite 273 test
 Pengurusan sends a teacher a private link (or a general link for applicants). The teacher fills in their details,
 bank account, subjects, teaching experience, permit, photo and IC; it arrives as a teacher change request for approval.
 Links can be cancelled.
+
+### Phase F: what was built
+
+| Where | What |
+|---|---|
+| Guru → **Pautan guru** (Pengurusan only) and *Pautan* on a teacher's row | *Pautan untuk guru* makes a personal link (a new one stops the teacher's old link); *Pautan pemohon* makes one general link for applicants, with a name and an optional end date. The full link is shown once, with Copy, a QR code and *Hantar melalui WhatsApp* (new editable message *Pautan peribadi guru*). The list shows who made each link, when it was last used, how many forms came through it and whether one waits; *Batalkan* stops a link at once. |
+| `#/guru/<link>` (public, phone-first, no login) | A teacher sees their current details and changes their name, phone, e-mail, bank and account number, subjects (grouped by level), start of teaching and permit expiry, and attaches a photo, an IC copy and a permit copy. An applicant fills in the same plus their experience. Sending again before a decision replaces the waiting form (and any file sent again). A cancelled, replaced or expired link, or the link of a teacher who is no longer active, says so. |
+| Guru → **Permohonan** | The form arrives as a teacher change request (*Oleh … (pautan guru)* / *(borang pemohon)*) with *Dokumen: Gambar, Salinan IC* and the files to open. Approving a teacher's form applies it; the photo becomes the teacher's photo and the copies join their documents. An applicant has no code or rate yet: *Luluskan* asks for the code, category, starting rate and joining date. Rejecting deletes the files sent with it. The tab reloads each time it is opened, since forms arrive at any time. Management is told in the bell. |
+| Guru → teacher row → **Dokumen** | The teacher's photo and documents (IC, permit, other), for Supervisor and Management only. |
+
+Changes from the plan, found while building:
+- Only a SHA-256 fingerprint of each link is stored, so a lost link cannot be shown again; making a new one replaces it.
+- The rate limits on all three public pages never worked: DRF's `ScopedRateThrottle` takes its scope from the view, and
+  these function views have none, so the parents' QR form (from before this plan) and the results form (Phase C) had no
+  limit. They now share `core/throttles.py`, which limits each visitor's address; a test checks that the 21st QR
+  registration in an hour is refused. The teacher link allows 60 an hour.
+- The change-request engine gained two small hooks: values the decider fills in when approving (`decider_fields`, used for
+  an applicant's code and rate) and a tidy-up after rejection (`on_reject`, used to delete a rejected person's IC copy).
+- A notice in the bell that points to the page already open now reopens that page, so it lands on the right tab; the fee
+  corrections tab also reloads when opened.
+
+Data: `teachers.TeacherLink` (kind, teacher, fingerprint, last characters, name, end date, who made / cancelled it, last use,
+forms sent, latest request); attachment kinds `TEACHER_PHOTO`, `TEACHER_DOC`, `TEACHER_FORM`; document types `PERMIT`, `PHOTO`.
+APIs: `/teachers/links/` (Management: list, create, `revoke`), `/public/teacher-link/<link>/` (GET, POST); change request
+approve takes `changes`.
+
+Tests: `PhaseFTeacherLinkTests` (5 tests); full backend suite 278 tests OK; browser `e2e/teacher-links.spec.js` (2 tests).
 
 ## Phase I: QR self check-in
 

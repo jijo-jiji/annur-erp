@@ -74,7 +74,7 @@ class AttachmentViewSet(viewsets.ModelViewSet):
             raise ValidationError({'file': 'Pilih fail untuk dimuat naik.'})
         content_type = files.validate_upload(kind, upload)
         doc_type = request.data.get('doc_type') or ''
-        if kind == 'STAFF_DOC' and doc_type not in dict(Attachment.DOC_TYPES):
+        if kind in ('STAFF_DOC', 'TEACHER_DOC') and doc_type not in dict(Attachment.DOC_TYPES):
             raise ValidationError({'doc_type': 'Pilih jenis dokumen.'})
         with transaction.atomic():
             if files.RULES[kind].get('single'):
@@ -85,7 +85,7 @@ class AttachmentViewSet(viewsets.ModelViewSet):
                     old.delete()
             attachment = Attachment.objects.create(
                 kind=kind, object_id=obj.pk, file=upload, original_name=upload.name[:255],
-                content_type=content_type, size=upload.size, doc_type=doc_type if kind == 'STAFF_DOC' else '',
+                content_type=content_type, size=upload.size, doc_type=doc_type if kind in ('STAFF_DOC', 'TEACHER_DOC') else '',
                 description=(request.data.get('description') or '').strip()[:255],
                 uploaded_by=request.user, uploaded_by_name=display_name(request.user),
             )

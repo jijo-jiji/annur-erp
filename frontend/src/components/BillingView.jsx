@@ -109,6 +109,8 @@ export default function BillingView({ role }) {
   // Receipt corrections and changes to unpaid invoices wait here for Supervisor / Management
   const corrections = useChangeRequests('RECEIPT,INVOICE');
   const correctionsWaiting = corrections.requests.filter((r) => r.status === 'PENDING').length;
+  const { load: loadCorrections } = corrections;
+  useEffect(() => { if (tab === 'corrections') loadCorrections(); }, [tab, loadCorrections]); // others' requests arrive meanwhile
   const [editingInvoice, setEditingInvoice] = useState(null);
 
   const monthInv = invoices.filter((i) => i.month === CURRENT_MONTH);

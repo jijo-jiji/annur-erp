@@ -25,6 +25,34 @@ class Teacher(models.Model):
     def __str__(self):
         return f"[{self.teacher_code}] {self.full_name} ({self.teacher_type})"
 
+class TeacherLink(models.Model):
+    """A private link a teacher opens on their phone without a login (Phase F): their details, bank account, subjects,
+    experience, permit, photo and IC, sent to Management as a teacher change request. A general link (no teacher) is for
+    applicants; each form sent through it asks Management to add a new teacher. Only a fingerprint of the link is kept,
+    so a lost link is replaced with a new one, never shown again. Management cancels a link at any time."""
+    KINDS = [('TEACHER', 'Pautan peribadi guru'), ('APPLICANT', 'Pautan umum pemohon')]
+    kind = models.CharField(max_length=10, choices=KINDS)
+    teacher = models.ForeignKey('Teacher', null=True, blank=True, on_delete=models.CASCADE, related_name='links')
+    token_hash = models.CharField(max_length=64, unique=True)
+    hint = models.CharField(max_length=8)  # the link's last characters, so staff can tell two links apart
+    label = models.CharField(max_length=120, blank=True)
+    expires_on = models.DateField(null=True, blank=True)
+    created_by = models.CharField(max_length=150)
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_by = models.CharField(max_length=150, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    submissions = models.PositiveIntegerField(default=0)
+    # the latest form sent through this link; while it still waits, sending again replaces it
+    last_request = models.ForeignKey('core.ChangeRequest', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.get_kind_display()} …{self.hint}"
+
+
 class TeacherAttendance(models.Model):
     """One class session (j-status.doc: date, grade, subject, teacher in charge, present/absent,
     reason of leave, replacement teacher). The pay for the session is fixed when it is recorded."""

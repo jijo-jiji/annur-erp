@@ -113,6 +113,7 @@ REST_FRAMEWORK = {
         'login': os.environ.get('ANNUR_LOGIN_RATE', '10/min'),  # raised only by the end-to-end tests
         'public_register': '20/hour',
         'public_results': '30/hour',  # the public school-results form (#/keputusan)
+        'public_teacher': '60/hour',  # the teacher's private link (#/guru/...): opening it and sending the form
     },
     'DEFAULT_PAGINATION_CLASS': None,
 }

@@ -32,6 +32,10 @@ class Handler:
     note_required = False  # a reason even when an approver makes the change (financial corrections)
     action_labels = {}  # how the actions read for this kind, e.g. a receipt is cancelled, not deleted
     delete_word = 'dipadam'
+    decider_fields = ()  # values the person deciding may fill in when approving (a new teacher's code and rate)
+
+    def on_reject(self, req):
+        """Tidy up after a rejected request (files sent with it)."""
 
     def validate(self, action, target_id, data, ignore=None):
         """Return (values to apply, values they replace, label of the record)."""
@@ -405,10 +409,16 @@ class TeacherHandler(Handler):
         'teacher_code': 'Kod guru', 'full_name': 'Nama', 'phone_number': 'Telefon', 'email': 'E-mel', 'teacher_type': 'Kategori',
         'is_active': 'Status', 'rate_per_session': 'Kadar sesi', 'bank_name': 'Bank', 'bank_account': 'No. akaun bank',
         'teaching_permit_expiry': 'Permit mengajar luput', 'subjects_qualified': 'Subjek', 'joined_date': 'Tarikh sertai',
-        'teaching_since': 'Mula mengajar', 'remarks': 'Catatan',
+        'teaching_since': 'Mula mengajar', 'remarks': 'Catatan', 'documents': 'Dokumen',
     }
     proposers = APPROVER_ROLES
     approvers = (MANAGEMENT,)
+    # An applicant's form (Phase F) has no code or rate: Management gives them when approving
+    decider_fields = ('teacher_code', 'rate_per_session', 'teacher_type', 'joined_date')
+    # What a teacher may send through their private link (teachers/links.py); applicants also write their experience
+    LINK_FIELDS = ('full_name', 'phone_number', 'email', 'bank_name', 'bank_account', 'subjects_qualified', 'teaching_since',
+                   'teaching_permit_expiry')
+    DOCUMENTS = {'PHOTO': 'Gambar', 'IC': 'Salinan IC', 'PERMIT': 'Permit mengajar'}
     TYPES = {'PERMANENT': 'Tetap (Permanent)', 'REPLACEMENT': 'Sambilan (Part-time)'}
     DATES = ('teaching_permit_expiry', 'joined_date', 'teaching_since')
     TEXT = ('teacher_code', 'full_name', 'phone_number', 'email', 'bank_name', 'bank_account', 'remarks')
@@ -428,7 +438,7 @@ class TeacherHandler(Handler):
         return TeacherSerializer(instance, data=data, partial=instance is not None)
 
     def _current(self, teacher):
-        current = {f: self._jsonable(getattr(teacher, f)) for f in self.fields if f != 'subjects_qualified'}
+        current = {f: self._jsonable(getattr(teacher, f)) for f in self.fields if f not in ('subjects_qualified', 'documents')}
         current['subjects_qualified'] = sorted(teacher.subjects_qualified.values_list('pk', flat=True))
         return current
 
@@ -442,6 +452,35 @@ class TeacherHandler(Handler):
         return data
 
     def validate(self, action, target_id, data, ignore=None):
+        """The documents sent with a teacher's form are not a field of the teacher: they are carried along so the
+        person deciding sees them, and moved to the teacher when it is approved."""
+        documents = sorted({d for d in (data.get('documents') or []) if d in self.DOCUMENTS})
+        values, before, label = self._validate(action, target_id, {k: v for k, v in data.items() if k != 'documents'}, ignore, bool(documents))
+        if documents:
+            values['documents'] = documents
+        return values, before, label
+
+    def validate_from_link(self, action, target_id, data, ignore=None):
+        """A form sent through a teacher link: only the teacher's own details. An applicant's form has no code or rate
+        yet, so it is checked as far as it goes; the full check runs again when Management approves it with them."""
+        allowed = self.LINK_FIELDS + (('remarks',) if action == 'CREATE' else ())
+        data = {k: data[k] for k in allowed + ('documents',) if k in data}
+        if action != 'CREATE':
+            return self.validate(action, target_id, data, ignore)
+        documents = sorted({d for d in (data.pop('documents', None) or []) if d in self.DOCUMENTS})
+        data = self._clean(data)
+        for field, label in (('full_name', 'Nama penuh'), ('phone_number', 'Telefon')):
+            if not data.get(field):
+                raise ValidationError({field: f'{label} diperlukan.'})
+        serializer = self._serializer(data)
+        serializer.partial = True  # the code and the rate come with Management's approval
+        serializer.is_valid(raise_exception=True)
+        values = {k: self._jsonable(v) for k, v in serializer.validated_data.items()}
+        if documents:
+            values['documents'] = documents
+        return values, {}, f"Pemohon: {values['full_name']}"
+
+    def _validate(self, action, target_id, data, ignore, has_documents):
         from academic.models import ClassTimetable
         from teachers.models import Teacher
         data = self._clean({k: data[k] for k in self.fields if k in data})
@@ -484,7 +523,7 @@ class TeacherHandler(Handler):
         serializer.is_valid(raise_exception=True)
         current = self._current(teacher)
         values = {k: self._jsonable(v) for k, v in serializer.validated_data.items() if self._jsonable(v) != current[k]}
-        if not values:
+        if not values and not has_documents:
             raise ValidationError('Tiada perubahan untuk dihantar.')
         if values.get('is_active') is False:
             n = ClassTimetable.objects.filter(teacher=teacher).count()
@@ -497,9 +536,32 @@ class TeacherHandler(Handler):
     def apply(self, action, target_id, values, req=None):
         from teachers.models import Teacher
         teacher = Teacher.objects.filter(pk=target_id).first() if action == 'UPDATE' else None
-        serializer = self._serializer(values, teacher)
+        serializer = self._serializer({k: v for k, v in values.items() if k != 'documents'}, teacher)
         serializer.is_valid(raise_exception=True)
-        return serializer.save()
+        teacher = serializer.save()
+        if req is not None and req.pk:
+            self._move_documents(req, teacher)
+        return teacher
+
+    @staticmethod
+    def _move_documents(req, teacher):
+        """The photo becomes the teacher's photo (replacing the old one); IC and permit copies join their documents."""
+        from .models import Attachment
+        for att in Attachment.objects.filter(kind='TEACHER_FORM', object_id=req.pk):
+            if att.doc_type == 'PHOTO':
+                for old in Attachment.objects.filter(kind='TEACHER_PHOTO', object_id=teacher.pk):
+                    old.delete()
+                att.kind, att.doc_type = 'TEACHER_PHOTO', ''
+            else:
+                att.kind = 'TEACHER_DOC'
+            att.object_id = teacher.pk
+            att.save(update_fields=['kind', 'doc_type', 'object_id'])
+
+    def on_reject(self, req):
+        """Copies of a rejected person's IC and permit are not kept."""
+        from .models import Attachment
+        for att in Attachment.objects.filter(kind='TEACHER_FORM', object_id=req.pk):
+            att.delete()
 
     def display(self, field, value):
         from business_config.models import SubjectMaster
@@ -514,6 +576,8 @@ class TeacherHandler(Handler):
         if field == 'subjects_qualified':
             names = dict(SubjectMaster.objects.filter(pk__in=value).values_list('pk', 'name'))
             return ', '.join(names.get(pk, str(pk)) for pk in value) or '—'
+        if field == 'documents':  # in the form's order
+            return ', '.join(label for doc, label in self.DOCUMENTS.items() if doc in value)
         if field in self.DATES:
             y, m, d = str(value).split('-')
             return f'{d}/{m}/{y}'
@@ -1087,12 +1151,15 @@ def revise(req, user, data, note):
 
 
 @transaction.atomic
-def approve(req, user, comment):
+def approve(req, user, comment, changes=None):
     require_decider(user, req.kind)
     _pending_only(req)
     handler = handler_for(req.kind)
+    payload = dict(req.payload)
+    if isinstance(changes, dict):  # what the person deciding fills in (a new teacher's code and rate)
+        payload.update({k: v for k, v in changes.items() if k in handler.decider_fields})
     # Checked again: the data may have changed since the request was made
-    values, before, label = handler.validate(req.action, req.target_id, req.payload, ignore=req)
+    values, before, label = handler.validate(req.action, req.target_id, payload, ignore=req)
     req.status, req.decided_by, req.decided_at = 'APPROVED', display_name(user), timezone.now()
     req.decision_comment = (comment or '').strip()
     req.seen = req.requested_by_id == user.id
@@ -1115,6 +1182,7 @@ def reject(req, user, comment):
     req.decision_comment = comment
     req.seen = req.requested_by_id == user.id
     req.save()
+    handler_for(req.kind).on_reject(req)
     from . import notify
     notify.change_request_decided(req, user)
     return req

@@ -89,6 +89,11 @@ TEMPLATES = {
         'Pendaftaran melalui borang QR', 'Borang pendaftaran ibu bapa, dihantar kepada pusat', [
             PARENT, STUDENT, ('student_id', 'ID pelajar', 'HQ-260014')],
         'Assalamualaikum. Saya {parent} telah mendaftar {student} ({student_id}) melalui borang QR.', ('student',), public=True),
+    'teacher_link': _t(
+        'Pautan peribadi guru', 'Guru > Pautan guru, selepas membuat pautan', [
+            ('teacher', 'Nama guru', 'Cikgu Nur Aini'), CENTRE, ('link', 'Pautan', 'https://pusat.example/#/guru/abc123')],
+        'Assalamualaikum {teacher}. Ini pautan peribadi anda untuk mengemas kini maklumat guru di {centre} (telefon, akaun bank, '
+        'subjek, permit mengajar, gambar dan salinan IC):\n{link}\n\nPautan ini untuk anda sahaja; jangan kongsikan. Terima kasih.', ('link',)),
     'payslip': _t(
         'Slip gaji guru', 'Gaji guru, slip gaji, butang WhatsApp', [
             ('teacher', 'Nama guru', 'Cikgu Nur Aini'), CENTRE, ('month', 'Bulan', 'Oktober 2026'), ('sessions', 'Bilangan sesi', '20'),

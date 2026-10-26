@@ -63,7 +63,11 @@ export default function NotificationBell({ align = 'left', className }) {
   const pick = (n) => {
     setOpen(false);
     if (!n.read) notificationsApi.read([n.id]).then(refresh).catch(() => {});
-    if (n.link) navigate(n.link.replace(/^#\/?/, ''));
+    if (!n.link) return;
+    const target = n.link.replace(/^#\/?/, '');
+    const samePage = target.split(/[/?]/)[0] === window.location.hash.replace(/^#\/?/, '').split(/[/?]/)[0];
+    navigate(target);
+    if (samePage) window.dispatchEvent(new Event('annur:reopen'));
   };
   const readAll = () => notificationsApi.readAll().then(refresh).catch(() => {});
   const label = data.unread ? `Notifikasi: ${data.unread} belum dibaca` : 'Notifikasi';

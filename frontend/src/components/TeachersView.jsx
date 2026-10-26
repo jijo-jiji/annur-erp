@@ -13,7 +13,9 @@ import { THRESHOLDS } from '../lib/thresholds';
 import DrilldownBar from './DrilldownBar';
 import ChangeRequestsPanel, { useChangeRequests } from './ChangeRequestsPanel';
 import FormModal from './FormModal';
-import { Avatar, Badge, Button, Card, CardHeader, Checkbox, EmptyState, filterClass, PageHeader, SearchInput, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon } from './ui';
+import { AttachmentList, PhotoBox } from './Attachments';
+import TeacherLinks from './TeacherLinks';
+import { Avatar, Badge, Button, Card, CardHeader, Checkbox, EmptyState, filterClass, Modal, PageHeader, SearchInput, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon } from './ui';
 
 const WEEKS_PER_MONTH = 4;
 const TEACHER_TYPES = [{ value: 'PERMANENT', label: 'Tetap (Permanent)' }, { value: 'REPLACEMENT', label: 'Sambilan (Part-time)' }];
@@ -52,6 +54,16 @@ const teacherInitial = (t, startRate = '') => ({
   joined_date: t?.raw.joined_date ?? '', teaching_since: t?.raw.teaching_since ?? '', remarks: t?.raw.remarks ?? '', is_active: t?.raw.is_active ?? true, note: '',
 });
 
+// Documents kept on a teacher (IC and permit copies); the photo is kept apart
+const TEACHER_DOC_TYPES = [{ id: 'IC', label: 'Salinan kad pengenalan' }, { id: 'PERMIT', label: 'Permit mengajar' }, { id: 'OTHER', label: 'Lain-lain' }];
+// An applicant's form (teacher link, Phase F) has no code or rate yet: Management gives them when approving
+const applicantFields = [
+  { name: 'teacher_code', label: 'Kod guru', required: true, hint: 'Singkatan nama, cth. NAK. Digunakan dalam kod kelas dan tidak boleh diubah.' },
+  { name: 'teacher_type', label: 'Kategori guru', type: 'select', required: true, options: TEACHER_TYPES },
+  { name: 'rate_per_session', label: 'Kadar permulaan (RM / sesi)', type: 'number', min: '0', step: '0.01', required: true },
+  { name: 'joined_date', label: 'Tarikh sertai pusat', type: 'date' },
+];
+
 const TEACHER_REASON = { name: 'note', label: 'Sebab permohonan', type: 'textarea', required: true, hint: 'Pengurusan akan melihat sebab ini semasa membuat keputusan.' };
 const SEVERITY = { LOW: { label: 'Rendah', tone: 'blue' }, MEDIUM: { label: 'Sederhana', tone: 'amber' }, HIGH: { label: 'Tinggi', tone: 'red' } };
 const COMPLAINT_STATUS = { OPEN: 'Baru', IN_PROGRESS: 'Dalam tindakan', RESOLVED: 'Selesai' };
@@ -89,12 +101,16 @@ export default function TeachersView({ role }) {
   const canManage = can(role, 'teachers.manage');
   const direct = role === 'MANAGEMENT';
   const { requests: teacherRequests, load: loadTeacherRequests } = useChangeRequests('TEACHER');
+  // Forms sent through teacher links arrive at any time: the list is fetched again whenever the tab is opened
+  useEffect(() => { if (tab === 'requests') loadTeacherRequests(); }, [tab, loadTeacherRequests]);
   const [startRates, setStartRates] = useState({}); // starting rate per teacher type, from Settings
   useEffect(() => {
     if (canManage) dashboardApi.getTeacherRates().then((rows) => setStartRates(Object.fromEntries(rows.map((r) => [r.teacher_type, Number(r.base_rate_per_session)])))).catch(() => {});
   }, [canManage]);
   const rateHint = startRates.PERMANENT !== undefined ? `Kadar permulaan: tetap ${rm(startRates.PERMANENT)}, sambilan ${rm(startRates.REPLACEMENT ?? 0)}.` : '';
   const [teacherDialog, setTeacherDialog] = useState(null); // { type: 'add' } | { type: 'edit' | 'active', teacher }
+  const [linkFor, setLinkFor] = useState(null); // a teacher whose private link Management is making
+  const [docsFor, setDocsFor] = useState(null); // a teacher whose photo and documents are open
   const waitingFor = new Set(teacherRequests.filter((r) => r.status === 'PENDING' && r.action === 'UPDATE').map((r) => r.target_id));
   const subjectOptions = subjects.filter((s) => s.active).map((s) => ({ value: s.pk, label: s.name }));
   const saveTeacher = async (action, pk, values, note) => {
@@ -184,6 +200,7 @@ export default function TeachersView({ role }) {
           { value: 'directory', label: 'Direktori', count: active.length },
           { value: 'assigned', label: 'Kelas ditugaskan' },
           ...(canManage ? [{ value: 'requests', label: 'Permohonan', count: teacherRequests.filter((r) => r.status === 'PENDING').length }] : []),
+          ...(direct ? [{ value: 'links', label: 'Pautan guru' }] : []),
           ...(showPay ? [
             { value: 'complaints', label: 'Aduan & tindakan', count: complaints.filter((c) => c.status !== 'RESOLVED').length },
             { value: 'increments', label: 'Kenaikan kadar', count: increments.filter((i) => i.status === 'PENDING').length },
@@ -281,6 +298,8 @@ export default function TeachersView({ role }) {
                           <Td className="whitespace-nowrap text-right">
                             {waitingFor.has(t.pk) ? <Badge tone="amber">Menunggu kelulusan</Badge> : (
                               <div className="flex justify-end gap-1.5">
+                                <Button size="sm" variant="ghost" onClick={() => setDocsFor(t)}>Dokumen</Button>
+                                {direct && t.active && <Button size="sm" variant="ghost" onClick={() => { setLinkFor(t); setView('links'); }}>Pautan</Button>}
                                 <Button size="sm" variant="ghost" onClick={() => setTeacherDialog({ type: 'edit', teacher: t })}>Ubah</Button>
                                 <Button size="sm" variant="ghost" onClick={() => setTeacherDialog({ type: 'active', teacher: t })}>{t.active ? 'Nyahaktif' : 'Aktifkan'}</Button>
                               </div>
@@ -318,7 +337,31 @@ export default function TeachersView({ role }) {
           onApplied={refreshAllData}
           editFields={(r) => teacherFields(r.action === 'CREATE', subjectOptions, rateHint)}
           editInitial={(r) => ({ ...teacherInitial(teachers.find((t) => t.pk === r.target_id)), ...r.payload })}
+          approveFields={(r) => (r.action === 'CREATE' && !r.payload.teacher_code ? applicantFields : null)}
+          approveInitial={(r) => ({
+            teacher_code: initials(r.payload.full_name || '').replace(/[^A-Z]/g, ''), teacher_type: 'REPLACEMENT',
+            rate_per_session: startRates.REPLACEMENT ?? '', joined_date: todayISO(),
+          })}
+          extra={(r) => (r.status === 'PENDING' && r.payload.documents?.length
+            ? <div className="pt-2"><AttachmentList kind="TEACHER_FORM" objectId={r.id} title="Dokumen dihantar" canUpload={false} /></div>
+            : null)}
         />
+      )}
+
+      {view === 'links' && direct && (
+        <TeacherLinks teachers={teachers} making={linkFor} onCloseMaking={() => setLinkFor(null)} onMade={() => setLinkFor(null)} />
+      )}
+
+      {docsFor && (
+        <Modal open onClose={() => setDocsFor(null)} title={`Dokumen Cikgu ${docsFor.name}`} description="Gambar, salinan kad pengenalan dan permit mengajar. Dokumen hanya dilihat oleh Supervisor dan Pengurusan.">
+          <div className="space-y-5">
+            <div className="flex items-center gap-4">
+              <PhotoBox kind="TEACHER_PHOTO" objectId={docsFor.pk} name={docsFor.name} canUpload={canManage} />
+              <p className="text-sm text-gray-600">Gambar guru. Guru juga boleh menghantar gambar melalui pautan peribadi.</p>
+            </div>
+            <AttachmentList kind="TEACHER_DOC" objectId={docsFor.pk} title="Dokumen" docTypes={TEACHER_DOC_TYPES} canUpload={canManage} canDelete={canManage} />
+          </div>
+        </Modal>
       )}
 
       {teacherDialog?.type === 'add' && (

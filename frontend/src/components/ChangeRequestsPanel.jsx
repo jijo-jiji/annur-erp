@@ -19,11 +19,16 @@ export function useChangeRequests(kind) {
 // Requests to change setup data: Admin's wait here for Supervisor / Management; the person who asked
 // can revise or withdraw until it is decided, and sees the decision (with the comment) afterwards.
 // `requests` and `reload` come from the screen that owns the list; `onApplied` refreshes the data changed.
-export default function ChangeRequestsPanel({ requests, reload, onApplied, editFields, editInitial, description, title = 'Permohonan perubahan' }) {
+// `approveFields(r)` (optional) returns the fields the person deciding fills in before approving (a new teacher's code
+// and rate), with `approveInitial(r)`; `extra(r)` (optional) shows more under a request (the files sent with it).
+export default function ChangeRequestsPanel({
+  requests, reload, onApplied, editFields, editInitial, approveFields, approveInitial, extra, description, title = 'Permohonan perubahan',
+}) {
   const notify = useToast();
   const [tab, setTab] = useState('PENDING');
   const [rejecting, setRejecting] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [approving, setApproving] = useState(null);
 
   const pending = requests.filter((r) => r.status === 'PENDING');
   const decided = requests.filter((r) => r.status !== 'PENDING');
@@ -82,6 +87,7 @@ export default function ChangeRequestsPanel({ requests, reload, onApplied, editF
                   ))}
                 </ul>
                 {r.note && <p className="text-gray-600">Sebab: {r.note}</p>}
+                {extra?.(r)}
                 <p className="text-xs text-gray-500">
                   Oleh {r.requested_by_name} · {date(String(r.requested_at).slice(0, 10))}
                   {r.status === 'APPROVED' && r.direct && ' · berkuat kuasa terus'}
@@ -95,7 +101,9 @@ export default function ChangeRequestsPanel({ requests, reload, onApplied, editF
                 {r.can_decide && (
                   <>
                     <Button size="sm" variant="danger" onClick={() => setRejecting(r)}>Tolak</Button>
-                    <Button size="sm" variant="primary" onClick={() => run(() => changeRequestApi.approve(r.id), 'Permohonan diluluskan.').catch(() => {})}>Luluskan</Button>
+                    <Button size="sm" variant="primary" onClick={() => (approveFields?.(r)?.length
+                      ? setApproving(r)
+                      : run(() => changeRequestApi.approve(r.id), 'Permohonan diluluskan.').catch(() => {}))}>Luluskan</Button>
                   </>
                 )}
                 {r.status === 'PENDING' && r.mine && (
@@ -120,6 +128,17 @@ export default function ChangeRequestsPanel({ requests, reload, onApplied, editF
           fields={[{ name: 'comment', label: 'Sebab penolakan', type: 'textarea', required: true }]}
           onSubmit={(v) => run(() => changeRequestApi.reject(rejecting.id, v.comment.trim()), 'Permohonan ditolak.')}
           onClose={() => setRejecting(null)}
+        />
+      )}
+      {approving && (
+        <FormModal
+          title="Luluskan permohonan"
+          description={`${approving.action_label} ${approving.kind_label.toLowerCase()}: ${approving.target_label}`}
+          submitLabel="Luluskan"
+          fields={[...approveFields(approving), { name: 'comment', label: 'Ulasan (pilihan)', type: 'textarea' }]}
+          initial={{ ...(approveInitial?.(approving) ?? {}), comment: '' }}
+          onSubmit={({ comment, ...changes }) => run(() => changeRequestApi.approve(approving.id, comment.trim(), changes), 'Permohonan diluluskan.')}
+          onClose={() => setApproving(null)}
         />
       )}
       {editing && (

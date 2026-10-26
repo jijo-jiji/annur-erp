@@ -78,7 +78,7 @@ class ChangeRequestViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
-        return Response(self.get_serializer(service.approve(self.get_object(), request.user, request.data.get('comment'))).data)
+        return Response(self.get_serializer(service.approve(self.get_object(), request.user, request.data.get('comment'), request.data.get('changes'))).data)
 
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):

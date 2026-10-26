@@ -26,6 +26,7 @@ import ReportsView from './components/ReportsView';
 import ManagementConfigView from './components/ManagementConfigView';
 import ParentQRView, { ParentRegistrationForm } from './components/ParentQRView';
 import PublicResultsForm from './components/PublicResultsForm';
+import PublicTeacherForm from './components/PublicTeacherForm';
 import LeadFunnelView from './components/LeadFunnelView';
 import HandoutRepositoryView from './components/HandoutRepositoryView';
 import TeacherAttendanceView from './components/TeacherAttendanceView';
@@ -79,6 +80,13 @@ function Shell() {
     if (user && !user.must_change_password) loadThresholds();
   }, [user?.username]); // eslint-disable-line react-hooks/exhaustive-deps
   const [route, setRoute] = useState(readRoute);
+  // A link to the page already open (a notification to another tab of it) opens the page afresh, so it reads its address
+  const [reopened, setReopened] = useState(0);
+  useEffect(() => {
+    const reopen = () => setReopened((n) => n + 1);
+    window.addEventListener('annur:reopen', reopen);
+    return () => window.removeEventListener('annur:reopen', reopen);
+  }, []);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -105,11 +113,13 @@ function Shell() {
     return () => document.removeEventListener('keydown', onKey);
   }, [role]);
 
-  // Public pages: parents arrive from a QR code or a link, no login needed
-  if (route.base === 'daftar' || route.base === 'keputusan') {
+  // Public pages: parents arrive from a QR code or a link, teachers from their private link; no login needed
+  if (route.base === 'daftar' || route.base === 'keputusan' || route.base === 'guru') {
     return (
       <div className="min-h-dvh bg-gray-50 px-4 py-6 sm:py-10">
-        {route.base === 'daftar' ? <ParentRegistrationForm /> : <PublicResultsForm />}
+        {route.base === 'daftar' && <ParentRegistrationForm />}
+        {route.base === 'keputusan' && <PublicResultsForm />}
+        {route.base === 'guru' && <PublicTeacherForm token={route.param || ''} />}
       </div>
     );
   }
@@ -156,7 +166,7 @@ function Shell() {
 
       <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <View
-          key={`${current}/${route.param ?? ''}`}
+          key={`${current}/${route.param ?? ''}/${reopened}`}
           role={role}
           param={route.param}
         />

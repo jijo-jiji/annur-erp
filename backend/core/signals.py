@@ -10,6 +10,8 @@ OWNED_KINDS = {
     ('expenses', 'PaymentVoucher'): ('VOUCHER', 'VOUCHER_SIGNATURE'),
     ('academic', 'LessonHandout'): ('HANDOUT',),
     ('billing', 'PaymentReceipt'): ('PAYMENT_PROOF',),
+    ('teachers', 'Teacher'): ('TEACHER_PHOTO', 'TEACHER_DOC'),
+    ('core', 'ChangeRequest'): ('TEACHER_FORM',),
 }
 
 

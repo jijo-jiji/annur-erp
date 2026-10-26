@@ -676,3 +676,134 @@ class PhaseENotificationsAndWeek5Tests(FeedbackBase):
         invoice.save()
         self.assertEqual(self.client.get('/api/v1/billing/follow-ups/').data[0]['state'], 'PAID')
         self.assertEqual(self.client.post(url, {'outcome': 'WILL_PAY', 'channel': 'CALL'}, format='json').status_code, 400)
+
+
+class PhaseFTeacherLinkTests(FeedbackBase):
+    def setUp(self):
+        super().setUp()
+        from django.core.cache import cache
+        from teachers.models import Teacher
+        cache.clear()  # the public pages' rate limits
+        self.teacher = Teacher.objects.create(teacher_code='NAK', full_name='Nik Ahmad', phone_number='60123456789', rate_per_session=60)
+
+    def png(self, name='x.png'):
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+        buf = BytesIO()
+        Image.new('RGB', (4, 4)).save(buf, 'PNG')
+        return SimpleUploadedFile(name, buf.getvalue(), content_type='image/png')
+
+    def link(self, kind='TEACHER', **extra):
+        self.as_role(MANAGEMENT)
+        res = self.client.post('/api/v1/teachers/links/', {'kind': kind, 'teacher': self.teacher.id, **extra}, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        return res.data['token']
+
+    def send(self, token, **fields):
+        self.client.force_authenticate(None)
+        return self.client.post(f'/api/v1/public/teacher-link/{token}/', fields, format='multipart')
+
+    def test_only_management_makes_links_and_the_teacher_s_form_waits_for_approval(self):
+        from core.models import Attachment, ChangeRequest, Notification
+        self.as_role(SUPERVISOR)
+        self.assertEqual(self.client.post('/api/v1/teachers/links/', {'kind': 'TEACHER', 'teacher': self.teacher.id}, format='json').status_code, 403)
+        token = self.link()
+        self.client.force_authenticate(None)
+        form = self.client.get(f'/api/v1/public/teacher-link/{token}/').data
+        self.assertEqual((form['kind'], form['teacher']['full_name'], form['teacher']['phone_number']), ('TEACHER', 'Nik Ahmad', '60123456789'))
+
+        sent = self.send(token, full_name='Nik Ahmad Khan', phone_number='013-347 4009', bank_name='Maybank', bank_account='5140 1234',
+                         subjects_qualified=[self.fizik.id], teaching_since='2015-01-01', photo=self.png('me.png'), ic=self.png('ic.png'))
+        self.assertEqual(sent.status_code, 201, sent.data)
+        req = ChangeRequest.objects.get(kind='TEACHER')
+        self.assertEqual((req.status, req.action, req.requested_by, req.requested_by_name), ('PENDING', 'UPDATE', None, 'Nik Ahmad Khan (pautan guru)'))
+        self.assertEqual(req.payload['phone_number'], '60133474009')  # the one stored phone form
+        self.assertEqual(req.payload['documents'], ['IC', 'PHOTO'])
+        self.assertTrue(Notification.objects.filter(user=self.users[MANAGEMENT], title__contains='NAK').exists())
+        self.teacher.refresh_from_db()
+        self.assertEqual(self.teacher.full_name, 'Nik Ahmad')  # nothing changes before approval
+        self.as_role(ADMIN)  # the IC copy is for approvers only
+        self.assertEqual(self.client.get('/api/v1/files/', {'kind': 'TEACHER_FORM', 'object_id': req.id}).status_code, 403)
+
+        # sending again before the decision replaces the waiting form and the file sent again
+        again = self.send(token, full_name='Nik Ahmad Khan', phone_number='013-347 4009', bank_name='CIMB', ic=self.png('ic2.png'))
+        self.assertTrue(again.data['replaced'])
+        self.assertEqual(ChangeRequest.objects.filter(kind='TEACHER').count(), 1)
+        names = sorted(Attachment.objects.filter(kind='TEACHER_FORM', object_id=req.id).values_list('original_name', flat=True))
+        self.assertEqual(names, ['ic2.png', 'me.png'])
+
+        self.as_role(MANAGEMENT)
+        listed = self.client.get('/api/v1/change-requests/', {'kind': 'TEACHER'}).data[0]
+        self.assertIn({'field': 'documents', 'label': 'Dokumen', 'before': None, 'after': 'Gambar, Salinan IC'}, listed['changes'])
+        self.client.post(f'/api/v1/change-requests/{req.id}/approve/', {}, format='json')
+        self.teacher.refresh_from_db()
+        self.assertEqual((self.teacher.full_name, self.teacher.bank_name, self.teacher.phone_number), ('Nik Ahmad Khan', 'CIMB', '60133474009'))
+        self.assertEqual(list(Attachment.objects.filter(kind='TEACHER_PHOTO', object_id=self.teacher.id).values_list('original_name', flat=True)), ['me.png'])
+        self.assertEqual(list(Attachment.objects.filter(kind='TEACHER_DOC', object_id=self.teacher.id).values_list('doc_type', flat=True)), ['IC'])
+
+    def test_a_link_stops_working_when_replaced_cancelled_expired_or_the_teacher_leaves(self):
+        from teachers.models import TeacherLink
+        old = self.link()
+        new = self.link()  # one working personal link per teacher
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(f'/api/v1/public/teacher-link/{old}/').status_code, 404)
+        self.assertEqual(self.client.get(f'/api/v1/public/teacher-link/{new}/').status_code, 200)
+        link = TeacherLink.objects.get(revoked_at=None)
+        self.as_role(MANAGEMENT)
+        self.client.post(f'/api/v1/teachers/links/{link.id}/revoke/', {}, format='json')
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(f'/api/v1/public/teacher-link/{new}/').status_code, 404)
+        third = self.link()
+        TeacherLink.objects.filter(revoked_at=None).update(expires_on=date(2020, 1, 1))
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(f'/api/v1/public/teacher-link/{third}/').status_code, 404)
+        fourth = self.link()
+        self.teacher.is_active = False
+        self.teacher.save()
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(f'/api/v1/public/teacher-link/{fourth}/').status_code, 404)
+        self.assertEqual(self.client.get('/api/v1/public/teacher-link/not-a-real-link/').status_code, 404)
+
+    def test_an_applicant_is_added_only_when_management_gives_the_code_and_rate(self):
+        from core.models import Attachment, ChangeRequest
+        from teachers.models import Teacher
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.post('/api/v1/teachers/links/', {'kind': 'APPLICANT'}, format='json').status_code, 400)  # needs a name
+        token = self.link('APPLICANT', label='Pengambilan 2027')
+        self.assertEqual(self.send(token, full_name='Aina').status_code, 400)  # a phone number is needed
+        sent = self.send(token, full_name='Aina Sofea', phone_number='0129998888', remarks='5 tahun di SMK Kota', permit=self.png('permit.png'))
+        self.assertEqual(sent.status_code, 201, sent.data)
+        req = ChangeRequest.objects.get(kind='TEACHER', action='CREATE')
+        self.assertEqual(req.target_label, 'Pemohon: Aina Sofea')
+        self.as_role(MANAGEMENT)
+        self.assertEqual(self.client.post(f'/api/v1/change-requests/{req.id}/approve/', {}, format='json').status_code, 400)  # no code yet
+        done = self.client.post(f'/api/v1/change-requests/{req.id}/approve/', {'changes': {
+            'teacher_code': 'AS', 'rate_per_session': '55', 'teacher_type': 'REPLACEMENT', 'full_name': 'Changed'}}, format='json')
+        self.assertEqual(done.data['status'], 'APPROVED', done.data)
+        new = Teacher.objects.get(teacher_code='AS')
+        self.assertEqual((new.full_name, new.rate_per_session, new.teacher_type, new.remarks), ('Aina Sofea', 55, 'REPLACEMENT', '5 tahun di SMK Kota'))
+        self.assertEqual(list(Attachment.objects.filter(kind='TEACHER_DOC', object_id=new.id).values_list('doc_type', flat=True)), ['PERMIT'])
+
+    def test_a_rejected_applicant_s_documents_are_not_kept_and_staff_requests_come_first(self):
+        from core.models import Attachment, ChangeRequest
+        token = self.link('APPLICANT', label='Pengambilan 2027')
+        self.send(token, full_name='Ali', phone_number='0129998888', ic=self.png('ic.png'))
+        req = ChangeRequest.objects.get(kind='TEACHER')
+        self.as_role(MANAGEMENT)
+        self.client.post(f'/api/v1/change-requests/{req.id}/reject/', {'comment': 'Tiada kekosongan'}, format='json')
+        self.assertFalse(Attachment.objects.filter(kind='TEACHER_FORM').exists())
+
+        personal = self.link()
+        self.as_role(SUPERVISOR)  # a change the centre itself asked for is decided first
+        self.client.post('/api/v1/change-requests/', {'kind': 'TEACHER', 'action': 'UPDATE', 'target_id': self.teacher.id,
+                                                      'payload': {'email': 'nik@example.com'}, 'note': 'E-mel baharu'}, format='json')
+        blocked = self.send(personal, full_name='Nik Ahmad', phone_number='0123456789', bank_name='RHB')
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('sedang dikemas kini', str(blocked.data))
+        self.assertEqual(self.send(personal).status_code, 400)  # nothing to send
+
+    def test_the_public_pages_are_rate_limited_per_visitor(self):
+        codes = [self.client.post('/api/v1/students/parent-self-register/', {}, format='json').status_code for _ in range(21)]
+        self.assertEqual(codes[-1], 429)  # 20 an hour
+        self.assertNotIn(429, codes[:20])
