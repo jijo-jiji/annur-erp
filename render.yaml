@@ -1,0 +1,41 @@
+# The API on Render (see deploy/CLOUD.md). Render > New > Blueprint reads this file and asks for the values marked
+# sync: false, which are secrets and are never kept in the repository.
+services:
+  - type: web
+    name: annur-api
+    runtime: python
+    region: singapore          # next to Neon (Singapore) and the centre
+    plan: free                 # "starter" ($7/month) never sleeps; the free plan sleeps after 15 minutes without a visitor
+    rootDir: backend
+    # Packages, then any database changes. If the changes fail the build fails and the running version stays live.
+    buildCommand: pip install -r requirements-production.txt && python manage.py migrate --noinput
+    # One worker with several threads: the login limit is counted in the worker's memory, so one worker keeps it exact
+    startCommand: gunicorn annur_erp.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.12
+      - key: ANNUR_ENV
+        value: production
+      # How many proxies sit between a visitor and the server, so the login limit counts each visitor separately.
+      # Check it after the first deploy (deploy/CLOUD.md, "Check the login limit").
+      - key: ANNUR_PROXIES
+        value: "2"
+      # python -c "import secrets; print(secrets.token_urlsafe(64))"
+      - key: DJANGO_SECRET_KEY
+        sync: false
+      # Neon: the connection string without pooling, ending in ?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+      # Cloudflare R2: the private bucket for uploaded files, and the API token that may read and write it
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      # Where the web app is (Vercel), e.g. https://annur.vercel.app. Several can be separated by commas.
+      - key: ANNUR_CORS_ORIGINS
+        sync: false

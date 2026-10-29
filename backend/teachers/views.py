@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from datetime import date, datetime
+from django.db import transaction
 from django.db.models import Q
 from django.utils.dateparse import parse_date, parse_time
 from core import notify, numbering, pdf
@@ -288,10 +289,11 @@ class StaffMemberViewSet(viewsets.ModelViewSet):
             'work_start': time.fromisoformat(limits['default_work_start']), 'work_end': time.fromisoformat(limits['default_work_end']),
             'work_days': limits['default_work_days'],
         }
-        staff = serializer.save(staff_id=numbering.next_number(StaffMember, 'staff_id', 'STF-', 3), **{k: v for k, v in defaults.items() if k not in given})
-        StaffHistory.objects.create(staff=staff, date=staff.join_date or date.today(),
-                                    change=f"Mula bekerja: {staff.role}, {staff.department} ({staff.get_employment_type_display()})",
-                                    recorded_by=display_name(self.request.user))
+        with transaction.atomic():  # the number is held for this person until they are saved
+            staff = serializer.save(staff_id=numbering.next_number(StaffMember, 'staff_id', 'STF-', 3), **{k: v for k, v in defaults.items() if k not in given})
+            StaffHistory.objects.create(staff=staff, date=staff.join_date or date.today(),
+                                        change=f"Mula bekerja: {staff.role}, {staff.department} ({staff.get_employment_type_display()})",
+                                        recorded_by=display_name(self.request.user))
 
     def perform_update(self, serializer):
         staff = serializer.instance
@@ -492,7 +494,9 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
         days = len(staff_hr.working_days(staff, start, end))
         if days == 0:
             raise ValidationError({'detail': 'Tiada hari bekerja dalam tempoh ini.'})
-        notify.leave_waiting(serializer.save(leave_id=numbering.next_number(LeaveRequest, 'leave_id', f"LV-{start.year}-", 3), days_count=days))
+        with transaction.atomic():  # the number is held for this application until it is saved
+            leave = serializer.save(leave_id=numbering.next_number(LeaveRequest, 'leave_id', f"LV-{start.year}-", 3), days_count=days)
+        notify.leave_waiting(leave)
 
     def perform_destroy(self, instance):
         # Only a pending application can be withdrawn, by its owner or an approver

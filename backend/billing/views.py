@@ -3,6 +3,7 @@ from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from datetime import date, timedelta
+from django.db import transaction
 from django.db.models import F
 from core import numbering, pdf
 from core.permissions import APPROVER_ROLES, display_name
@@ -37,12 +38,13 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             raise ValidationError({'detail': 'Invois lain memerlukan keterangan dan jumlah.'})
         on = date.today()
         month = serializer.validated_data.get('billing_month') or on
-        serializer.save(
-            invoice_number=numbering.invoice_number(Invoice, on), invoice_type='OTHER',
-            billing_month=month.replace(day=1), registration_fee=0,
-            total_payable=amount, total_paid=0, balance_due=amount, status='UNPAID',
-            due_date=on + timedelta(days=7),
-        )
+        with transaction.atomic():  # the number is held for this invoice until it is saved
+            serializer.save(
+                invoice_number=numbering.invoice_number(Invoice, on), invoice_type='OTHER',
+                billing_month=month.replace(day=1), registration_fee=0,
+                total_payable=amount, total_paid=0, balance_due=amount, status='UNPAID',
+                due_date=on + timedelta(days=7),
+            )
 
     @action(detail=False, methods=['get'])
     def matching(self, request):

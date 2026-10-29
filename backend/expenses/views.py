@@ -1,4 +1,5 @@
 from datetime import date
+from django.db import transaction
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -40,12 +41,12 @@ class PaymentVoucherViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         amount = serializer.validated_data.get('amount', 0)
         d = serializer.validated_data.get('date') or date.today()
-        pv_num = numbering.voucher_number(PaymentVoucher, d)
         tier, initial_status = tier_and_initial_status(amount)
-        pv = serializer.save(
-            pv_number=pv_num, date=d, tier_level=tier, status=initial_status,
-            prepared_by=display_name(self.request.user), prepared_by_user=self.request.user,
-        )
+        with transaction.atomic():  # the number is held for this voucher until it is saved
+            pv = serializer.save(
+                pv_number=numbering.voucher_number(PaymentVoucher, d), date=d, tier_level=tier, status=initial_status,
+                prepared_by=display_name(self.request.user), prepared_by_user=self.request.user,
+            )
         notify.voucher_waiting(pv)
 
     def perform_update(self, serializer):

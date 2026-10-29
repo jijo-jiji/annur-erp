@@ -1,5 +1,7 @@
 from django.contrib.auth.models import Group, User
 from django.core.cache import cache
+import unittest
+from django.db import connection
 from django.test import TransactionTestCase
 from rest_framework.test import APITestCase
 from core.permissions import ADMIN, SUPERVISOR, MANAGEMENT, ALL_ROLES
@@ -1815,7 +1817,7 @@ class DeploymentCommandTests(RoleTestBase):
         manage = Path(__file__).resolve().parent.parent / 'manage.py'
 
         def start(**env):
-            base = {k: v for k, v in os.environ.items() if not k.startswith(('ANNUR_', 'DJANGO_'))}
+            base = {k: v for k, v in os.environ.items() if not k.startswith(('ANNUR_', 'DJANGO_', 'DATABASE_', 'R2_', 'RENDER_'))}
             return subprocess.run([sys.executable, str(manage), 'check'], env={**base, **env}, capture_output=True, text=True, cwd=manage.parent)
         no_secret = start(ANNUR_ENV='production', ANNUR_HOSTS='erp.example.com')
         self.assertNotEqual(no_secret.returncode, 0)
@@ -1839,6 +1841,7 @@ class BackupCommandTests(TransactionTestCase):
         call_command('backup_data', stdout=out, **options)
         return out.getvalue()
 
+    @unittest.skipUnless(connection.vendor == 'sqlite', 'the copy of the SQLite file; PostgreSQL is backed up as text (tests_cloud.JsonBackupTests)')
     def test_backup_holds_the_database_and_the_uploads_and_prunes_old_archives(self):
         import os
         import sqlite3

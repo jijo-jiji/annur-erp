@@ -82,6 +82,7 @@ npm run test:unit
 
 ### Pemasangan di pelayan sebenar
 Panduan lengkap (pelayan Linux, domain, HTTPS, sandaran harian, kemas kini) ada dalam [`deploy/DEPLOYMENT.md`](deploy/DEPLOYMENT.md).
+Cara kedua tanpa pelayan sendiri: Vercel (skrin), Render (sistem), Neon (pangkalan data) dan Cloudflare R2 (fail muat naik), dalam [`deploy/CLOUD.md`](deploy/CLOUD.md).
 Pelayan sebenar bermula **kosong**: `seed_data --reference-only` memuatkan subjek, pakej yuran, slot masa dan senarai induk sahaja;
 tiada pelajar, guru atau akaun demo. Log masuk Management pertama dibuat dengan `create_management`.
 

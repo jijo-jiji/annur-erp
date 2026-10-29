@@ -1,2 +1,6 @@
 -r requirements.txt
 gunicorn==25.3.0
+# Hosted setup (deploy/CLOUD.md): PostgreSQL on Neon, uploaded files on Cloudflare R2
+psycopg[binary]==3.3.6
+django-storages[s3]==1.14.6
+boto3==1.43.121

@@ -4,6 +4,9 @@ This sets the system up on one Linux server (Ubuntu 24.04 LTS) behind a domain n
 backups. It takes about an hour the first time. Nothing here needs the developer afterwards: updates are one
 command, and every business setting is changed by Management inside the app.
 
+This guide is for one server of your own. To run the system on hosted services instead (Vercel, Render, Neon and
+Cloudflare R2, with no server to look after) follow [CLOUD.md](CLOUD.md).
+
 ## What you need first
 
 | Item | Notes |

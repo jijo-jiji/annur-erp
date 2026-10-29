@@ -1,6 +1,8 @@
 // Centralized API client connecting to Django REST Framework backend on port 8180 (via Vite proxy /api)
 
-const BASE_URL = '/api/v1';
+// On one server the web app and the API share an address, so '/api/v1' is enough. When the web app is hosted apart
+// from the API (Vercel + Render), VITE_API_URL names the API (https://annur-api.onrender.com) when the app is built.
+const BASE_URL = `${(import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')}/api/v1`;
 const TOKEN_KEY = 'annur_auth_token';
 
 // Session token (DRF TokenAuthentication). Storage can be unavailable in private mode.

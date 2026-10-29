@@ -1,9 +1,23 @@
 """Sequential document numbers that restart per period (e.g. REC-2026-0001, PV26-0901), and student codes."""
 import re
+from django.db import connection
+
+
+def one_at_a_time(key):
+    """Make a second request that wants the next number wait for the first to save its own.
+
+    Reading the highest number and saving the next one are two steps. SQLite lets only one write transaction run at a
+    time, so nobody could slip in between. PostgreSQL does not, and two requests at the same moment would take the same
+    number (and the second would fail, as every number is unique). This holds a lock until the surrounding transaction
+    ends, so the caller must be inside `transaction.atomic()` and save the record there."""
+    if connection.vendor == 'postgresql':
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', [key])
 
 
 def next_number(model, field, prefix, width):
     """Next number after the highest existing `prefix + digits` value of `field`."""
+    one_at_a_time(f'{model._meta.db_table}.{field}')
     pattern = re.compile(rf'^{re.escape(prefix)}(\d+)$')
     highest = 0
     for value in model.objects.filter(**{f'{field}__startswith': prefix}).values_list(field, flat=True):
@@ -33,6 +47,7 @@ def student_code(prefix, year, serial):
 
 
 def student_id(model, on_date):
+    one_at_a_time(f'{model._meta.db_table}.student_id')
     serials = (student_serial(code) for code in model.objects.values_list('student_id', flat=True))
     return student_code(_prefix('prefix_student'), on_date.year, max((s for s in serials if s), default=0) + 1)
 

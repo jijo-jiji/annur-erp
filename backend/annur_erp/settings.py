@@ -16,6 +16,8 @@ from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
 
+from .cloud import database_from_url, r2_storage
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -46,6 +48,9 @@ if PRODUCTION:
         raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set to a long random value (50+ characters) in production.')
     DEBUG = False
     ALLOWED_HOSTS = _env_list('ANNUR_HOSTS')
+    if os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
+        # Render sets this to the service's own address (name.onrender.com), so it needs no entry in ANNUR_HOSTS
+        ALLOWED_HOSTS.append(os.environ['RENDER_EXTERNAL_HOSTNAME'])
     if not ALLOWED_HOSTS:
         raise ImproperlyConfigured('ANNUR_HOSTS must list the domain name(s) the system is served on, e.g. erp.example.com')
     CSRF_TRUSTED_ORIGINS = [f'https://{host}' for host in ALLOWED_HOSTS if not host.startswith('.')]
@@ -89,6 +94,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'core.health.HealthCheckMiddleware',  # first: the host's health check must not meet the host or HTTPS rules below
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -99,8 +105,14 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# Production serves the app and the API from one address, so no other origin needs access
-CORS_ALLOW_ALL_ORIGINS = not PRODUCTION
+# On one server the app and the API share an address, so no other origin needs access. When the web app is hosted
+# separately (Vercel), ANNUR_CORS_ORIGINS names its address, e.g. https://annur.vercel.app, and only that may call the API.
+# Sign-in is a token in the Authorization header, not a cookie, so no other site can use a visitor's login.
+if PRODUCTION:
+    CORS_ALLOWED_ORIGINS = [origin.rstrip('/') for origin in _env_list('ANNUR_CORS_ORIGINS')]
+    CORS_PREFLIGHT_MAX_AGE = 86400  # the browser asks once a day, not before every request
+else:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -124,9 +136,10 @@ REST_FRAMEWORK = {
 }
 if PRODUCTION:
     # JSON only (no browsable HTML forms on a public address), and the visitor's address is read from the
-    # one proxy in front so the login limit counts each visitor separately
+    # proxies in front (one on its own server: nginx) so the login limit counts each visitor separately. A hosting
+    # platform can put more than one in front: set ANNUR_PROXIES to how many (deploy/CLOUD.md says how to check it).
     REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'] = ['rest_framework.renderers.JSONRenderer']
-    REST_FRAMEWORK['NUM_PROXIES'] = 1
+    REST_FRAMEWORK['NUM_PROXIES'] = int(os.environ.get('ANNUR_PROXIES', '1'))
 
 ROOT_URLCONF = 'annur_erp.urls'
 
@@ -167,6 +180,9 @@ DATABASES = {
         },
     }
 }
+# On a hosted service (Render) there is no permanent disk, so the data lives in PostgreSQL (Neon) instead
+if os.environ.get('DATABASE_URL', '').strip():
+    DATABASES = {'default': database_from_url(os.environ['DATABASE_URL'].strip())}
 
 
 # Password validation
@@ -212,6 +228,19 @@ STATIC_URL = 'static/'
 MEDIA_ROOT = DATA_DIR / 'uploads'
 FILE_UPLOAD_PERMISSIONS = 0o640
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # non-file form data
+
+# On a hosted service the uploads go to a private Cloudflare R2 bucket instead of the uploads folder
+_r2 = r2_storage(os.environ)
+if _r2:
+    STORAGES = {
+        'default': _r2,
+        'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+    }
+elif PRODUCTION and os.environ.get('DATABASE_URL', '').strip():
+    # A hosted database means a hosted server, whose disk is wiped at every update: files saved there would vanish
+    # without a word. Better to refuse to start.
+    raise ImproperlyConfigured('DATABASE_URL is set, so the server has no permanent disk. Set R2_BUCKET, R2_ACCOUNT_ID, '
+                               'R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY so uploaded files are kept in Cloudflare R2.')
 
 
 # Email
