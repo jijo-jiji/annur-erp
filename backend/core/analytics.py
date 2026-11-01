@@ -89,13 +89,16 @@ def month_bounds(d):
     return start, next_start
 
 
-def class_row(c):
+def class_row(c, waiting=None):
+    """A class as the dashboard shows it. `waiting` is how many students are on its waiting list: a class that is over
+    its seats with people still waiting is the clearest sign that a new class could be opened."""
     return {
         'id': c.id,
         'class_code': c.class_code,
         'enrolled': c.enrolled_count,
         'max_seats': c.max_seats,
         'available_seats': c.available_seats,
+        'waiting': (waiting or {}).get(c.id, 0),
         'teacher': c.teacher.full_name if c.teacher else None,
         'day': c.slot.day,
         'time': c.slot.period_label,
@@ -133,9 +136,11 @@ def build_dashboard(role, today=None, user=None):
     # Classes: seats come from real enrolments
     classes = list(ClassTimetable.with_enrolment().select_related('slot', 'subject', 'teacher', 'classroom'))
     near_seats = limits['nearly_full_seats']
-    over = [class_row(c) for c in classes if capacity_state(c, near_seats) == 'over']
-    full = [class_row(c) for c in classes if capacity_state(c, near_seats) == 'full']
-    near_full = [class_row(c) for c in classes if capacity_state(c, near_seats) == 'near']
+    waiting = {r['timetable_class']: r['n'] for r in ClassWaitlist.objects.filter(status='WAITING').values('timetable_class').annotate(n=Count('id'))}
+    # A class over its seats is allowed on purpose (the counter can still add a student); the most crowded comes first
+    over = sorted((class_row(c, waiting) for c in classes if capacity_state(c, near_seats) == 'over'), key=lambda r: (r['available_seats'], r['class_code']))
+    full = [class_row(c, waiting) for c in classes if capacity_state(c, near_seats) == 'full']
+    near_full = [class_row(c, waiting) for c in classes if capacity_state(c, near_seats) == 'near']
 
     receipts = PaymentReceipt.objects.filter(status='VALID')  # a cancelled receipt's money went back on the invoice
     collected_today = receipts.filter(payment_date=today).aggregate(t=Sum('amount_paid'))['t']

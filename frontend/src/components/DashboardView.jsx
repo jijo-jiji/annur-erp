@@ -58,8 +58,14 @@ function buildNotices(data, role) {
     if (count) out.push({ key: `${tab}-${out.length}`, tone, title, href: href ?? `#/${routeOf(tab)}`, action, detail });
   };
 
-  add(classes.over.length, 'red', `${classes.over.length} kelas melebihi had kerusi`, 'timetable', 'Lihat jadual', classes.over.map((c) => c.class_code).join(', '),
-    classesHref({ capacity: 'over' }, { expect: classes.over.length }));
+  // A class over its seat limit is allowed on purpose (the counter can still add a student), so this is a prompt to see whether the
+  // class has become too crowded and a new one could be opened. Each of the most crowded says how far over it is and how many wait.
+  classes.over.slice(0, 3).forEach((c) => add(1, 'red', `${c.class_code}: ${c.enrolled} pelajar, ${c.max_seats} kerusi (+${-c.available_seats})`, 'timetable', 'Lihat kelas',
+    `Kelas sesak · pertimbang buka kelas baharu${c.waiting ? ` · ${c.waiting} pelajar menunggu` : ''}`, classesHref({ id: c.id }, { expect: 1 })));
+  if (classes.over.length > 3) {
+    add(1, 'red', `${classes.over.length} kelas melebihi had kerusi`, 'timetable', 'Lihat semua', `Selain di atas: ${classes.over.slice(3).map((c) => c.class_code).join(', ')}`,
+      classesHref({ capacity: 'over' }, { expect: classes.over.length }));
+  }
   if (management) {
     add(approvals.vouchers_pending_management, 'red', `${approvals.vouchers_pending_management} baucar melebihi ${ringgit(THRESHOLDS.voucher_tier2)} menunggu kelulusan anda`, 'expenses', 'Semak', undefined,
       vouchersHref({ status: 'PENDING_MANAGEMENT' }, { expect: approvals.vouchers_pending_management }));
@@ -79,7 +85,8 @@ function buildNotices(data, role) {
     invoicesHref({ status: 'OUTSTANDING' }, { expect: finance.outstanding, unit: 'balance' }));
   add(approvals.lead_followups_due, 'amber', `${approvals.lead_followups_due} prospek perlu susulan`, 'leads', 'Hubungi', 'Tarikh susulan hari ini atau lepas',
     leadsHref({ due: '1' }, { expect: approvals.lead_followups_due }));
-  add(classes.full.length, 'amber', `${classes.full.length} kelas penuh`, 'timetable', 'Lihat jadual', undefined, classesHref({ capacity: 'full' }, { expect: classes.full.length }));
+  add(classes.full.length, 'amber', `${classes.full.length} kelas penuh`, 'timetable', 'Lihat jadual',
+    classes.full.filter((c) => c.waiting).map((c) => `${c.class_code}: ${c.waiting} menunggu`).join(' · ') || undefined, classesHref({ capacity: 'full' }, { expect: classes.full.length }));
   // Change requests: what waits for this role, what the user asked, and decisions not yet read; each links to its page
   const requestNotices = (byKind, tone, text, action) => Object.entries(byKind || {}).forEach(([kind, n]) => {
     const page = REQUEST_PAGES[kind];
@@ -332,6 +339,7 @@ export default function DashboardView({ role }) {
                   </div>
                   <p className="mt-0.5 text-[13px] text-gray-500">
                     {DAY_LABEL[c.day] ?? c.day} {c.time} · <span className="tnum">{c.enrolled}/{c.max_seats}</span>{c.teacher ? ` · ${c.teacher}` : ''}
+                    {c.waiting > 0 && <span className="font-medium text-amber-700"> · {c.waiting} menunggu</span>}
                   </p>
                 </a>
               </li>

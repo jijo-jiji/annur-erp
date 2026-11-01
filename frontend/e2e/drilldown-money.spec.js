@@ -145,15 +145,14 @@ test.describe('Money, vouchers and classes open the rows they add up to', () => 
     expect(await rowsOnScreen(page)).toBe(count);
   });
 
-  test('class seats: the warning and a class card open the classes they are about', async ({ page }) => {
+  test('class seats: a crowded class and a class card open the class they are about', async ({ page }) => {
     await signInAs(page, 'SUPERVISOR');
     await page.goto('/#/dashboard');
-    const over = page.getByRole('link', { name: /kelas melebihi had kerusi/ });
-    const n = Number((await over.textContent()).match(/(\d+) kelas melebihi/)[1]);
-    await over.click();
+    const crowded = page.getByRole('link', { name: /: \d+ pelajar, \d+ kerusi \(\+\d+\)/ }).first(); // see crowded.spec.js for what the row says
+    await crowded.click();
     await expect(page).toHaveURL(/#\/timetable\?/);
-    await expect(bar(page)).toContainText('Melebihi had kerusi');
-    await expect(bar(page)).toContainText(`${n} kelas`);
+    await expect(bar(page)).toContainText('Satu kelas');
+    await expect(bar(page)).toContainText('1 kelas');
     await agrees(page);
 
     await page.addInitScript(() => localStorage.setItem('annur-dashboard-view', 'detailed'));
