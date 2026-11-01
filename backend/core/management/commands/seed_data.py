@@ -23,6 +23,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--reference-only', action='store_true', help='Settings, subjects, fee packages, time slots and master lists only')
         parser.add_argument('--force', action='store_true', help='Reference load on a database that is already set up (replaces fee packages)')
+        parser.add_argument('--no-logins', action='store_true', help='Do not create the default logins (admin1, admin2, supervisor, management); '
+                                                                      'office staff are linked to the logins that already exist')
 
     def handle(self, *args, **options):
         if settings.PRODUCTION and not options['reference_only']:
@@ -794,7 +796,8 @@ class Command(BaseCommand):
                 }
             )
 
-        call_command('seed_users', stdout=self.stdout)
+        if not options['no_logins']:
+            call_command('seed_users', stdout=self.stdout)
 
         # Link the office staff records to their login accounts so they clock in and apply for leave as themselves
         from django.contrib.auth.models import User

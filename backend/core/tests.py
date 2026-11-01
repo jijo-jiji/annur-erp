@@ -1787,6 +1787,14 @@ class DeploymentCommandTests(RoleTestBase):
                 self.run_command('seed_users')
         self.assertFalse(User.objects.filter(username='admin1').exists())
 
+    def test_demo_data_can_be_loaded_without_the_default_logins(self):
+        from students.models import Student
+        users_before = set(User.objects.values_list('username', flat=True))
+        self.run_command('seed_data', no_logins=True)
+        self.assertTrue(Student.objects.exists() and Teacher.objects.exists())
+        self.assertEqual(set(User.objects.values_list('username', flat=True)), users_before)
+        self.assertFalse(User.objects.filter(username='admin1').exists())
+
     def test_reference_load_adds_settings_but_no_people_or_money_and_will_not_run_twice(self):
         from django.core.management.base import CommandError
         from django.test import override_settings
