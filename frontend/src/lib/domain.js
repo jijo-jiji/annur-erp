@@ -179,6 +179,12 @@ export function grade(mark) {
   return GRADES.find(([min]) => mark >= min)[1];
 }
 
+// A student's school is kept as its name. On the registration screens it reads as the school's code from the school
+// list; a school typed in by hand, which has no code, reads as typed.
+export function schoolCodeOf(schools, name) {
+  return schools.find((s) => s.label === name)?.value ?? name ?? '';
+}
+
 // The category of a school from the school list (master data), or guessed from its name (SK, SMK, SMKA...)
 export function schoolCategory(option) {
   if (!option) return '';

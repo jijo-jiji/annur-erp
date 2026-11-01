@@ -1,3 +1,4 @@
+from datetime import date
 from rest_framework import serializers
 from .models import Student, Lead, LeadActivity, StudentEvent, ClassWaitlist, StudentFeedback
 from academic.serializers import ClassTimetableSerializer
@@ -27,6 +28,22 @@ class StudentSerializer(PhoneFieldsMixin, serializers.ModelSerializer):
 
     def validate_form_level(self, value):
         return grades.validate(value)
+
+    @staticmethod
+    def _plausible_birth_date(value):
+        if value is not None:
+            today = date.today()
+            if value > today:
+                raise serializers.ValidationError('Tarikh lahir tidak boleh pada masa hadapan.')
+            if value.year < today.year - 110:
+                raise serializers.ValidationError('Tarikh lahir tidak munasabah.')
+        return value
+
+    def validate_parent1_dob(self, value):
+        return self._plausible_birth_date(value)
+
+    def validate_parent2_dob(self, value):
+        return self._plausible_birth_date(value)
 
     def get_registration_gaps(self, obj):
         from .services import registration_gaps

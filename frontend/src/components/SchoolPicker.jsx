@@ -5,7 +5,8 @@ const OTHER = '__other__';
 
 // A school is chosen from the centre's list (Data induk), with "Lain-lain" to type one that is not listed.
 // The value is the school's name, so older records and the reports keep reading the same way.
-export default function SchoolPicker({ value, onChange, schools, label = 'Sekolah', required = false }) {
+// With `codes`, the list reads as each school's code (the registration screens); otherwise as its name.
+export default function SchoolPicker({ value, onChange, schools, label = 'Sekolah', required = false, codes = false }) {
   const listed = schools.some((s) => s.label === value);
   const [typing, setTyping] = useState(false);
   const showText = typing || (Boolean(value) && !listed);
@@ -21,7 +22,7 @@ export default function SchoolPicker({ value, onChange, schools, label = 'Sekola
         }}
       >
         <option value="">{required ? 'Pilih sekolah' : 'Belum diketahui'}</option>
-        {schools.map((s) => <option key={s.value} value={s.label}>{s.label}</option>)}
+        {schools.map((s) => <option key={s.value} value={s.label}>{codes ? s.value : s.label}</option>)}
         <option value={OTHER}>Lain-lain (taip nama)</option>
       </Select>
       {showText && (

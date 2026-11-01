@@ -216,7 +216,6 @@ test.describe('Registering a prospect through the full form', () => {
     const subjects = page.locator('#pilihan-kelas .divide-y > div');
     await expect(subjects.first()).toBeVisible();
     for (let i = 0; i < 4; i += 1) await subjects.nth(i).locator('button[aria-pressed]').first().click();
-    await page.getByLabel(/^Syarat pembayaran dan peraturan/).check();
     await page.getByRole('button', { name: 'Daftar pelajar' }).click();
     await expect(page.getByRole('heading', { name: lead.name })).toBeVisible();
 

@@ -72,6 +72,40 @@ class RegistrationTests(Phase2Base):
             self.assertEqual(res.status_code, 201, res.data)
             self.assertEqual(res.data['phone_number'], '')
 
+    def test_the_mother_is_guardian_1_and_the_main_contact_unless_the_counter_says_otherwise(self):
+        data = self.register()
+        self.assertEqual((data['parent1_relation'], data['parent2_relation'], data['preferred_contact']), ('Ibu', 'Bapa', 'PARENT_1'))
+        self.as_role(ADMIN)
+        res = self.client.post('/api/v1/students/students/', {
+            'full_name': 'Si Anak', 'ic_number': '150101-03-2222', 'form_level': 'F5', 'parent1_name': 'Pn Hajar', 'parent1_phone': '012-3456789',
+            'parent1_relation': 'Penjaga', 'class_ids': [self.kim.id]}, format='json')
+        self.assertEqual((res.data['parent1_relation'], res.data['parent2_relation']), ('Penjaga', 'Bapa'))
+
+    def test_a_parent_date_of_birth_is_kept_and_no_age_is_stored(self):
+        self.as_role(ADMIN)
+        payload = {'full_name': 'Si Anak', 'ic_number': '150101-03-3333', 'form_level': 'F5', 'parent1_name': 'Pn Hajar', 'parent1_phone': '012-3456789',
+                   'parent1_dob': '1984-03-12', 'parent2_name': 'Tn Ali', 'parent2_phone': '013-3474009', 'parent2_dob': None, 'class_ids': [self.kim.id]}
+        res = self.client.post('/api/v1/students/students/', payload, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual((res.data['parent1_dob'], res.data['parent2_dob'], res.data['parent1_age']), ('1984-03-12', None, ''))
+        # the counter completes it later from the edit window; a cleared date goes back to none
+        res = self.client.patch(f"/api/v1/students/students/{res.data['id']}/", {'parent2_dob': '1982-07-30', 'parent1_dob': None}, format='json')
+        self.assertEqual((res.data['parent1_dob'], res.data['parent2_dob']), (None, '1982-07-30'))
+
+    def test_a_date_of_birth_in_the_future_or_long_ago_is_refused(self):
+        self.as_role(ADMIN)
+        base = {'full_name': 'Si Anak', 'ic_number': '150101-03-4444', 'form_level': 'F5', 'parent1_name': 'Pn Hajar', 'parent1_phone': '012-3456789',
+                'class_ids': [self.kim.id]}
+        for bad in ((date.today() + timedelta(days=1)).isoformat(), '1850-01-01', '12/03/1984'):
+            res = self.client.post('/api/v1/students/students/', {**base, 'parent1_dob': bad}, format='json')
+            self.assertEqual(res.status_code, 400, bad)
+            self.assertIn('parent1_dob', res.data)
+        self.assertFalse(Student.objects.filter(ic_number='150101-03-4444').exists())
+
+    def test_old_records_keep_the_age_group_they_were_given(self):
+        data = self.register()  # the helper still sends the old age band
+        self.assertEqual((data['parent1_age'], data['parent1_dob']), ('AGE_36_45', None))
+
     def test_reject_needs_comment_and_frees_seats(self):
         data = self.register(class_ids=[self.fz.id])
         self.as_role(SUPERVISOR)

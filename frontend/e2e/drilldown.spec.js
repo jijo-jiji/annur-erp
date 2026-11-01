@@ -64,7 +64,7 @@ test.describe('Figures open the students they count', () => {
     await expect(bar(page)).toContainText('Tingkatan 5');
     await expect(bar(page)).toContainText(`${count} pelajar`);
     expect(await studentRows(page)).toBe(count);
-    for (const cell of await page.locator('table tbody tr').allTextContents()) expect(cell).toContain('Tingkatan 5');
+    for (const cell of await page.locator('table tbody tr').allTextContents()) expect(cell).toContain('F5'); // the list reads each tingkatan as its code
   });
 
   test('a bar of the monthly chart opens the students on the books on the last day of that month', async ({ page }) => {

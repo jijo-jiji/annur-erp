@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { ageText } from '../lib/age';
 import { schoolCategory } from '../lib/domain';
+import { todayISO } from '../lib/format';
 import { useStore } from '../store';
 import SchoolPicker from './SchoolPicker';
 import { Button, Input, Modal, Textarea } from './ui';
@@ -14,8 +16,8 @@ export default function StudentDetailsModal({ student, onClose, onSaved }) {
   const s = student;
   const [f, setF] = useState({
     full_name: s.name || '', ic_number: s.ic || '', school_name: s.school || '', phone_number: s.phone || '', email: s.email || '', address: s.address || '',
-    parent1_name: s.parent1?.name || '', parent1_phone: s.parent1?.phone || '', parent1_email: s.parent1?.email || '',
-    parent2_name: s.parent2?.name || '', parent2_phone: s.parent2?.phone || '',
+    parent1_name: s.parent1?.name || '', parent1_phone: s.parent1?.phone || '', parent1_email: s.parent1?.email || '', parent1_dob: s.parent1?.dob || '',
+    parent2_name: s.parent2?.name || '', parent2_phone: s.parent2?.phone || '', parent2_dob: s.parent2?.dob || '',
     walk_in_description: s.walkIn?.description || '',
   });
   const [busy, setBusy] = useState(false);
@@ -29,6 +31,8 @@ export default function StudentDetailsModal({ student, onClose, onSaved }) {
       const school = schools.find((x) => x.label === f.school_name);
       await store.updateStudent(s.id, {
         ...f,
+        parent1_dob: f.parent1_dob || null, // a cleared date is sent as no date
+        parent2_dob: f.parent2_dob || null,
         // the school's category and code follow the school chosen
         school_category: school ? schoolCategory(school) : s.schoolCategory || '',
         school_code: school?.meta?.kod || '',
@@ -58,8 +62,8 @@ export default function StudentDetailsModal({ student, onClose, onSaved }) {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input label="Nama penuh" required className="sm:col-span-2" value={f.full_name} onChange={(e) => set({ full_name: e.target.value })} />
           <Input label="No. kad pengenalan / sijil lahir" required value={f.ic_number} onChange={(e) => set({ ic_number: e.target.value })} placeholder="090101-03-1234" />
-          <SchoolPicker value={f.school_name} onChange={(school_name) => set({ school_name })} schools={schools} required />
-          <Input label="No. telefon pelajar" type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} placeholder="Jika ada" />
+          <SchoolPicker value={f.school_name} onChange={(school_name) => set({ school_name })} schools={schools} required codes />
+          <Input label="No. telefon pelajar" type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} hint="Jika ada" />
           <Input label="E-mel pelajar" type="email" value={f.email} onChange={(e) => set({ email: e.target.value })} placeholder="Jika ada" />
           <Textarea label="Alamat rumah" className="sm:col-span-2" rows={2} value={f.address} onChange={(e) => set({ address: e.target.value })} />
         </div>
@@ -69,6 +73,7 @@ export default function StudentDetailsModal({ student, onClose, onSaved }) {
             <Input label="Nama penjaga" required value={f.parent1_name} onChange={(e) => set({ parent1_name: e.target.value })} />
             <Input label="No. telefon penjaga (WhatsApp)" type="tel" required value={f.parent1_phone} onChange={(e) => set({ parent1_phone: e.target.value })} />
             <Input label="E-mel penjaga" type="email" value={f.parent1_email} onChange={(e) => set({ parent1_email: e.target.value })} />
+            <Input label="Tarikh lahir penjaga" type="date" value={f.parent1_dob} max={todayISO()} min="1900-01-01" onChange={(e) => set({ parent1_dob: e.target.value })} hint={ageText(f.parent1_dob) ? `Umur ${ageText(f.parent1_dob)}` : 'Pilihan'} />
           </div>
         </fieldset>
         <fieldset className="space-y-3 rounded-md border border-gray-200 p-4">
@@ -76,6 +81,7 @@ export default function StudentDetailsModal({ student, onClose, onSaved }) {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input label="Nama penjaga 2" value={f.parent2_name} onChange={(e) => set({ parent2_name: e.target.value })} />
             <Input label="No. telefon penjaga 2" type="tel" value={f.parent2_phone} onChange={(e) => set({ parent2_phone: e.target.value })} />
+            <Input label="Tarikh lahir penjaga 2" type="date" value={f.parent2_dob} max={todayISO()} min="1900-01-01" onChange={(e) => set({ parent2_dob: e.target.value })} hint={ageText(f.parent2_dob) ? `Umur ${ageText(f.parent2_dob)}` : 'Pilihan'} />
           </div>
         </fieldset>
         {walkIn && (

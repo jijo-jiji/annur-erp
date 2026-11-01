@@ -128,7 +128,7 @@ export default function ParentQRView() {
 
 const EMPTY = {
   full_name: '', ic_number: '', form_level: 'F5', school_name: '', phone_number: '',
-  parent1_name: '', parent1_phone: '', parent1_email: '', parent1_relation: 'Bapa',
+  parent1_name: '', parent1_phone: '', parent1_email: '', parent1_relation: 'Ibu',
   interested_subjects: [],
 };
 
@@ -244,7 +244,7 @@ export function ParentRegistrationForm() {
                     ))}
                   </Select>
                   <Input label="Sekolah" required value={f.school_name} onChange={(e) => set({ school_name: e.target.value })} />
-                  <Input label="No. telefon pelajar" type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} placeholder="Jika ada" />
+                  <Input label="No. telefon pelajar" type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} hint="Jika ada" />
                 </div>
               </Card>
             ),
@@ -256,8 +256,8 @@ export function ParentRegistrationForm() {
                 <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
                   <Input label="Nama ibu bapa / penjaga" required value={f.parent1_name} onChange={(e) => set({ parent1_name: e.target.value })} autoComplete="name" />
                   <Select label="Hubungan" value={f.parent1_relation} onChange={(e) => set({ parent1_relation: e.target.value })}>
-                    <option>Bapa</option>
                     <option>Ibu</option>
+                    <option>Bapa</option>
                     <option>Penjaga</option>
                   </Select>
                   <Input label="No. telefon (WhatsApp)" required type="tel" value={f.parent1_phone} onChange={(e) => set({ parent1_phone: e.target.value })} autoComplete="tel" />

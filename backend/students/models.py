@@ -61,17 +61,19 @@ class Student(models.Model):
     parent1_phone = models.CharField(max_length=30)
     parent1_email = models.EmailField(blank=True)
     parent1_occupation = models.CharField(max_length=100, blank=True)
-    parent1_age = models.CharField(max_length=30, blank=True)  # age band code from master data 7_parent_age
-    parent1_relation = models.CharField(max_length=30, default='Bapa')
+    parent1_age = models.CharField(max_length=30, blank=True)  # age band code from master data 7_parent_age; records made before date of birth was asked
+    parent1_dob = models.DateField(null=True, blank=True)  # the age shown is worked out from this, never stored
+    parent1_relation = models.CharField(max_length=30, default='Ibu')  # the mother is the main contact unless the counter says otherwise
     
     parent2_name = models.CharField(max_length=120, blank=True)
     parent2_phone = models.CharField(max_length=30, blank=True)
     parent2_email = models.EmailField(blank=True)
     parent2_occupation = models.CharField(max_length=100, blank=True)
     parent2_age = models.CharField(max_length=30, blank=True)
-    parent2_relation = models.CharField(max_length=30, default='Ibu')
+    parent2_dob = models.DateField(null=True, blank=True)
+    parent2_relation = models.CharField(max_length=30, default='Bapa')
     
-    preferred_contact = models.CharField(max_length=20, choices=[('PARENT_1', 'Bapa/Penjaga 1'), ('PARENT_2', 'Ibu/Penjaga 2')], default='PARENT_1')
+    preferred_contact = models.CharField(max_length=20, choices=[('PARENT_1', 'Penjaga 1'), ('PARENT_2', 'Penjaga 2')], default='PARENT_1')
     
     # SAPS MOE Consent & Parent Agreement Clauses
     saps_consent = models.BooleanField(default=True)

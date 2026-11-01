@@ -9,7 +9,7 @@ const toast = (page) => page.getByRole('status');
 // A new ID number each time, in the usual yymmdd-pb-xxxx shape
 const newIc = () => `0${Math.floor(1 + Math.random() * 8)}0${Math.floor(1 + Math.random() * 8)}1${Math.floor(Math.random() * 9)}-03-${String(Math.floor(1000 + Math.random() * 8999))}`;
 
-async function registerAtTheCounter(page, { name, ic, form = 'F4' }) {
+async function registerAtTheCounter(page, { name, ic, form = 'F4', dob = '' }) {
   await page.goto('/#/students?new');
   await expect(page.getByRole('heading', { name: 'Pendaftaran pelajar baharu' })).toBeVisible();
   // The form starts over while the classes and the school list arrive, so wait for them before typing
@@ -21,6 +21,7 @@ async function registerAtTheCounter(page, { name, ic, form = 'F4' }) {
   await page.getByLabel(/^Sekolah/).selectOption({ index: 1 });
   await page.getByLabel(/^Nama( \*)?$/).first().fill('Encik Ujian Penjaga');
   await page.getByLabel(/^No\. telefon \(WhatsApp\)/).first().fill('012-3456789');
+  if (dob) await page.getByLabel('Tarikh lahir').first().fill(dob);
 
   // One class for each of the first four subjects offered for that form
   const subjects = page.locator('#pilihan-kelas .divide-y > div');
@@ -31,7 +32,6 @@ async function registerAtTheCounter(page, { name, ic, form = 'F4' }) {
   for (let i = 0; i < count; i += 1) {
     await subjects.nth(i).locator('button[aria-pressed]').first().click();
   }
-  await page.getByLabel(/^Syarat pembayaran dan peraturan/).check();
   await page.getByRole('button', { name: 'Daftar pelajar' }).click();
 }
 
@@ -97,6 +97,60 @@ test.describe.serial('Registration to payment', () => {
     const receipt = receipts.find((r) => r.invoice === invoice.id);
     expect(receipt.receipt_number).toMatch(/^REC-\d{4}-\d{4}$/);
     expect(Number(receipt.amount_paid)).toBe(due);
+  });
+});
+
+test.describe('The counter registration form', () => {
+  test('starts with the mother as the main contact, asks the date of birth, reads codes and has no declaration', async ({ page }) => {
+    await signInAs(page, 'ADMIN');
+    await page.goto('/#/students?new');
+    await expect(page.getByRole('heading', { name: 'Pendaftaran pelajar baharu' })).toBeVisible();
+    await expect(page.getByLabel(/^Sekolah/).locator('option', { hasText: 'SMK_TELIPOT' })).toHaveCount(1); // the school list has arrived
+
+    // guardian 1 is the mother and is the main contact; guardian 2 is the father
+    await expect(page.getByLabel('Hubungan', { exact: true }).first()).toHaveValue('Ibu');
+    await expect(page.getByLabel('Hubungan', { exact: true }).nth(1)).toHaveValue('Bapa');
+    await expect(page.getByLabel('Hubungan utama').first()).toBeChecked();
+
+    // the age is worked out from the date of birth, not chosen from a group
+    await expect(page.getByLabel('Umur', { exact: true })).toHaveCount(0);
+    await page.getByLabel('Tarikh lahir').first().fill('1984-03-12');
+    await expect(page.getByText(/^Umur \d+ tahun$/)).toBeVisible();
+
+    // the school and the tingkatan read as their codes
+    const schools = await page.getByLabel(/^Sekolah/).locator('option').allTextContents();
+    expect(schools).toContain('SMK_TELIPOT');
+    expect(schools).not.toContain('SMK Telipot');
+    const forms = await page.getByLabel(/^Tingkatan \/ darjah/).locator('option').allTextContents();
+    expect(forms).toEqual(expect.arrayContaining(['F5', 'F4']));
+    expect(forms).not.toContain('Tingkatan 5');
+
+    // nothing to tick at the bottom
+    await expect(page.getByRole('navigation', { name: 'Bahagian borang' }).getByRole('button')).toHaveText([/Pelajar/, /Penjaga/, /Kelas/]);
+    await expect(page.getByText('Perakuan')).toHaveCount(0);
+    await expect(page.getByLabel(/^Syarat pembayaran/)).toHaveCount(0);
+    await expect(page.getByLabel(/^Kebenaran semakan SAPS/)).toHaveCount(0);
+  });
+
+  test('the date of birth is kept, the profile shows the age and the edit window can change it', async ({ page, request }) => {
+    const student = { name: unique('Ujian E2E Lahir'), ic: newIc(), dob: '1984-03-12' };
+    const today = new Date();
+    const years = today.getFullYear() - 1984 - (today < new Date(today.getFullYear(), 2, 12) ? 1 : 0);
+    await signInAs(page, 'ADMIN');
+    await registerAtTheCounter(page, student);
+    await expect(page.getByRole('heading', { name: student.name })).toBeVisible();
+    await expect(page.getByText(`${years} tahun`, { exact: true })).toBeVisible();
+
+    const saved = () => api(request, 'ADMIN', 'GET', '/students/students/').then((all) => all.find((s) => s.full_name === student.name));
+    expect(await saved()).toMatchObject({ parent1_dob: '1984-03-12', parent1_age: '', parent1_relation: 'Ibu', preferred_contact: 'PARENT_1', saps_consent: false });
+
+    await page.getByRole('button', { name: 'Ubah maklumat' }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Ubah maklumat pelajar' });
+    await dialog.getByLabel('Tarikh lahir penjaga 2').fill('1982-07-30');
+    await expect(dialog.getByText(/^Umur \d+ tahun$/)).toHaveCount(2);
+    await dialog.getByRole('button', { name: 'Simpan' }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(await saved()).toMatchObject({ parent1_dob: '1984-03-12', parent2_dob: '1982-07-30' });
   });
 });
 

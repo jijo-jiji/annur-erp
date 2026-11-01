@@ -19,10 +19,12 @@ const FIELD_LABEL = {
   parent1_phone: 'No. telefon penjaga',
   parent1_email: 'E-mel penjaga',
   parent1_occupation: 'Pekerjaan penjaga',
+  parent1_dob: 'Tarikh lahir penjaga',
   parent2_name: 'Nama penjaga 2',
   parent2_phone: 'No. telefon penjaga 2',
   parent2_email: 'E-mel penjaga 2',
   parent2_occupation: 'Pekerjaan penjaga 2',
+  parent2_dob: 'Tarikh lahir penjaga 2',
   walk_in_description: 'Keterangan walk-in',
   class_ids: 'Kelas',
 };

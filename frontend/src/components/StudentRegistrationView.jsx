@@ -3,8 +3,9 @@ import { ArrowLeft, Check, Clock, Download, Search, UserPlus, Users } from 'luci
 import { useStore } from '../store';
 import { useApp } from '../context/AppContext';
 import { studentsApi } from '../api/client';
-import { groupSubjects, invoiceBalance, minSubjects, monthlyFee, preferredContact, schoolCategory, subjectsForForm } from '../lib/domain';
-import { date, DAY_LABEL, fmtPhone, FORMS, formLabel, formShort, initials, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO } from '../lib/format';
+import { groupSubjects, invoiceBalance, minSubjects, monthlyFee, preferredContact, schoolCategory, schoolCodeOf, subjectsForForm } from '../lib/domain';
+import { ageText } from '../lib/age';
+import { date, DAY_LABEL, fmtPhone, FORMS, formLabel, initials, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
@@ -16,7 +17,7 @@ import { FeedbackGallery } from './FeedbackViews';
 import PromotionPanel from './PromotionPanel';
 import SectionedForm from './FormSections';
 import {
-  Avatar, Badge, Button, Card, CardHeader, Checkbox, cx, EmptyState, Input, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs, Td, Textarea, Th,
+  Avatar, Badge, Button, Card, CardHeader, cx, EmptyState, Input, Modal, PageHeader, SearchInput, Segmented, Select, Table, Tabs, Td, Textarea, Th,
   useToast, WhatsAppIcon,
 } from './ui';
 import WhatsAppButton from './WhatsAppButton';
@@ -93,6 +94,8 @@ function StudentsHome({ role, canEdit }) {
 
 function StudentList({ drill }) {
   const { students, invoices, subjects } = useStore();
+  const { getMasterOptions } = useApp();
+  const schools = getMasterOptions('6_school');
   const [q, setQ] = useState('');
   const [form, setForm] = useState('ALL');
   const [status, setStatus] = useState('ACTIVE');
@@ -117,9 +120,10 @@ function StudentList({ drill }) {
         if (form !== 'ALL' && s.form !== form) return false;
       }
       if (!needle) return true;
-      return [s.name, s.id, s.previousId, s.ic, s.school, s.parent1.name].some((v) => v?.toLowerCase().includes(needle)) || [s.parent1.phone, s.parent2?.phone, s.phone].some((v) => phoneMatches(v, q));
+      // the school is found by its code or its name, though only the code is shown
+      return [s.name, s.id, s.previousId, s.ic, s.school, schoolCodeOf(schools, s.school), s.parent1.name].some((v) => v?.toLowerCase().includes(needle)) || [s.parent1.phone, s.parent2?.phone, s.phone].some((v) => phoneMatches(v, q));
     });
-  }, [students, q, form, status, drill, matched]);
+  }, [students, q, form, status, drill, matched, schools]);
 
   const count = (st) => students.filter((s) => s.status === st).length;
   const exportCsv = () => downloadCsv(
@@ -155,7 +159,7 @@ function StudentList({ drill }) {
           <option value="ALL">Semua tingkatan</option>
           {FORMS.map((f) => (
             <option key={f.id} value={f.id}>
-              {f.label}
+              {f.id}
             </option>
           ))}
         </select>}
@@ -216,12 +220,12 @@ function StudentList({ drill }) {
                     </div>
                   </Td>
                   <Td className="whitespace-nowrap">
-                    <p className="text-gray-900">{formLabel(s.form)}</p>
+                    <p className="text-gray-900">{s.form}</p>
                     <p className="text-[13px] text-gray-500">
                       {STREAM_LABEL[s.stream] ?? s.stream} · {s.classes.length} subjek
                     </p>
                   </Td>
-                  <Td className="hidden text-gray-700 xl:table-cell">{s.school}</Td>
+                  <Td className="hidden text-gray-700 xl:table-cell">{schoolCodeOf(schools, s.school)}</Td>
                   <Td className="hidden md:table-cell">
                     <p className="whitespace-nowrap text-gray-900">{contact.name}</p>
                     <p className="text-[13px] text-gray-500">{fmtPhone(contact.phone)}</p>
@@ -310,7 +314,7 @@ function Approvals({ role, pending }) {
                       </p>
                     )}
                   </Td>
-                  <Td className="whitespace-nowrap">{formLabel(s.form)}</Td>
+                  <Td className="whitespace-nowrap">{s.form}</Td>
                   <Td className="text-[13px] text-gray-700">
                     {s.classes.length === 0 ? <span className="text-amber-700">Belum ada kelas: tetapkan dalam profil</span>
                       : s.classes.map((id) => classes.find((c) => c.id === id)?.code).filter(Boolean).join(', ')}
@@ -583,7 +587,7 @@ export function ClassPicker({ form, value, onChange, waitlist = [], onWaitlistCh
   };
 
   if (available.length === 0) {
-    return <p className="py-4 text-sm text-gray-500">Tiada kelas dibuka untuk {formLabel(form)}. Tambah kelas dalam Jadual kelas.</p>;
+    return <p className="py-4 text-sm text-gray-500">Tiada kelas dibuka untuk {form}. Tambah kelas dalam Jadual kelas.</p>;
   }
 
   return (
@@ -657,7 +661,7 @@ export function ClassPicker({ form, value, onChange, waitlist = [], onWaitlistCh
 
 // ---- Registration form ------------------------------------------------------
 
-const EMPTY_PARENT = { name: '', phone: '', email: '', occupation: '', age: '' };
+const EMPTY_PARENT = { name: '', phone: '', email: '', occupation: '', dob: '' };
 const OTHER_SCHOOL = '__OTHER__';
 
 function RegistrationForm({ onCancel, onDone }) {
@@ -666,18 +670,16 @@ function RegistrationForm({ onCancel, onDone }) {
   const notify = useToast();
   const schools = getMasterOptions('6_school');
   const sources = getMasterOptions('3_lead_source');
-  const ageBands = getMasterOptions('7_parent_age');
   const [f, setF] = useState({
     name: '', ic: '', form: 'F5', stream: 'SAINS', type: 'MONTHLY', schoolKey: '', school: '', phone: '', email: '', address: '', source: '',
-    parent1: { ...EMPTY_PARENT, relation: 'Bapa' },
-    parent2: { ...EMPTY_PARENT, relation: 'Ibu' },
+    // the mother is the main contact unless the counter chooses otherwise
+    parent1: { ...EMPTY_PARENT, relation: 'Ibu' },
+    parent2: { ...EMPTY_PARENT, relation: 'Bapa' },
     preferred: 1,
     classes: [],
     waitlist: [],
     walkInDescription: '',
     walkInSubjects: [],
-    saps: true,
-    terms: false,
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -793,7 +795,7 @@ function RegistrationForm({ onCancel, onDone }) {
                   >
                     {FORMS.map((x) => (
                       <option key={x.id} value={x.id}>
-                        {x.label}
+                        {x.id}
                       </option>
                     ))}
                   </Select>
@@ -805,7 +807,7 @@ function RegistrationForm({ onCancel, onDone }) {
                   <Select label="Sekolah" required value={f.schoolKey} onChange={(e) => set({ schoolKey: e.target.value })}>
                     <option value="">Pilih sekolah</option>
                     {schools.map((s) => (
-                      <option key={s.value} value={s.value}>{s.label}</option>
+                      <option key={s.value} value={s.value}>{s.value}</option>
                     ))}
                     <option value={OTHER_SCHOOL}>Lain-lain (taip nama)</option>
                   </Select>
@@ -819,7 +821,7 @@ function RegistrationForm({ onCancel, onDone }) {
                       ))}
                     </Select>
                   )}
-                  <Input label="No. telefon pelajar" type="tel" value={f.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="Jika ada" />
+                  <Input label="No. telefon pelajar" type="tel" value={f.phone} onChange={(e) => set({ phone: e.target.value })} hint="Jika ada" />
                   <Input label="E-mel pelajar" type="email" value={f.email} onChange={(e) => set({ email: e.target.value })} placeholder="Jika ada" />
                   {f.schoolKey === OTHER_SCHOOL && (
                     <Select label="Sumber (bagaimana tahu tentang kami)" value={f.source} onChange={(e) => set({ source: e.target.value })}>
@@ -852,19 +854,17 @@ function RegistrationForm({ onCancel, onDone }) {
                           </label>
                         </div>
                         <Select label="Hubungan" value={p.relation} onChange={(e) => setParent(key, { relation: e.target.value })}>
-                          <option>Bapa</option>
                           <option>Ibu</option>
+                          <option>Bapa</option>
                           <option>Penjaga</option>
                         </Select>
                         <Input label="Nama" required={n === 1} value={p.name} onChange={(e) => setParent(key, { name: e.target.value })} />
                         <Input label="No. telefon (WhatsApp)" type="tel" required={n === 1} value={p.phone} onChange={(e) => setParent(key, { phone: e.target.value })} />
                         <Input label="E-mel" type="email" value={p.email} onChange={(e) => setParent(key, { email: e.target.value })} />
-                        <Select label="Umur" value={p.age} onChange={(e) => setParent(key, { age: e.target.value })}>
-                          <option value="">Tidak dinyatakan</option>
-                          {ageBands.map((a) => (
-                            <option key={a.value} value={a.value}>{a.label}</option>
-                          ))}
-                        </Select>
+                        <Input
+                          label="Tarikh lahir" type="date" value={p.dob} max={todayISO()} min="1900-01-01" onChange={(e) => setParent(key, { dob: e.target.value })}
+                          hint={ageText(p.dob) ? `Umur ${ageText(p.dob)}` : 'Pilihan'}
+                        />
                         <Input label="Pekerjaan" value={p.occupation} onChange={(e) => setParent(key, { occupation: e.target.value })} />
                       </fieldset>
                     );
@@ -925,28 +925,6 @@ function RegistrationForm({ onCancel, onDone }) {
                   </div>
                 </Card>
               )
-              ),
-            },
-            {
-              id: 'consent', title: 'Perakuan', content: (
-              <Card>
-                <CardHeader title="Perakuan" />
-                <div className="space-y-4 p-5">
-                  <Checkbox
-                    label="Kebenaran semakan SAPS"
-                    description="Membenarkan pihak tuisyen menyemak keputusan peperiksaan pelajar di sapsnkra.moe.gov.my untuk pemantauan prestasi."
-                    checked={f.saps}
-                    onChange={(e) => set({ saps: e.target.checked })}
-                  />
-                  <Checkbox
-                    required
-                    label="Syarat pembayaran dan peraturan"
-                    description={`Yuran dijelaskan sebelum ${settings.dueDay} haribulan setiap bulan; notis berhenti ${settings.noticeWeeks} minggu lebih awal; pelajar diberhentikan jika yuran tertunggak ${settings.unpaidMonthsLimit} bulan tanpa makluman.`}
-                    checked={f.terms}
-                    onChange={(e) => set({ terms: e.target.checked })}
-                  />
-                </div>
-              </Card>
               ),
             },
           ]}

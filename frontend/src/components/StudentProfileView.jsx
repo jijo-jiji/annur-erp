@@ -6,8 +6,9 @@ import { useApp } from '../context/AppContext';
 import { studentsApi } from '../api/client';
 import { can } from '../lib/permissions';
 import {
-  arrearsCases, attendanceSummary, classLabel, grade, invoiceBalance, invoiceStatus, preferredContact, siblingsOf,
+  arrearsCases, attendanceSummary, classLabel, grade, invoiceBalance, invoiceStatus, preferredContact, schoolCodeOf, siblingsOf,
 } from '../lib/domain';
+import { ageText } from '../lib/age';
 import { date, DAY_LABEL, formLabel, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink, fmtPhone } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
@@ -82,7 +83,9 @@ export default function StudentProfileView({ role, param }) {
   const teacherOf = (c) => teachers.find((t) => t.code === c.teacher)?.name;
   const dropReasons = getMasterOptions('14_drop_reason');
   const sourceLabel = getMasterOptions('3_lead_source').find((o) => o.value === s.source)?.label ?? (s.source === 'QR_CODE' ? 'Borang QR' : s.source);
-  const ageLabel = (code) => getMasterOptions('7_parent_age').find((o) => o.value === code)?.label ?? code;
+  const schools = getMasterOptions('6_school');
+  // The age comes from the date of birth; a record made before that was asked keeps the age group it was given
+  const ageLabel = (p) => (p.dob ? ageText(p.dob) : p.age ? getMasterOptions('7_parent_age').find((o) => o.value === p.age)?.label ?? p.age : '');
   const reasonLabel = (code) => dropReasons.find((r) => r.value === code)?.label ?? code;
 
   const latestResults = latestSummary(results.filter((r) => r.studentPk === s.pk));
@@ -108,7 +111,7 @@ export default function StudentProfileView({ role, param }) {
         <div className="min-w-0 flex-1">
           <PageHeader
             title={s.name}
-            description={`${s.id}${s.previousId ? ` (dahulu ${s.previousId})` : ''} · ${formLabel(s.form)} · ${STREAM_LABEL[s.stream] ?? s.stream} · ${s.school || 'Sekolah tidak dinyatakan'}`}
+            description={`${s.id}${s.previousId ? ` (dahulu ${s.previousId})` : ''} · ${s.form} · ${STREAM_LABEL[s.stream] ?? s.stream} · ${schoolCodeOf(schools, s.school) || 'Sekolah tidak dinyatakan'}`}
             actions={
               <>
                 {contact?.phone && (
@@ -219,7 +222,7 @@ export default function StudentProfileView({ role, param }) {
                   items={[
                     ['No. K/P', s.ic],
                     ['Jenis', s.type === 'WALK_IN' ? 'Walk-in (bayar setiap sesi)' : 'Bulanan (tetap)'],
-                    ['Sekolah', [s.school, s.schoolCategory].filter(Boolean).join(' · ')],
+                    ['Sekolah', [schoolCodeOf(schools, s.school), s.schoolCategory].filter(Boolean).join(' · ')],
                     ['Telefon pelajar', fmtPhone(s.phone)],
                     ['E-mel', s.email],
                     ['Tarikh daftar', date(s.joined)],
@@ -242,7 +245,7 @@ export default function StudentProfileView({ role, param }) {
                     <p className="mt-1 font-medium text-gray-900">{p.name}</p>
                     <p className="text-gray-600">{fmtPhone(p.phone)}</p>
                     {p.email && <p className="text-gray-600">{p.email}</p>}
-                    {(p.occupation || p.age) && <p className="text-gray-500">{[p.occupation, p.age && ageLabel(p.age)].filter(Boolean).join(' · ')}</p>}
+                    {(p.occupation || ageLabel(p)) && <p className="text-gray-500">{[p.occupation, ageLabel(p)].filter(Boolean).join(' · ')}</p>}
                     {p.phone && (
                       <div className="mt-2 flex gap-2">
                         <Button as="a" size="sm" href={waLink(p.phone)} target="_blank" rel="noreferrer"><WhatsAppIcon className="size-3.5" /> WhatsApp</Button>
