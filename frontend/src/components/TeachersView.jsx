@@ -243,7 +243,7 @@ export default function TeachersView({ role }) {
             </select>
             <select aria-label="Subjek" value={subject} onChange={(e) => setSubject(e.target.value)} className={filterClass}>
               <option value="">Semua subjek</option>
-              {subjects.filter((s) => s.active).map((s) => <option key={s.pk} value={s.pk}>{s.name}</option>)}
+              {subjects.filter((s) => s.active).map((s) => <option key={s.pk} value={s.pk}>{s.code}</option>)}
             </select>
             <Checkbox label={`Tidak aktif (${teachers.length - active.length})`} checked={inactive} onChange={(e) => setInactive(e.target.checked)} />
             </>}

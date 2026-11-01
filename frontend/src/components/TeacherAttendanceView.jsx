@@ -9,6 +9,7 @@ import { downloadCsv } from '../lib/csv';
 import { describeSessionFilters, SESSION_FILTERS, useDrill, useMatching } from '../lib/drilldown';
 import DrilldownBar from './DrilldownBar';
 import { Badge, Button, Card, CardHeader, cx, EmptyState, filterClass, inputClass, PageHeader, Table, Td, Th, useToast } from './ui';
+import { subjectCodeOf } from '../lib/codes';
 
 const STATUSES = [
   { id: 'PRESENT', label: 'Hadir' },
@@ -27,12 +28,14 @@ const overlaps = (a, b) => {
 };
 
 function SubstitutePicker({ row, options: { suitable, others }, warning, onChange }) {
+  const { subjects } = useStore();
+  const subjectCode = subjectCodeOf(subjects, row.subject);
   const sambilan = (t) => (t.type === 'REPLACEMENT' ? ' (sambilan)' : '');
   return (
     <>
       <select aria-label={`Guru ganti ${row.class_code}`} disabled={row.locked} value={row.replacement_teacher} onChange={(e) => onChange(e.target.value)} className={cell}>
         <option value="">Pilih guru ganti</option>
-        <optgroup label={suitable.length ? `Sesuai: mengajar ${row.subject}, tiada kelas` : `Tiada guru ${row.subject} yang lapang`}>
+        <optgroup label={suitable.length ? `Sesuai: mengajar ${subjectCode}, tiada kelas` : `Tiada guru ${subjectCode} yang lapang`}>
           {suitable.map(({ t }) => <option key={t.pk} value={t.pk}>Cikgu {t.name}{sambilan(t)}</option>)}
         </optgroup>
         <optgroup label="Guru lain">
@@ -99,7 +102,7 @@ function PaidSessions({ drill, role }) {
 // One row per class on the chosen date: teacher in charge, present / absent / replaced / cancelled,
 // reason and replacement teacher. Teacher pay is worked out from these records.
 function DailyRecord({ role }) {
-  const { teachers } = useStore();
+  const { teachers, subjects } = useStore();
   const notify = useToast();
   const [day, setDay] = useState(todayISO());
   const [rows, setRows] = useState([]);
@@ -166,7 +169,7 @@ function DailyRecord({ role }) {
   const substituteWarning = (r) => {
     const t = active.find((x) => x.pk === Number(r.replacement_teacher));
     if (!t || r.locked) return '';
-    const issues = [!t.subjectIds.includes(r.subject_id) && `tidak mengajar ${r.subject}`, busyAt(t, r) && 'ada kelas lain pada masa ini'].filter(Boolean);
+    const issues = [!t.subjectIds.includes(r.subject_id) && `tidak mengajar ${subjectCodeOf(subjects, r.subject)}`, busyAt(t, r) && 'ada kelas lain pada masa ini'].filter(Boolean);
     return issues.length ? `Cikgu ${t.name} ${issues.join(' dan ')}.` : '';
   };
 
@@ -236,7 +239,7 @@ function DailyRecord({ role }) {
                   </Td>
                   <Td className="min-w-40">
                     <p className="font-medium text-gray-900">{r.class_code}</p>
-                    <p className="text-[13px] text-gray-500">{r.subject}</p>
+                    <p className="text-[13px] text-gray-500">{subjectCodeOf(subjects, r.subject)}</p>
                     {r.notes.map((n) => <p key={n} className="text-[13px] font-medium text-amber-700">{n}</p>)}
                     {r.saved && <Badge tone="green" className="mt-1">Direkod</Badge>}
                   </Td>

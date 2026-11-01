@@ -370,7 +370,7 @@ function Approvals({ role, pending }) {
 // ---- Waiting list ---------------------------------------------------------------
 
 function WaitingList({ role }) {
-  const { waitlist, students, classes, subjects, enrollFromWaitlist, removeFromWaitlist } = useStore();
+  const { waitlist, students, classes, enrollFromWaitlist, removeFromWaitlist } = useStore();
   const notify = useToast();
   const canManage = can(role, 'waitlist.manage');
   return (
@@ -403,7 +403,7 @@ function WaitingList({ role }) {
                   </Td>
                   <Td>
                     <p className="text-gray-900">{c?.code}</p>
-                    <p className="text-[13px] text-gray-500">{subjects.find((x) => x.code === c?.subject)?.name}</p>
+                    <p className="text-[13px] text-gray-500">{c?.subject}</p>
                   </Td>
                   <Td className={cx('tnum', full && 'text-red-700')}>{c ? `${c.enrolled}/${c.max}` : '—'}</Td>
                   <Td className="whitespace-nowrap text-gray-600">{date(w.added)}</Td>
@@ -666,7 +666,7 @@ const EMPTY_PARENT = { name: '', phone: '', email: '', occupation: '', dob: '' }
 const OTHER_SCHOOL = '__OTHER__';
 
 function RegistrationForm({ onCancel, onDone }) {
-  const { registerStudent, pricingTiers, settings, students, subjects, grades } = useStore();
+  const { registerStudent, pricingTiers, settings, students, grades } = useStore();
   const { getMasterOptions } = useApp();
   const notify = useToast();
   const schools = getMasterOptions('6_school');
@@ -760,7 +760,7 @@ function RegistrationForm({ onCancel, onDone }) {
             <>
               Mendaftar prospek <span className="font-medium">{lead.lead_id}</span> ({lead.student_name || lead.parent_name || fmtPhone(lead.phone)}). Maklumat prospek sudah diisi;
               lengkapkan yang selebihnya. Prospek ditutup sebagai Registered selepas disimpan.
-              {lead.interested_subjects.length > 0 && <> Subjek diminati: {lead.interested_subjects.map((c) => subjects.find((x) => x.code === c)?.name ?? c).join(', ')}.</>}
+              {lead.interested_subjects.length > 0 && <> Subjek diminati: {lead.interested_subjects.join(', ')}.</>}
             </>
           ) : 'Prospek tidak dijumpai atau sudah ditutup. Anda masih boleh mendaftar pelajar baharu.'}
         </p>

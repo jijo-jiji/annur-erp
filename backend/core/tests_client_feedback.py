@@ -143,6 +143,16 @@ class PhaseAQuickFixTests(FeedbackBase):
                          [('Teras', ['Bahasa Melayu']), ('Sains', ['Fizik'])])
         self.assertEqual(self.client.get('/api/v1/public/subjects/', {'form': 'F4'}).data, [])
 
+    def test_the_public_form_lists_the_approved_schools_by_code_without_a_login(self):
+        DynamicMasterData.objects.create(category='6_school', code='SMK_B', label='SMK Beta', status='APPROVED')
+        DynamicMasterData.objects.create(category='6_school', code='SMK_A', label='SMK Alfa', status='APPROVED')
+        DynamicMasterData.objects.create(category='6_school', code='SMK_P', label='SMK Cadangan', status='PENDING')  # not approved yet
+        DynamicMasterData.objects.create(category='3_lead_source', code='FB', label='Facebook', status='APPROVED')  # another list
+        self.client.credentials(HTTP_AUTHORIZATION='Token stale')
+        res = self.client.get('/api/v1/public/schools/')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual([(r['code'], r['label']) for r in res.data], [('SMK_A', 'SMK Alfa'), ('SMK_B', 'SMK Beta')])
+
 
 class PhaseBStudentCodeTests(FeedbackBase):
     def make(self, code, joined):

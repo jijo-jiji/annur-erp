@@ -168,7 +168,12 @@ test.describe('Parents register from the QR code', () => {
     await page.getByLabel('Nama penuh pelajar').fill(child);
     await page.getByLabel(/^No\. kad pengenalan/).fill(newIc());
     await page.getByLabel(/^Tingkatan \/ darjah/).selectOption({ label: 'Tingkatan 3' });
-    await page.getByLabel(/^Sekolah/).fill('SMK Telipot');
+    // the school is picked from the centre's list (Data induk), which reads as codes; a school not on it can be typed
+    const school = page.getByLabel(/^Sekolah/);
+    await expect(school.locator('option', { hasText: 'SMK_TELIPOT' })).toHaveCount(1);
+    await expect(school.locator('option', { hasText: 'SMK Telipot' })).toHaveCount(0);
+    await expect(school.locator('option', { hasText: 'Lain-lain' })).toHaveCount(1);
+    await school.selectOption({ label: 'SMK_TELIPOT' });
     // the child has no phone of their own: that field is optional
     await page.getByLabel(/^Nama ibu bapa/).fill('Puan Ujian');
     await page.getByLabel(/^No\. telefon \(WhatsApp\)/).fill('013-9876543');
@@ -180,6 +185,7 @@ test.describe('Parents register from the QR code', () => {
     const saved = (await api(page.request, 'SUPERVISOR', 'GET', '/students/students/')).find((x) => x.full_name === child);
     expect(saved.phone_number).toBe('');
     expect(saved.saps_consent).toBe(false); // not asked on the form, so not recorded as given
+    expect(saved.school_name).toBe('SMK Telipot'); // the record keeps the school's name; staff screens show its code
 
     // At the counter the form is waiting for approval, marked as coming from the QR code
     const supervisor = await openAs(browser, 'SUPERVISOR');
@@ -218,7 +224,8 @@ test.describe('When the server refuses a form', () => {
     await page.getByLabel('Nama penuh pelajar').fill(unique('Ujian E2E Ibu Bapa'));
     await page.getByLabel(/^No\. kad pengenalan/).fill(longIc);
     await page.getByLabel(/^Tingkatan \/ darjah/).selectOption({ label: 'Tingkatan 3' });
-    await page.getByLabel(/^Sekolah/).fill('SMK Telipot');
+    await expect.poll(() => page.getByLabel(/^Sekolah/).locator('option').count()).toBeGreaterThan(2); // the school list has arrived
+    await page.getByLabel(/^Sekolah/).selectOption({ index: 1 });
     await page.getByLabel(/^Nama ibu bapa/).fill('Puan Ujian');
     await page.getByLabel(/^No\. telefon \(WhatsApp\)/).fill('013-9876543');
     await page.getByRole('button', { name: 'Hantar pendaftaran' }).click();

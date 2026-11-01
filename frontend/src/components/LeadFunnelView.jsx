@@ -85,7 +85,7 @@ function AddLeadModal({ onClose, sources, campaigns, schools }) {
   );
 }
 
-function LeadDetailModal({ lead, onClose, sources, subjectName, campaigns, schools, actions, lostReasons }) {
+function LeadDetailModal({ lead, onClose, sources, campaigns, schools, actions, lostReasons }) {
   const { getMasterOptions } = useApp();
   const reasonList = getMasterOptions('24_lost_reason'); // reasons and actions are kept by name; the screen shows their codes
   const actionList = getMasterOptions('23_lead_action');
@@ -182,7 +182,7 @@ function LeadDetailModal({ lead, onClose, sources, subjectName, campaigns, schoo
                 ['Tarikh pertanyaan', date(lead.enquiry_date)],
                 ['Susulan seterusnya', open ? <span className={isDue(lead) ? 'font-medium text-red-700' : undefined}>{date(lead.next_follow_up)}</span> : '—'],
                 ['Pelajar didaftarkan', lead.converted_student_code && <a href={`#/students/${lead.converted_student_code}`} className="text-brand-700 hover:underline">{lead.converted_student_code}</a>],
-                ['Subjek diminati', lead.interested_subjects.map(subjectName).join(', ')],
+                ['Subjek diminati', lead.interested_subjects.join(', ')],
                 lead.notes && ['Catatan', lead.notes],
               ]}
             />
@@ -287,7 +287,7 @@ function LeadDetailModal({ lead, onClose, sources, subjectName, campaigns, schoo
   );
 }
 
-function LeadCard({ lead, onOpen, onMove, subjectName }) {
+function LeadCard({ lead, onOpen, onMove }) {
   const { getMasterOptions } = useApp();
   const campaignOptions = getMasterOptions('22_lead_campaign');
   const due = isDue(lead);
@@ -300,7 +300,7 @@ function LeadCard({ lead, onOpen, onMove, subjectName }) {
     <div className={cx('rounded-md border bg-white p-3 text-[13px]', due ? 'border-amber-300' : 'border-gray-200')}>
       <button type="button" onClick={onOpen} className="block text-left text-sm font-medium text-gray-900 hover:text-brand-700 hover:underline">{leadTitle(lead)}</button>
       <p className="text-gray-500">{lead.lead_id} · {lead.form_level || 'F?'} · {lead.lead_source || '—'}</p>
-      {lead.interested_subjects.length > 0 && <p className="mt-1 text-gray-600">{lead.interested_subjects.map(subjectName).join(', ')}</p>}
+      {lead.interested_subjects.length > 0 && <p className="mt-1 text-gray-600">{lead.interested_subjects.join(', ')}</p>}
       {lead.campaign && <p className="text-gray-500">Kempen: {codeOfLabel(campaignOptions, lead.campaign)}</p>}
       {open && missing.length > 0 && (
         <button type="button" onClick={onOpen} title={`Belum ada: ${missing.join(', ')}`} className="mt-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100">
@@ -500,7 +500,7 @@ export default function LeadFunnelView() {
                       <span className="rounded bg-white px-1.5 py-0.5 text-xs font-medium text-gray-600 ring-1 ring-gray-200 tnum">{current.length}</span>
                     </div>
                     <div className="space-y-2">
-                      {items.map((l) => <LeadCard key={l.id} lead={l} onOpen={() => setOpenId(l.id)} onMove={move} subjectName={subjectName} />)}
+                      {items.map((l) => <LeadCard key={l.id} lead={l} onOpen={() => setOpenId(l.id)} onMove={move} />)}
                       {items.length === 0 && <p className="rounded-md border border-dashed border-gray-300 py-6 text-center text-xs text-gray-400">Tiada prospek</p>}
                       {current.length > items.length && (
                         <Button size="sm" variant="ghost" className="w-full" onClick={() => setShown({ ...shown, [s.id]: limit + COLUMN_LIMIT })}>Tunjuk lagi ({current.length - items.length})</Button>
@@ -659,7 +659,6 @@ export default function LeadFunnelView() {
           lead={openLead}
           onClose={() => setOpenId(null)}
           sources={sources}
-          subjectName={subjectName}
           campaigns={listedCampaigns}
           schools={schools}
           actions={actions}

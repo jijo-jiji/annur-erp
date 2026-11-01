@@ -22,7 +22,7 @@ export default function StudentResultsTab({ student: s, role, live }) {
   const years = [...new Set([thisYear, ...mine.map((r) => r.year)])].sort((a, b) => b - a);
   const [year, setYear] = useState(() => (mine.length ? Math.max(...mine.map((r) => r.year)) : thisYear));
   const [entering, setEntering] = useState(null); // { term }
-  const subjectName = (pk) => subjects.find((x) => x.pk === pk)?.name ?? '?';
+  const subjectCode = (pk) => subjects.find((x) => x.pk === pk)?.code ?? '?';
   const enrolled = classes.filter((c) => s.classes.includes(c.id));
   const tuitionSubjects = [...new Set(enrolled.map((c) => c.subjectPk))];
 
@@ -31,7 +31,7 @@ export default function StudentResultsTab({ student: s, role, live }) {
   const terms = [...new Map([...termsFor(s.form, grades), ...yearRows.map((r) => termOf(r.term))].map((t) => [t.code, t])).values()]
     .sort((a, b) => termOf(a.code).order - termOf(b.code).order);
   const subjectRows = [...new Set([...tuitionSubjects, ...yearRows.map((r) => r.subjectPk)])]
-    .sort((a, b) => Number(!tuitionSubjects.includes(a)) - Number(!tuitionSubjects.includes(b)) || subjectName(a).localeCompare(subjectName(b)));
+    .sort((a, b) => Number(!tuitionSubjects.includes(a)) - Number(!tuitionSubjects.includes(b)) || subjectCode(a).localeCompare(subjectCode(b)));
   const at = (subjectPk, term, y = year) => mine.find((r) => r.subjectPk === subjectPk && r.term === term && r.year === y);
 
   // Class average: the other students of the same tuition class in that subject; without a class, the students
@@ -104,7 +104,7 @@ export default function StudentResultsTab({ student: s, role, live }) {
               {subjectRows.map((pk) => (
                 <tr key={pk}>
                   <Td className="text-gray-900">
-                    {subjectName(pk)}
+                    {subjectCode(pk)}
                     {tuitionSubjects.includes(pk) && <p className="text-[13px] text-gray-500">Kelas tuisyen{teacherOf(pk) ? ` · Cikgu ${teacherOf(pk)}` : ''}</p>}
                   </Td>
                   {terms.map((t) => {
@@ -168,14 +168,14 @@ export default function StudentResultsTab({ student: s, role, live }) {
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {[...new Set(mine.map((r) => r.subjectPk))].sort((a, b) => subjectName(a).localeCompare(subjectName(b))).map((pk) => {
+            {[...new Set(mine.map((r) => r.subjectPk))].sort((a, b) => subjectCode(a).localeCompare(subjectCode(b))).map((pk) => {
               const points = exams.map((e) => ({ label: e.short, value: at(pk, e.term, e.year)?.mark ?? null }));
               const last = [...exams].reverse().map((e) => at(pk, e.term, e.year)).find(Boolean);
               return (
                 <Card key={pk} className="p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{subjectName(pk)}</p>
+                      <p className="text-sm font-medium text-gray-900">{subjectCode(pk)}</p>
                       <p className="text-[13px] text-gray-500">{teacherOf(pk) ? `Cikgu ${teacherOf(pk)}` : 'Bukan subjek tuisyen'}</p>
                     </div>
                     {last && (
@@ -238,7 +238,7 @@ function TermGridModal({ student: s, initialYear, initialTerm, years, tuitionSub
   const level = SUBJECT_LEVEL[grades.find((g) => g.code === s.form)?.level] ?? 'UPPER_SEC';
   const rows = [...new Set([...tuitionSubjects, ...saved.map((r) => r.subjectPk), ...added])];
   const others = subjects.filter((x) => x.active && x.level === level && !rows.includes(x.pk));
-  const nameOf = (pk) => subjects.find((x) => x.pk === pk)?.name ?? '?';
+  const codeOf = (pk) => subjects.find((x) => x.pk === pk)?.code ?? '?';
   const valueOf = (pk) => {
     const typed = values[key]?.[pk];
     if (typed !== undefined) return typed;
@@ -298,19 +298,19 @@ function TermGridModal({ student: s, initialYear, initialTerm, years, tuitionSub
             return (
               <div key={pk} className="flex items-center justify-between gap-3 px-3 py-2">
                 <span className="text-sm text-gray-900">
-                  {nameOf(pk)}
+                  {codeOf(pk)}
                   {tuitionSubjects.includes(pk) && <span className="ml-1.5 text-[13px] text-gray-500">tuisyen</span>}
                 </span>
                 <span className="flex items-center gap-2">
                   {gradeOnly ? (
-                    <select aria-label={`Gred ${nameOf(pk)}`} value={v} onChange={(e) => set(pk, e.target.value)} className={cx(inputClass, 'w-24 py-1.5')}>
+                    <select aria-label={`Gred ${codeOf(pk)}`} value={v} onChange={(e) => set(pk, e.target.value)} className={cx(inputClass, 'w-24 py-1.5')}>
                       <option value="">—</option>
                       {RESULT_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
                     </select>
                   ) : (
                     <>
                       <input
-                        type="number" min="0" max="100" inputMode="numeric" aria-label={`Markah ${nameOf(pk)}`} value={v}
+                        type="number" min="0" max="100" inputMode="numeric" aria-label={`Markah ${codeOf(pk)}`} value={v}
                         onChange={(e) => set(pk, e.target.value === '' ? '' : String(Math.max(0, Math.min(100, Number(e.target.value)))))}
                         className={cx(inputClass, 'w-20 py-1.5 text-right tnum')}
                       />
@@ -325,7 +325,7 @@ function TermGridModal({ student: s, initialYear, initialTerm, years, tuitionSub
         {others.length > 0 && (
           <select aria-label="Tambah subjek" value="" onChange={(e) => e.target.value && setAdded((a) => [...a, Number(e.target.value)])} className={filterClass}>
             <option value="">+ Tambah subjek sekolah lain</option>
-            {others.map((x) => <option key={x.pk} value={x.pk}>{x.name}</option>)}
+            {others.map((x) => <option key={x.pk} value={x.pk}>{x.code}</option>)}
           </select>
         )}
       </div>

@@ -7,6 +7,7 @@ import { RESULT_GRADES, termOf } from '../lib/results';
 import { openAttachment, useBlobUrl } from './Attachments';
 import FormModal from './FormModal';
 import { Badge, Button, Card, cx, EmptyState, inputClass, Modal, Segmented, Table, Td, Textarea, Th, useToast } from './ui';
+import { subjectCodeOf } from '../lib/codes';
 
 const STATUS_TONE = { PENDING: 'amber', APPROVED: 'green', REJECTED: 'red' };
 
@@ -111,6 +112,7 @@ export default function ResultSubmissions({ onChanged }) {
 }
 
 function SubmittedRows({ sub }) {
+  const { subjects } = useStore();
   const gradeOnly = termOf(sub.term)?.gradeOnly;
   return (
     <Table>
@@ -124,7 +126,7 @@ function SubmittedRows({ sub }) {
           const changed = current !== '' && current != null && String(current) !== String(sent);
           return (
             <tr key={r.subject}>
-              <Td className="text-gray-900">{r.subject_name}</Td>
+              <Td className="text-gray-900">{subjectCodeOf(subjects, r.subject_name)}</Td>
               <Td className="text-right font-medium tnum">{sent}{!gradeOnly && r.grade ? <span className="ml-1.5 text-[13px] font-normal text-gray-500">{r.grade}</span> : null}</Td>
               <Td className={cx('text-right tnum', changed ? 'font-medium text-amber-700' : 'text-gray-400')}>{current === '' || current == null ? '—' : current}</Td>
             </tr>
@@ -151,9 +153,10 @@ function SlipPreview({ slip }) {
 
 // Staff can correct a mark against the slip before saving
 function ApproveModal({ sub, onClose, onDone }) {
+  const { subjects } = useStore();
   const notify = useToast();
   const gradeOnly = termOf(sub.term)?.gradeOnly;
-  const [rows, setRows] = useState(() => sub.rows_detail.map((r) => ({ subject: r.subject, name: r.subject_name, mark: r.mark ?? '', grade: r.grade || '' })));
+  const [rows, setRows] = useState(() => sub.rows_detail.map((r) => ({ subject: r.subject, name: subjectCodeOf(subjects, r.subject_name), mark: r.mark ?? '', grade: r.grade || '' })));
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (i, patch) => setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));

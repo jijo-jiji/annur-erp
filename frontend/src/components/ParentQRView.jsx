@@ -10,6 +10,7 @@ import { useGrades } from '../lib/grades';
 import { Badge, Button, Card, CardHeader, cx, EmptyState, Input, PageHeader, Select, Table, Td, Th, useToast, WhatsAppIcon } from './ui';
 import { BrandMark } from './Sidebar';
 import SectionedForm from './FormSections';
+import SchoolPicker from './SchoolPicker';
 import { describeError } from '../lib/apiErrors';
 
 function registrationUrl() {
@@ -139,6 +140,7 @@ export function ParentRegistrationForm() {
   const [done, setDone] = useState(null);
   const [error, setError] = useState('');
   const [subjectGroups, setSubjectGroups] = useState(null); // the centre's subjects for this grade, by category
+  const [schools, setSchools] = useState([]); // the centre's schools from Data induk, as { value: code, label: name }
   const set = (patch) => setF((p) => ({ ...p, ...patch }));
 
   useEffect(() => {
@@ -152,6 +154,12 @@ export function ParentRegistrationForm() {
     }).catch(() => live && setSubjectGroups([]));
     return () => { live = false; };
   }, [f.form_level]);
+
+  useEffect(() => {
+    let live = true;
+    publicApi.schools().then((rows) => live && setSchools(rows.map((r) => ({ value: r.code, label: r.label })))).catch(() => {}); // without the list, a name can still be typed
+    return () => { live = false; };
+  }, []);
 
   const toggleSubject = (name) => set({
     interested_subjects: f.interested_subjects.includes(name) ? f.interested_subjects.filter((x) => x !== name) : [...f.interested_subjects, name],
@@ -243,7 +251,7 @@ export function ParentRegistrationForm() {
                       <option key={x.value} value={x.value}>{x.label}</option>
                     ))}
                   </Select>
-                  <Input label="Sekolah" required value={f.school_name} onChange={(e) => set({ school_name: e.target.value })} />
+                  <SchoolPicker value={f.school_name} onChange={(school_name) => set({ school_name })} schools={schools} required codes hint="Taip nama penuh sekolah. Pihak kaunter akan menyemaknya." />
                   <Input label="No. telefon pelajar" type="tel" value={f.phone_number} onChange={(e) => set({ phone_number: e.target.value })} hint="Jika ada" />
                 </div>
               </Card>

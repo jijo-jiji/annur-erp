@@ -11,13 +11,14 @@ test('a failing student on Prestasi pelajar gets a teacher report, followed up o
   const data = await api(page.request, 'SUPERVISOR', 'GET', '/students/performance/');
   const row = data.rows.find((r) => r.failing && r.class_code);
   expect(row, 'the demo data has a failing student in a tuition class').toBeTruthy();
+  const subject = (await api(page.request, 'SUPERVISOR', 'GET', '/business-config/subjects/')).find((s) => s.id === row.subject_id);
   const details = unique('Tidak siap latihan');
 
   await signInAs(page, 'SUPERVISOR');
   await page.goto('/#/students');
   await page.getByRole('link', { name: 'Prestasi pelajar' }).click(); // in the menu for Supervisor and Management
   await expect(page.getByRole('heading', { name: 'Prestasi pelajar' })).toBeVisible();
-  const item = page.getByRole('region', { name: row.class_code }).getByRole('listitem').filter({ hasText: row.name }).filter({ hasText: row.subject });
+  const item = page.getByRole('region', { name: row.class_code }).getByRole('listitem').filter({ hasText: row.name }).filter({ hasText: subject.code }); // the list reads the subject as its code
   await expect(item).toContainText('Gagal');
   await expect(item).toContainText(String(row.mark));
   await item.getByRole('button', { name: 'Laporan guru' }).click();

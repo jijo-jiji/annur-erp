@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from business_config.views import (
-    grade_list, public_subjects,
+    grade_list, public_schools, public_subjects,
     SubjectMasterViewSet, PricingTierViewSet, BusinessSettingViewSet,
     TeacherRateSettingViewSet, DynamicMasterDataViewSet
 )
@@ -107,6 +107,7 @@ urlpatterns = [
     path('api/v1/auth/users/', auth_users),
     path('api/v1/business-config/grades/', grade_list),
     path('api/v1/public/subjects/', public_subjects),
+    path('api/v1/public/schools/', public_schools),
     path('api/v1/public/results/check/', public_results_check),
     path('api/v1/public/results/', public_results_submit),
     path('api/v1/public/teacher-link/<str:token>/', public_teacher_link),

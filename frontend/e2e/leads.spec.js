@@ -378,7 +378,7 @@ test.describe('Importing prospects from a CSV', () => {
     await dialog.getByRole('button', { name: 'Selesai' }).click();
 
     // the imported prospects are on the board; the one with only a phone says it is incomplete
-    await expect(cardIn(page, 'Enquiry', 'Aina Import')).toContainText('Fizik, Kimia');
+    await expect(cardIn(page, 'Enquiry', 'Aina Import')).toContainText('FZ, KIM'); // the board reads subjects as codes
     await expect(cardIn(page, 'Enquiry', shown(partial))).toContainText('Belum lengkap');
 
     // the same file again adds nothing

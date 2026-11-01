@@ -7,7 +7,7 @@ import { useStore } from '../store';
 import { clock, date, DAY_LABEL, FORMS, timeRange, todayISO } from '../lib/format';
 import { ACCEPT, openAttachment, uploadError } from './Attachments';
 import { Badge, Button, Card, CardHeader, EmptyState, IconButton, Input, Modal, PageHeader, Select, Stat, Table, Td, Textarea, Th, useToast } from './ui';
-import { classRef } from '../lib/codes';
+import { classRef, subjectCodeOf } from '../lib/codes';
 
 const selectClass = 'rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-brand-600 focus:outline-none';
 
@@ -15,7 +15,7 @@ const selectClass = 'rounded-md border border-gray-300 bg-white px-3 py-2 text-s
 // in; copies start from the class's students, and who has a copy comes from that class's attendance plus copies given
 // later at the counter (backend academic/handouts.py).
 export default function HandoutRepositoryView({ role }) {
-  const { handouts, recordPrint, refreshAllData, reloadHandouts } = useApp();
+  const { handouts, subjects, recordPrint, refreshAllData, reloadHandouts } = useApp();
   const notify = useToast();
   const canDelete = role === 'SUPERVISOR' || role === 'MANAGEMENT';
   const [form, setForm] = useState('ALL');
@@ -77,7 +77,7 @@ export default function HandoutRepositoryView({ role }) {
         </select>
         <select value={subject} onChange={(e) => setSubject(e.target.value)} aria-label="Tapis subjek" className={selectClass}>
           <option value="ALL">Semua subjek</option>
-          {subjectNames.map((name) => <option key={name} value={name}>{name}</option>)}
+          {subjectNames.map((name) => <option key={name} value={name}>{subjectCodeOf(subjects, name)}</option>)}
         </select>
         <select value={onlyWaiting ? 'WAITING' : 'ALL'} onChange={(e) => setOnlyWaiting(e.target.value === 'WAITING')} aria-label="Tapis penerimaan" className={selectClass}>
           <option value="ALL">Semua penerimaan</option>

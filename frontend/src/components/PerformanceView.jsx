@@ -5,6 +5,8 @@ import { cikgu, FORMS } from '../lib/format';
 import FormModal from './FormModal';
 import { REPORT_CATEGORIES } from '../lib/reports';
 import { Badge, Button, Card, EmptyState, PageHeader, Stat, cx, useToast } from './ui';
+import { useStore } from '../store';
+import { subjectCodeOf } from '../lib/codes';
 
 // Prestasi pelajar (Phase H): students failing or falling in a school exam, grouped by the teacher and tuition class of
 // that subject, with the student's attendance in that class before the exam, the subject's marks over time, open teacher
@@ -15,6 +17,7 @@ const selectClass = 'rounded-md border border-gray-300 bg-white px-3 py-2 text-s
 const NO_CLASS = 'Tiada kelas subjek ini di pusat';
 
 export default function PerformanceView() {
+  const { subjects } = useStore();
   const notify = useToast();
   const [data, setData] = useState(null);
   const [exam, setExam] = useState('');
@@ -33,7 +36,7 @@ export default function PerformanceView() {
 
   const q = query.trim().toLowerCase();
   const rows = data.rows.filter((r) => (kind === 'ALL' || (kind === 'FAIL' ? r.failing : r.falling))
-    && (form === 'ALL' || r.form === form) && (!q || `${r.name} ${r.code} ${r.subject}`.toLowerCase().includes(q)));
+    && (form === 'ALL' || r.form === form) && (!q || `${r.name} ${r.code} ${r.subject} ${subjectCodeOf(subjects, r.subject)}`.toLowerCase().includes(q)));
   const students = new Set(data.rows.map((r) => r.student)).size;
   const lowAttendance = data.rows.filter((r) => r.attendance_rate !== null && r.attendance_rate < data.low_attendance_pct).length;
 
@@ -116,7 +119,7 @@ export default function PerformanceView() {
       {reporting && (
         <FormModal
           title={`Laporan guru: ${reporting.name}`}
-          description={`${reporting.subject}${reporting.class_code ? ` · ${reporting.class_code}` : ''}. Laporan disimpan pada profil pelajar.`}
+          description={`${subjectCodeOf(subjects, reporting.subject)}${reporting.class_code ? ` · ${reporting.class_code}` : ''}. Laporan disimpan pada profil pelajar.`}
           submitLabel="Simpan laporan"
           initial={{ category: 'ACADEMIC', details: '' }}
           fields={[
@@ -137,12 +140,13 @@ export default function PerformanceView() {
 }
 
 function ConcernRow({ row: r, lowPct, onReport }) {
+  const { subjects } = useStore();
   const low = r.attendance_rate !== null && r.attendance_rate < lowPct;
   return (
     <li className="flex flex-wrap items-start gap-x-6 gap-y-2 px-5 py-3">
       <div className="min-w-48 flex-1">
         <a href={`#/students/${r.code}?tab=results`} className="text-sm font-medium text-gray-900 hover:text-brand-700 hover:underline">{r.name}</a>
-        <p className="text-[13px] text-gray-500">{r.code} · {r.form} · {r.subject} · {r.exam}</p>
+        <p className="text-[13px] text-gray-500">{r.code} · {r.form} · {subjectCodeOf(subjects, r.subject)} · {r.exam}</p>
       </div>
       <div className="w-52">
         <p className={cx('text-sm font-semibold tnum', r.failing ? 'text-red-700' : 'text-gray-900')}>

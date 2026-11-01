@@ -146,3 +146,12 @@ def subject_groups(form_level=''):
 def public_subjects(request):
     """Subjects for the public forms, grouped by category; `?form=F5` limits them to that grade's classes."""
     return Response(subject_groups(str(request.query_params.get('form') or '')[:10]))
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def public_schools(request):
+    """The centre's schools (Data induk, approved ones only) for the public registration form: code and name."""
+    rows = DynamicMasterData.objects.filter(category='6_school', status='APPROVED').order_by('code')
+    return Response([{'code': r.code, 'label': r.label} for r in rows])

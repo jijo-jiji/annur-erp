@@ -75,6 +75,35 @@ test.describe('Pertanyaan & prospek', () => {
   });
 });
 
+test.describe('Subjek', () => {
+  test('the Guru and Nota & modul filters list subjects by code', async ({ page }) => {
+    await signInAs(page, 'SUPERVISOR');
+    await page.goto('/#/teachers');
+    const guru = page.getByLabel('Subjek', { exact: true });
+    await expect(guru.locator('option', { hasText: 'FZ' })).toHaveCount(1);
+    await expect(guru.locator('option', { hasText: 'Fizik' })).toHaveCount(0);
+
+    await page.goto('/#/handouts');
+    const notes = page.getByLabel('Tapis subjek');
+    await expect(notes.locator('option').nth(1)).toHaveText(/^[A-Z][A-Z0-9_]*$/);
+  });
+
+  test('a prospect card and the results tab of a pupil read subjects as codes', async ({ page, request }) => {
+    await signInAs(page, 'ADMIN');
+    await page.goto('/#/leads');
+    const card = page.locator('div.space-y-2 > div').filter({ hasText: 'Nurul Izzati' });
+    await expect(card).toContainText('BIO, KIM');
+    await expect(card).not.toContainText('Biologi');
+
+    const students = await api(request, 'ADMIN', 'GET', '/students/students/');
+    const enrolled = students.find((s) => s.status === 'ACTIVE' && (s.enrolled_classes || []).length > 0);
+    await page.goto(`/#/students/${enrolled.student_id}?tab=results`);
+    await expect(page.getByRole('heading', { name: enrolled.full_name })).toBeVisible();
+    await expect(page.getByText('Kelas tuisyen').first()).toBeVisible();
+    await expect(page.getByRole('main')).not.toContainText(/Fizik|Kimia|Biologi|Matematik/);
+  });
+});
+
 test.describe('Profil pelajar', () => {
   test('dropping a subject lists the reasons as codes, and the profile reads the source as a code', async ({ page, request }) => {
     const students = await api(request, 'ADMIN', 'GET', '/students/students/');
