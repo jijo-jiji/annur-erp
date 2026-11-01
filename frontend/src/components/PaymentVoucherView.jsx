@@ -53,7 +53,7 @@ function vendorFields(editing, supplyTypes = []) {
   return [
     { name: 'vendor_name', label: 'Nama pembekal', required: true },
     { name: 'vendor_id', label: 'Kod syarikat', required: editing, hint: editing ? undefined : 'Kosongkan untuk kod automatik (cth. VND-0001).' },
-    { name: 'supply_type', label: 'Jenis bekalan', type: 'select', placeholder: 'Pilih jenis bekalan', options: supplyTypes.map((o) => ({ value: o.value, label: o.label })) },
+    { name: 'supply_type', label: 'Jenis bekalan', type: 'select', placeholder: 'Pilih jenis bekalan', options: supplyTypes.map((o) => ({ value: o.value, label: o.value })) },
     { name: 'tin_number', label: 'No. cukai (TIN)', hint: 'Pilihan' },
     { name: 'pic_name', label: 'Pegawai dihubungi (PIC)' },
     { name: 'phone_number', label: 'Telefon', type: 'tel' },
@@ -74,7 +74,6 @@ export default function PaymentVoucherView({ role }) {
   const { vouchers, vendors, approveVoucher, rejectVoucher, submitVendor } = useStore();
   const { getMasterOptions } = useApp();
   const supplyTypes = getMasterOptions('25_supply_type');
-  const supplyLabel = (code) => supplyTypes.find((o) => o.value === code)?.label;
   const { refreshAllData, showToast } = useApp();
   const [tab, setTab] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'all');
   const [creating, setCreating] = useState(false);
@@ -171,7 +170,7 @@ export default function PaymentVoucherView({ role }) {
                       {v.vendor_id}
                       {v.tin_number && <p className="text-[13px] text-gray-500">TIN {v.tin_number}</p>}
                     </Td>
-                    <Td className="text-gray-700">{supplyLabel(v.supply_type) || '—'}</Td>
+                    <Td className="text-gray-700">{v.supply_type || '—'}</Td>
                     <Td className="whitespace-nowrap text-gray-700">{v.phone_number ? fmtPhone(v.phone_number) : '—'}</Td>
                     <Td className="text-gray-700">{[v.bank_name, v.bank_account].filter(Boolean).join(' ') || '—'}</Td>
                     <Td>
@@ -237,7 +236,7 @@ export default function PaymentVoucherView({ role }) {
                     </Td>
                     <Td>
                       <p className="text-gray-900">{v.vendor}</p>
-                      <p className="text-[13px] text-gray-500">{[v.category, v.subcategory].filter(Boolean).join(' · ')}</p>
+                      <p className="text-[13px] text-gray-500">{[v.categoryCode || v.category, v.subcategoryCode || v.subcategory].filter(Boolean).join(' · ')}</p>
                     </Td>
                     <Td className="hidden max-w-sm text-gray-700 lg:table-cell">{v.description}</Td>
                     <Td className={`text-right font-medium tnum ${v.amount >= THRESHOLDS.voucher_tier1 ? 'text-red-700' : ''}`} title={v.amount >= THRESHOLDS.voucher_tier1 ? `${ringgit(THRESHOLDS.voucher_tier1)} dan ke atas: perlu kelulusan` : undefined}>{rm(v.amount)}</Td>
@@ -366,7 +365,7 @@ function CreateModal({ onClose, onCreated }) {
           <Select label="Kategori" required value={f.categoryCode} onChange={(e) => set({ categoryCode: e.target.value, subcategoryCode: '' })}>
             <option value="">Pilih kategori</option>
             {categories.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
+              <option key={c.value} value={c.value}>{c.value}</option>
             ))}
           </Select>
           <Select
@@ -379,7 +378,7 @@ function CreateModal({ onClose, onCreated }) {
           >
             <option value="">{subcategories.length ? 'Pilih subkategori' : 'Tiada'}</option>
             {subcategories.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
+              <option key={c.value} value={c.value}>{c.value}</option>
             ))}
           </Select>
           <Select label="Kaedah bayaran" value={f.method} onChange={(e) => set({ method: e.target.value })}>
@@ -448,7 +447,7 @@ function VoucherModal({ v, onClose }) {
               ['No. cukai (TIN)', v.vendorTin || '—'],
               ['Akaun bank penerima', v.vendorBank || '—'],
               ['Kaedah bayaran', `${METHODS[v.method] || v.method}${v.ref ? ` · ${v.ref}` : ''}`],
-              ['Kategori', [v.category, v.subcategory].filter(Boolean).join(' · ') || '—'],
+              ['Kategori', [v.categoryCode || v.category, v.subcategoryCode || v.subcategory].filter(Boolean).join(' · ') || '—'],
               ['Status', STATUS[v.rawStatus]?.label ?? v.rawStatus],
             ]}
           />

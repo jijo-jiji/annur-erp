@@ -263,7 +263,7 @@ export default function BillingView({ role }) {
                         <a href={`#/students/${s?.id}?tab=fees`} className="text-gray-900 hover:text-brand-700 hover:underline">
                           {s?.name}
                         </a>
-                        <p className="text-[13px] text-gray-500">{formLabel(s?.form)}</p>
+                        <p className="text-[13px] text-gray-500">{s?.form}</p>
                       </Td>
                       <Td className="text-right tnum">
                         {rm(inv.total - inv.discount)}
@@ -651,7 +651,7 @@ function MonthlyRunModal({ onClose, onDone }) {
                       <tr key={r.student_id}>
                         <Td>
                           <p className="text-gray-900">{r.name}</p>
-                          <p className="text-[13px] text-gray-500">{formLabel(r.form_level)} · {r.subjects} subjek</p>
+                          <p className="text-[13px] text-gray-500">{r.form_level} · {r.subjects} subjek</p>
                         </Td>
                         <Td className="text-right tnum">{rm(r.monthly_fee)}</Td>
                         <Td className="text-right tnum">{Number(r.discount) ? `− ${rm(r.discount)}` : '—'}</Td>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CornerDownLeft, FileText, GraduationCap, LayoutGrid, Search, User } from 'lucide-react';
 import { useStore } from '../store';
-import { formLabel, rm } from '../lib/format';
+import { rm } from '../lib/format';
 import { invoiceBalance } from '../lib/domain';
 import { navigate, navItemsFor } from '../lib/nav';
 import { can } from '../lib/permissions';
@@ -44,7 +44,7 @@ export default function CommandPalette({ role, onClose }) {
         group: 'Pelajar',
         icon: User,
         title: s.name,
-        detail: `${s.id} · ${formLabel(s.form)} · ${s.parent1.name}`,
+        detail: `${s.id} · ${s.form} · ${s.parent1.name}`,
         href: `#/students/${s.id}`,
       }));
 

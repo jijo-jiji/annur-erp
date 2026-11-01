@@ -2,7 +2,7 @@ import { THRESHOLDS } from '../lib/thresholds';
 import { useCallback, useEffect, useState } from 'react';
 import { MessageSquareQuote, Plus, Trash2 } from 'lucide-react';
 import { filesApi, studentsApi } from '../api/client';
-import { date, FORMS, formLabel, todayISO } from '../lib/format';
+import { date, FORMS, todayISO } from '../lib/format';
 import { ACCEPT, openAttachment, Thumb, uploadError } from './Attachments';
 import { Button, Card, Checkbox, cx, EmptyState, filterClass, IconButton, Input, Select, Textarea, useToast } from './ui';
 
@@ -15,7 +15,7 @@ function FeedbackCard({ fb, canDelete, onDelete, showStudent }) {
         <div>
           {showStudent && (
             <a href={`#/students/${fb.student_code ?? ''}`} className={cx('font-medium text-gray-900', fb.student_code && 'hover:underline')}>
-              {fb.student_name} <span className="font-normal text-gray-400">· {formLabel(fb.form_level)}</span>
+              {fb.student_name} <span className="font-normal text-gray-400">· {fb.form_level}</span>
             </a>
           )}
           <p className="text-xs text-gray-500">{date(fb.date)} · {fb.given_by_label} · direkod oleh {fb.recorded_by}</p>
@@ -131,7 +131,7 @@ export function FeedbackGallery({ canDelete }) {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <select aria-label="Tingkatan" value={filters.form} onChange={(e) => setFilters({ ...filters, form: e.target.value })} className={filterClass}>
           <option value="">Semua tingkatan</option>
-          {FORMS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          {FORMS.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
         </select>
         <label className="flex items-center gap-2 text-sm text-gray-600">Dari <input type="date" value={filters.start} onChange={(e) => setFilters({ ...filters, start: e.target.value })} className={filterClass} /></label>
         <label className="flex items-center gap-2 text-sm text-gray-600">Hingga <input type="date" value={filters.end} onChange={(e) => setFilters({ ...filters, end: e.target.value })} className={filterClass} /></label>

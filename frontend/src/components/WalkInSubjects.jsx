@@ -19,7 +19,7 @@ function Chip({ subject, on, onToggle }) {
         on ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
       )}
     >
-      {subject.name} <span className={cx('text-xs font-normal', on ? 'text-white/75' : 'text-gray-400')}>{subject.code}</span>
+      {subject.code}
     </button>
   );
 }
@@ -70,7 +70,7 @@ export default function WalkInSubjects({ form, value, onChange }) {
               title="Klik untuk buang"
               className="rounded-md bg-brand-50 px-2 py-1 text-xs font-medium text-brand-900 ring-1 ring-brand-200 hover:bg-brand-100"
             >
-              {s.name} <span className="text-brand-700">{s.code}</span> ×
+              {s.code} ×
             </button>
           ))}
         </div>

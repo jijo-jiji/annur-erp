@@ -13,6 +13,7 @@ import { THRESHOLDS } from '../lib/thresholds';
 import DrilldownBar from './DrilldownBar';
 import { Avatar, Badge, Button, Card, CardHeader, cx, EmptyState, filterClass, inputClass, PageHeader, Table, Td, Textarea, Th, useToast, WhatsAppIcon } from './ui';
 import WhatsAppButton from './WhatsAppButton';
+import { classRef } from '../lib/codes';
 
 const addDays = (iso, n) => {
   const d = new Date(`${iso}T00:00:00`);
@@ -34,11 +35,11 @@ async function loadHistory(f) {
 }
 
 function AttendanceHistory({ drill }) {
-  const { classes, subjects, students } = useStore();
+  const { classes, students } = useStore();
   const f = drill.filters;
   const matched = useMatching(drill, loadHistory);
   const klass = f.class_id ? classes.find((c) => String(c.id) === String(f.class_id)) : null;
-  const label = klass ? classLabel(klass, subjects) : null;
+  const label = klass ? classRef(klass) : null;
   const studentName = (code) => students.find((s) => s.id === code)?.name ?? code;
   return (
     <>
@@ -94,7 +95,7 @@ function AttendanceHistory({ drill }) {
 }
 
 function TakeAttendance() {
-  const { classes, subjects, teachers, attendance } = useStore();
+  const { classes, teachers, attendance } = useStore();
   const query = new URLSearchParams(window.location.hash.split('?')[1]);
   const [day, setDay] = useState(query.get('date') ?? todayISO());
   const [classId, setClassId] = useState(query.get('class') ? Number(query.get('class')) : null);
@@ -166,7 +167,7 @@ function TakeAttendance() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="text-[13px] text-gray-500">{timeRange(c.start, c.end)}</p>
-                    <p className="mt-0.5 font-medium text-gray-900">{classLabel(c, subjects)}</p>
+                    <p className="mt-0.5 font-medium text-gray-900">{classRef(c)}</p>
                     <p className="text-[13px] text-gray-500">
                       {teacherName(c.teacher)}{c.room && ` · ${c.room}`}
                     </p>
@@ -211,7 +212,8 @@ function Roster({ cls, day, teacher, onBack }) {
   const [reloads, setReloads] = useState(0); // the QR check-in panel asks for the list again as students scan
   const [codeOpen, setCodeOpen] = useState(false); // today's check-in code is out: unmarked students have not checked in yet
   const future = day > todayISO();
-  const label = classLabel(cls, subjects);
+  const label = classLabel(cls, subjects); // the class's name, for the message to the parent
+  const ref = classRef(cls);
 
   useEffect(() => {
     let cancelled = false;
@@ -251,7 +253,7 @@ function Roster({ cls, day, teacher, onBack }) {
       });
       setSaved(true);
       setExisting(true);
-      notify(`Kedatangan ${label} disimpan: ${roster.length - absent.length}/${roster.length} hadir.`);
+      notify(`Kedatangan ${ref} disimpan: ${roster.length - absent.length}/${roster.length} hadir.`);
     } catch {
       // the store has already shown the reason
     } finally {
@@ -268,7 +270,7 @@ function Roster({ cls, day, teacher, onBack }) {
         <ArrowLeft className="size-4" /> Senarai kelas
       </button>
       <PageHeader
-        title={label}
+        title={ref}
         description={`${dateLong(day)} · ${timeRange(cls.start, cls.end)} · ${teacher}${cls.room ? ` · ${cls.room}` : ''}`}
         actions={roster.length > 0 && <Button icon={Download} onClick={exportCsv}>Excel</Button>}
       />

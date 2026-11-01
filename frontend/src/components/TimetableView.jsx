@@ -5,18 +5,19 @@ import DrilldownBar from './DrilldownBar';
 import { CalendarDays, Download, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
 import { DAYS } from '../lib/config';
 import { useStore } from '../store';
-import { classLabel, preferredContact } from '../lib/domain';
+import { preferredContact } from '../lib/domain';
 import { can } from '../lib/permissions';
 import { navigate } from '../lib/nav';
-import { date, DAY_LABEL, FORMS, formLabel, STUDENT_STATUS, timeRange, fmtPhone } from '../lib/format';
+import { date, DAY_LABEL, FORMS, STUDENT_STATUS, timeRange, fmtPhone } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import TimetableChangesPanel from './TimetableChangesPanel';
 import { Badge, Button, Card, cx, EmptyState, Input, Modal, PageHeader, SeatMeter, Segmented, Select, Table, Td, Th, useToast } from './ui';
+import { classRef } from '../lib/codes';
 
 const selectClass = 'rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-brand-600 focus:outline-none';
 
 export default function TimetableView({ role }) {
-  const { classes, subjects, teachers } = useStore();
+  const { classes, teachers } = useStore();
   const [openId, setOpenId] = useState(null);
   const [view, setView] = useState('week');
   const [form, setForm] = useState('ALL');
@@ -87,7 +88,7 @@ export default function TimetableView({ role }) {
           <option value="ALL">Semua tingkatan</option>
           {FORMS.map((f) => (
             <option key={f.id} value={f.id}>
-              {f.label}
+              {f.id}
             </option>
           ))}
         </select>
@@ -145,7 +146,7 @@ export default function TimetableView({ role }) {
                                 )}
                               >
                                 <div className="flex items-start justify-between gap-2">
-                                  <p className="text-sm font-medium text-gray-900">{classLabel(c, subjects)}</p>
+                                  <p className="text-sm font-medium text-gray-900">{classRef(c)}</p>
                                   {c.enrolled > c.max && <Badge tone="red">Lebih {c.enrolled - c.max}</Badge>}
                                   {c.enrolled === c.max && <Badge tone="amber">Penuh</Badge>}
                                 </div>
@@ -185,7 +186,7 @@ export default function TimetableView({ role }) {
                 <tr key={c.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setOpenId(c.id)}>
                   <Td className="whitespace-nowrap text-gray-900">{DAY_LABEL[c.day]}</Td>
                   <Td className="whitespace-nowrap text-gray-700">{timeRange(c.start, c.end)}</Td>
-                  <Td className="font-medium text-gray-900">{classLabel(c, subjects)}</Td>
+                  <Td className="font-medium text-gray-900">{classRef(c)}</Td>
                   <Td className="whitespace-nowrap text-gray-700">{teacherName(c.teacher)}</Td>
                   <Td className="hidden text-gray-700 md:table-cell">{c.room}</Td>
                   <Td>
@@ -265,12 +266,12 @@ function ClassFormModal({ cls, onClose, onSaved }) {
         <Select label="Subjek" required value={f.subject} onChange={(e) => set({ subject: e.target.value })}>
           <option value="">Pilih subjek</option>
           {subjects.filter((x) => x.active).map((x) => (
-            <option key={x.pk} value={x.pk}>{x.name} ({x.code})</option>
+            <option key={x.pk} value={x.pk}>{x.code}</option>
           ))}
         </Select>
         <Select label="Tingkatan / darjah" required value={f.form_level} onChange={(e) => set({ form_level: e.target.value })}>
           {FORMS.map((x) => (
-            <option key={x.id} value={x.id}>{x.label}</option>
+            <option key={x.id} value={x.id}>{x.id}</option>
           ))}
         </Select>
         <Select label="Kumpulan" value={f.section} onChange={(e) => set({ section: e.target.value })}>
@@ -295,13 +296,13 @@ function ClassFormModal({ cls, onClose, onSaved }) {
 }
 
 function ClassModal({ cls, role, onClose, onEdit, onChanged }) {
-  const { students, subjects, teachers, waitlist, enrollFromWaitlist, removeFromWaitlist, addToWaitlist, deleteClass } = useStore();
+  const { students, teachers, waitlist, enrollFromWaitlist, removeFromWaitlist, addToWaitlist, deleteClass } = useStore();
   const notify = useToast();
   const [adding, setAdding] = useState('');
   // Seats are held from registration, so students awaiting approval are listed too
   const roster = students.filter((s) => ['ACTIVE', 'ON_HOLD', 'PENDING'].includes(s.status) && s.classes.includes(cls.id)).sort((a, b) => a.name.localeCompare(b.name));
   const waits = waitlist.filter((w) => w.classId === cls.id).map((w) => ({ ...w, student: students.find((s) => s.id === w.studentId) }));
-  const label = classLabel(cls, subjects);
+  const label = classRef(cls);
   const t = teachers.find((x) => x.code === cls.teacher);
   const teacher = t ? `Cikgu ${t.name}` : 'Guru belum ditetapkan';
   const seatFree = cls.enrolled < cls.max;
@@ -396,7 +397,7 @@ function ClassModal({ cls, role, onClose, onEdit, onChanged }) {
                   aria-label="Pilih pelajar untuk senarai menunggu"
                   className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-brand-600 focus:outline-none"
                 >
-                  <option value="">Tambah pelajar {formLabel(cls.form)} ke kelas ini…</option>
+                  <option value="">Tambah pelajar {cls.form} ke kelas ini…</option>
                   {candidates.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}

@@ -23,31 +23,31 @@ test.describe('Subjects for a walk-in student', () => {
     // Tingkatan 5: the upper secondary subjects, in groups, and nothing from the other levels in sight
     await expect(picker).toContainText('· F5');
     await expect(picker.getByText('Sains', { exact: true })).toBeVisible();
-    await expect(picker.getByRole('button', { name: /^Fizik FZ/ })).toBeVisible();
-    await expect(picker.getByRole('button', { name: /^Matematik Sekolah Rendah/ })).toBeHidden();
+    await expect(picker.getByRole('button', { name: 'FZ', exact: true })).toBeVisible();
+    await expect(picker.getByRole('button', { name: 'MATH_P', exact: true })).toBeHidden();
 
-    await picker.getByRole('button', { name: /^Fizik FZ/ }).click();
-    await expect(picker.getByLabel('Subjek dipilih')).toContainText('Fizik FZ');
+    await picker.getByRole('button', { name: 'FZ', exact: true }).click();
+    await expect(picker.getByLabel('Subjek dipilih')).toContainText('FZ');
 
     // a subject of another level is one click away, and what is picked there still shows at the top
     await picker.getByText(/^Subjek peringkat lain/).click();
-    await picker.getByRole('button', { name: /^Matematik Sekolah Rendah/ }).click();
+    await picker.getByRole('button', { name: 'MATH_P', exact: true }).click();
     await expect(picker.getByLabel('Subjek dipilih')).toContainText('Dipilih (2)');
-    await picker.getByLabel('Subjek dipilih').getByRole('button', { name: /Matematik Sekolah Rendah/ }).click(); // removed from the top
+    await picker.getByLabel('Subjek dipilih').getByRole('button', { name: 'MATH_P' }).click(); // removed from the top
     await expect(picker.getByLabel('Subjek dipilih')).toContainText('Dipilih (1)');
   });
 
   test('changing the tingkatan clears the picks and shows that tingkatan\'s subjects', async ({ page }) => {
     await signInAs(page, 'ADMIN');
     const picker = await openWalkInForm(page);
-    await picker.getByRole('button', { name: /^Fizik FZ/ }).click();
+    await picker.getByRole('button', { name: 'FZ', exact: true }).click();
     await expect(picker.getByLabel('Subjek dipilih')).toBeVisible();
 
     await page.getByLabel(/^Tingkatan \/ darjah/).selectOption('F2');
     await expect(picker).toContainText('· F2');
     await expect(picker.getByLabel('Subjek dipilih')).toHaveCount(0);
-    await expect(picker.getByRole('button', { name: /^Geografi GEO_L/ })).toBeVisible();
-    await expect(picker.getByRole('button', { name: /^Fizik FZ/ })).toBeHidden(); // upper secondary is folded away now
+    await expect(picker.getByRole('button', { name: 'GEO_L', exact: true })).toBeVisible();
+    await expect(picker.getByRole('button', { name: 'FZ', exact: true })).toBeHidden(); // upper secondary is folded away now
   });
 
   test('a walk-in student is registered with the subjects that were picked', async ({ page, request }) => {
@@ -60,8 +60,8 @@ test.describe('Subjects for a walk-in student', () => {
     await page.getByLabel(/^Nama( \*)?$/).first().fill('Puan Ujian Walk-in');
     await page.getByLabel(/^No\. telefon \(WhatsApp\)/).first().fill('012-3456789');
     await page.getByLabel('Keterangan').fill('Hadir kelas intensif Sabtu sahaja');
-    await picker.getByRole('button', { name: /^Fizik FZ/ }).click();
-    await picker.getByRole('button', { name: /^Kimia KIM/ }).click();
+    await picker.getByRole('button', { name: 'FZ', exact: true }).click();
+    await picker.getByRole('button', { name: 'KIM', exact: true }).click();
     await page.getByRole('button', { name: 'Daftar pelajar' }).click();
     await expect(page.getByRole('heading', { name })).toBeVisible();
 

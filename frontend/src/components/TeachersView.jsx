@@ -5,7 +5,6 @@ import { useApp } from '../context/AppContext';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
 import { navigate } from '../lib/nav';
-import { classLabel } from '../lib/domain';
 import { cikgu, CURRENT_MONTH, date, DAY_LABEL, fmtPhone, FORMS, formShort, initials, monthLabel, rm, time, todayISO, waLink } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import { describeTeacherFilters, TEACHER_FILTERS, useDrill, useMatching } from '../lib/drilldown';
@@ -18,6 +17,7 @@ import TeacherLinks from './TeacherLinks';
 import { ReportItem } from './StudentReports';
 import { COMPLAINANTS } from '../lib/reports';
 import { Avatar, Badge, Button, Card, CardHeader, Checkbox, EmptyState, filterClass, Modal, PageHeader, SearchInput, Stat, Table, Tabs, Td, Th, useToast, WhatsAppIcon } from './ui';
+import { classRef } from '../lib/codes';
 
 const WEEKS_PER_MONTH = 4;
 const TEACHER_TYPES = [{ value: 'PERMANENT', label: 'Tetap (Permanent)' }, { value: 'REPLACEMENT', label: 'Sambilan (Part-time)' }];
@@ -114,7 +114,7 @@ export default function TeachersView({ role }) {
   const [linkFor, setLinkFor] = useState(null); // a teacher whose private link Management is making
   const [docsFor, setDocsFor] = useState(null); // a teacher whose photo and documents are open
   const waitingFor = new Set(teacherRequests.filter((r) => r.status === 'PENDING' && r.action === 'UPDATE').map((r) => r.target_id));
-  const subjectOptions = subjects.filter((s) => s.active).map((s) => ({ value: s.pk, label: s.name }));
+  const subjectOptions = subjects.filter((s) => s.active).map((s) => ({ value: s.pk, label: s.code }));
   const saveTeacher = async (action, pk, values, note) => {
     const done = await submitChangeRequest({ kind: 'TEACHER', action, pk, values, note });
     notify(done.status === 'PENDING' ? 'Permohonan dihantar. Ia berkuat kuasa selepas diluluskan oleh Pengurusan.' : 'Maklumat guru disimpan.');
@@ -154,7 +154,7 @@ export default function TeachersView({ role }) {
   };
   const rows = teachers
     .filter((t) => (drill ? Boolean(matched?.ids.has(t.code)) : t.active !== inactive && (type === 'ALL' || t.type === type) && teachesForm(t) && teachesSubject(t))
-      && (!needle || `${t.name} ${t.code} ${t.subjects}`.toLowerCase().includes(needle)))
+      && (!needle || `${t.name} ${t.code} ${t.subjects} ${t.subjectCodes}`.toLowerCase().includes(needle)))
     .sort((a, b) => a.name.localeCompare(b.name));
   const count = (kind) => active.filter((t) => t.type === kind).length;
   const monthlyTotal = active.reduce((a, t) => a + taught(t.code).length * WEEKS_PER_MONTH * (t.rate || 0), 0);
@@ -239,7 +239,7 @@ export default function TeachersView({ role }) {
             </select>
             <select aria-label="Tingkatan" value={form} onChange={(e) => setForm(e.target.value)} className={filterClass}>
               <option value="">Semua tingkatan</option>
-              {FORMS.filter((f) => classes.some((c) => c.form === f.id)).map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+              {FORMS.filter((f) => classes.some((c) => c.form === f.id)).map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
             </select>
             <select aria-label="Subjek" value={subject} onChange={(e) => setSubject(e.target.value)} className={filterClass}>
               <option value="">Semua subjek</option>
@@ -282,13 +282,13 @@ export default function TeachersView({ role }) {
                               </p>
                               <p className="text-[13px] text-gray-500">
                                 {t.type === 'PERMANENT' ? 'Guru tetap' : 'Guru sambilan'}{t.since ? ` · sejak ${t.since}` : ''}{experienceYears(t.teachingSince) !== null ? ` · ${experienceYears(t.teachingSince)} tahun mengajar` : ''} · {fmtPhone(t.phone)}
-                                <span className="xl:hidden">{t.subjects && ` · ${t.subjects}`}</span>
+                                <span className="xl:hidden">{t.subjectCodes && ` · ${t.subjectCodes}`}</span>
                               </p>
                             </div>
                           </div>
                         </Td>
-                        <Td className="hidden text-gray-700 xl:table-cell">{t.subjects || '—'}</Td>
-                        <Td className="hidden text-gray-700 md:table-cell">{[...new Set(mine.map((c) => formShort(c.form)))].sort().join(', ') || '—'}</Td>
+                        <Td className="hidden text-gray-700 xl:table-cell">{t.subjectCodes || '—'}</Td>
+                        <Td className="hidden text-gray-700 md:table-cell">{[...new Set(mine.map((c) => c.form))].sort().join(', ') || '—'}</Td>
                         <Td className="text-right tnum">{mine.length || <Badge>Atas panggilan</Badge>}</Td>
                         <Td className="whitespace-nowrap">
                           {permit.state === 'VALID' ? <Badge tone="green">{permit.label}</Badge>
@@ -423,7 +423,7 @@ export default function TeachersView({ role }) {
                       <Td key={d} className="min-w-36 space-y-1">
                         {dayClasses.length === 0 ? <span className="text-gray-300">—</span> : dayClasses.map((c) => (
                           <span key={c.id} className="block rounded-md border border-brand-100 bg-brand-50 px-2 py-1 text-xs text-brand-800">
-                            {time(c.start)} · {classLabel(c, subjects)}
+                            {time(c.start)} · {classRef(c)}
                           </span>
                         ))}
                       </Td>

@@ -4,10 +4,10 @@ import { Download, FileText, ListChecks, Plus, Printer, Trash2, UploadCloud } fr
 import { academicApi, filesApi } from '../api/client';
 import { useApp } from '../context/AppContext';
 import { useStore } from '../store';
-import { classLabel } from '../lib/domain';
 import { clock, date, DAY_LABEL, FORMS, timeRange, todayISO } from '../lib/format';
 import { ACCEPT, openAttachment, uploadError } from './Attachments';
 import { Badge, Button, Card, CardHeader, EmptyState, IconButton, Input, Modal, PageHeader, Select, Stat, Table, Td, Textarea, Th, useToast } from './ui';
+import { classRef } from '../lib/codes';
 
 const selectClass = 'rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-brand-600 focus:outline-none';
 
@@ -73,7 +73,7 @@ export default function HandoutRepositoryView({ role }) {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <select value={form} onChange={(e) => setForm(e.target.value)} aria-label="Tapis tingkatan" className={selectClass}>
           <option value="ALL">Semua tingkatan</option>
-          {FORMS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          {FORMS.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
         </select>
         <select value={subject} onChange={(e) => setSubject(e.target.value)} aria-label="Tapis subjek" className={selectClass}>
           <option value="ALL">Semua subjek</option>
@@ -231,7 +231,7 @@ export function ReceivedModal({ handout, onClose }) {
 
 function AddModal({ onClose }) {
   const { createHandout, refreshAllData } = useApp();
-  const { classes, students, subjects, days: DAYS } = useStore();
+  const { classes, students, days: DAYS } = useStore();
   const notify = useToast();
   const [f, setF] = useState({ title: '', classId: '', date: todayISO(), copies: 20, description: '', file: null });
   const [busy, setBusy] = useState(false);
@@ -291,7 +291,7 @@ function AddModal({ onClose }) {
           {DAYS.map((day) => (
             <optgroup key={day} label={DAY_LABEL[day]}>
               {classes.filter((c) => c.day === day).sort((a, b) => a.start.localeCompare(b.start)).map((c) => (
-                <option key={c.id} value={c.id}>{classLabel(c, subjects)} · {timeRange(c.start, c.end)} ({activeIn(c.id)} pelajar)</option>
+                <option key={c.id} value={c.id}>{classRef(c)} · {timeRange(c.start, c.end)} ({activeIn(c.id)} pelajar)</option>
               ))}
             </optgroup>
           ))}

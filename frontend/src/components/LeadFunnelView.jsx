@@ -7,7 +7,7 @@ import { THRESHOLDS, useThresholds } from '../lib/thresholds';
 import { fillMessage } from '../lib/messages';
 import { navigate } from '../lib/nav';
 import { describeLeadFilters, LEAD_FILTERS, useDrill, useMatching } from '../lib/drilldown';
-import { clock, date, daysAgoISO, fmtPhone, FORMS, formLabel, formShort, todayISO } from '../lib/format';
+import { clock, date, daysAgoISO, fmtPhone, FORMS, todayISO } from '../lib/format';
 import DrilldownBar from './DrilldownBar';
 import { Donut } from './Donut';
 import { downloadCsv } from '../lib/csv';
@@ -86,6 +86,9 @@ function AddLeadModal({ onClose, sources, campaigns, schools }) {
 }
 
 function LeadDetailModal({ lead, onClose, sources, subjectName, campaigns, schools, actions, lostReasons }) {
+  const { getMasterOptions } = useApp();
+  const reasonList = getMasterOptions('24_lost_reason'); // reasons and actions are kept by name; the screen shows their codes
+  const actionList = getMasterOptions('23_lead_action');
   const { leadAction, updateLead } = useApp();
   const [activities, setActivities] = useState([]);
   const [edit, setEdit] = useState(null);
@@ -134,7 +137,7 @@ function LeadDetailModal({ lead, onClose, sources, subjectName, campaigns, schoo
   });
 
   return (
-    <Modal open side size="xl" onClose={onClose} title={leadTitle(lead)} description={`${lead.lead_id} · ${lead.form_level ? formLabel(lead.form_level) : 'Tingkatan belum diketahui'} · ${STAGE_LABEL[lead.status]}`}>
+    <Modal open side size="xl" onClose={onClose} title={leadTitle(lead)} description={`${lead.lead_id} · ${lead.form_level || 'Tingkatan belum diketahui'} · ${STAGE_LABEL[lead.status]}`}>
       <div className="space-y-6">
         {isDue(lead) && (
           <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
@@ -151,7 +154,7 @@ function LeadDetailModal({ lead, onClose, sources, subjectName, campaigns, schoo
         )}
         {lead.status === 'LOST' && (
           <p className="rounded-md bg-gray-50 px-3 py-2 text-[13px] text-gray-700">
-            Tidak berminat semasa peringkat <span className="font-medium">{STAGE_LABEL[lead.lost_at_stage] || '—'}</span>: {lead.lost_reason}
+            Tidak berminat semasa peringkat <span className="font-medium">{STAGE_LABEL[lead.lost_at_stage] || '—'}</span>: {codeOfLabel(reasonList, lead.lost_reason)}
           </p>
         )}
 
@@ -228,7 +231,7 @@ function LeadDetailModal({ lead, onClose, sources, subjectName, campaigns, schoo
               <form onSubmit={markLost} className="space-y-3 rounded-md border border-gray-200 p-4">
                 <Select label="Tidak berminat" required value={reason.choice} onChange={(e) => setReason({ ...reason, choice: e.target.value })}>
                   <option value="">Pilih sebab</option>
-                  {lostReasons.map((r) => <option key={r} value={r}>{r}</option>)}
+                  {lostReasons.map((r) => <option key={r} value={r}>{codeOfLabel(reasonList, r)}</option>)}
                   <option value={OTHER_REASON}>Lain-lain (taip sebab)</option>
                 </Select>
                 {reason.choice === OTHER_REASON && (
@@ -245,7 +248,7 @@ function LeadDetailModal({ lead, onClose, sources, subjectName, campaigns, schoo
             <h3 className="col-span-2 text-sm font-semibold text-gray-900 sm:col-span-3">Rekod tindakan susulan</h3>
             <Input label="Tarikh" type="date" required value={activity.activity_date} onChange={(e) => setActivity({ ...activity, activity_date: e.target.value })} />
             <Select label="Tindakan" value={activity.action} onChange={(e) => setActivity({ ...activity, action: e.target.value })}>
-              {actions.map((a) => <option key={a}>{a}</option>)}
+              {actions.map((a) => <option key={a} value={a}>{codeOfLabel(actionList, a)}</option>)}
             </Select>
             <Select label="Status" value={activity.outcome} onChange={(e) => setActivity({ ...activity, outcome: e.target.value })}>
               {OUTCOMES.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -268,7 +271,7 @@ function LeadDetailModal({ lead, onClose, sources, subjectName, campaigns, schoo
                   <tr key={a.id} className="align-top">
                     <Td className="whitespace-nowrap">{date(a.activity_date)} <span className="text-gray-400">{clock(a.created_at)}</span></Td>
                     <Td className="whitespace-nowrap">{STAGE_LABEL[a.stage]}</Td>
-                    <Td className="font-medium text-gray-900">{a.action}</Td>
+                    <Td className="font-medium text-gray-900">{codeOfLabel(actionList, a.action)}</Td>
                     <Td className="text-gray-600">{a.remark || '—'}</Td>
                     <Td className="whitespace-nowrap font-medium text-gray-800">{a.pic}</Td>
                     <Td className="whitespace-nowrap">{a.outcome_label}</Td>
@@ -465,15 +468,15 @@ export default function LeadFunnelView() {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <select aria-label="Sumber" value={filters.source} onChange={(e) => setFilter({ source: e.target.value })} className={filterClass}>
           <option value="">Semua sumber</option>
-          {sources.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          {sources.map((s) => <option key={s.value} value={s.value}>{s.value}</option>)}
         </select>
         <select aria-label="Tingkatan" value={filters.form} onChange={(e) => setFilter({ form: e.target.value })} className={filterClass}>
           <option value="">Semua tingkatan</option>
-          {FORMS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          {FORMS.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
         </select>
         <select aria-label="Kempen" value={filters.campaign} onChange={(e) => setFilter({ campaign: e.target.value })} className={filterClass}>
           <option value="">Semua kempen</option>
-          {campaigns.map((c) => <option key={c}>{c}</option>)}
+          {campaigns.map((c) => <option key={c} value={c}>{codeOfLabel(campaignOptions, c)}</option>)}
         </select>
         <label className="flex items-center gap-2 text-sm text-gray-600">Dari <input type="date" value={filters.start} onChange={(e) => setFilter({ start: e.target.value })} className={filterClass} /></label>
         <label className="flex items-center gap-2 text-sm text-gray-600">Hingga <input type="date" value={filters.end} onChange={(e) => setFilter({ end: e.target.value })} className={filterClass} /></label>
@@ -575,7 +578,7 @@ export default function LeadFunnelView() {
                     <Td className="font-medium text-gray-900">{leadTitle(l)} <span className="font-normal text-gray-400">· {l.lead_id}</span>
                       <p className="text-[13px] font-normal text-gray-500">{fmtPhone(l.phone)}</p>
                     </Td>
-                    <Td>{l.form_level ? formShort(l.form_level) : '—'}</Td>
+                    <Td>{l.form_level || '—'}</Td>
                     <Td>
                       <Badge tone={l.status === 'LOST' ? 'neutral' : 'green'}>{STAGE_LABEL[l.status]}</Badge>
                       {l.status === 'LOST' && l.lost_reason && <p className="mt-1 text-[13px] text-gray-500">{l.lost_reason}</p>}

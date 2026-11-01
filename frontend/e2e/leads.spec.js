@@ -51,7 +51,7 @@ test.describe('Saving a prospect with partial information', () => {
     await detail.getByRole('button', { name: 'Lengkapkan' }).click();
     await detail.getByLabel('Nama pelajar').fill('Aina Lengkap');
     await detail.getByLabel(/^Nama ibu bapa/).fill('Puan Lengkap');
-    await detail.getByLabel(/^Tingkatan/).selectOption({ label: 'Tingkatan 5' });
+    await detail.getByLabel(/^Tingkatan/).selectOption({ label: 'F5' });
     await detail.getByRole('button', { name: 'Simpan', exact: true }).click();
     const completed = page.getByRole('dialog', { name: 'Aina Lengkap' }); // titled with the name now that it is known
     await expect(completed).toContainText('Maklumat belum lengkap: Sekolah, Subjek diminati');
@@ -67,22 +67,22 @@ test.describe('Subjects follow the tingkatan', () => {
     const chip = (name) => form.getByRole('button', { name, exact: true });
 
     await expect(form).toContainText('Pilih tingkatan dahulu');
-    await expect(chip('Fizik')).toHaveCount(0);
+    await expect(chip('FZ')).toHaveCount(0);
 
-    await form.getByLabel(/^Tingkatan/).selectOption({ label: 'Tingkatan 5' });
-    await expect(form).toContainText('Kelas dibuka untuk Tingkatan 5');
-    await expect(chip('Fizik')).toBeVisible();
-    await expect(chip('Sains Sekolah Rendah')).toHaveCount(0);
+    await form.getByLabel(/^Tingkatan/).selectOption({ label: 'F5' });
+    await expect(form).toContainText('Kelas dibuka untuk F5');
+    await expect(chip('FZ')).toBeVisible();
+    await expect(chip('SAINS_P')).toHaveCount(0);
 
-    await form.getByLabel(/^Tingkatan/).selectOption({ label: 'Darjah 5' });
-    await expect(chip('Sains Sekolah Rendah')).toBeVisible();
-    await expect(chip('Fizik')).toHaveCount(0);
+    await form.getByLabel(/^Tingkatan/).selectOption({ label: 'S5' });
+    await expect(chip('SAINS_P')).toBeVisible();
+    await expect(chip('FZ')).toHaveCount(0);
 
     // a subject chosen before the tingkatan was corrected stays visible and is pointed out
-    await chip('Sains Sekolah Rendah').click();
-    await form.getByLabel(/^Tingkatan/).selectOption({ label: 'Tingkatan 5' });
+    await chip('SAINS_P').click();
+    await form.getByLabel(/^Tingkatan/).selectOption({ label: 'F5' });
     await expect(form).toContainText('Dipilih untuk tingkatan lain');
-    await expect(chip('Sains Sekolah Rendah')).toHaveAttribute('aria-pressed', 'true');
+    await expect(chip('SAINS_P')).toHaveAttribute('aria-pressed', 'true');
   });
 });
 
@@ -144,13 +144,15 @@ test.describe('Drop-downs kept in Data induk', () => {
   test('school, campaign, action and reason are lists; a new campaign appears once it is approved', async ({ page, request, browser }) => {
     const campaign = unique('Kempen E2E');
     const waiting = unique('Kempen Menunggu');
+    const campaignCode = `E2E_${Date.now()}`; // a list shows each entry as its code
+    const waitingCode = `E2EW_${Date.now()}`;
     await signInAs(page, 'ADMIN');
     await openLeads(page);
     await page.getByRole('button', { name: 'Prospek baharu' }).click();
     const form = page.getByRole('dialog', { name: 'Prospek baharu' });
 
     // school: a list with a way to type one that is not listed
-    await expect(form.getByLabel(/^Sekolah/).locator('option', { hasText: 'SMK Telipot' })).toHaveCount(1);
+    await expect(form.getByLabel(/^Sekolah/).locator('option', { hasText: 'SMK_TELIPOT' })).toHaveCount(1);
     await form.getByLabel(/^Sekolah/).selectOption({ label: 'Lain-lain (taip nama)' });
     await expect(form.getByLabel('Nama sekolah')).toBeVisible();
 
@@ -160,13 +162,13 @@ test.describe('Drop-downs kept in Data induk', () => {
     await form.getByRole('button', { name: 'Batal' }).click();
 
     // the Supervisor adds one directly; the Admin can only propose one
-    await api(request, 'SUPERVISOR', 'POST', '/business-config/master-data/', { category: '22_lead_campaign', code: `E2E_${Date.now()}`, label: campaign });
-    await api(request, 'ADMIN', 'POST', '/business-config/master-data/', { category: '22_lead_campaign', code: `E2EW_${Date.now()}`, label: waiting });
+    await api(request, 'SUPERVISOR', 'POST', '/business-config/master-data/', { category: '22_lead_campaign', code: campaignCode, label: campaign });
+    await api(request, 'ADMIN', 'POST', '/business-config/master-data/', { category: '22_lead_campaign', code: waitingCode, label: waiting });
     await page.reload();
     await page.getByRole('button', { name: 'Prospek baharu' }).click();
     const again = page.getByRole('dialog', { name: 'Prospek baharu' });
-    await expect(again.getByLabel('Kempen').locator('option', { hasText: campaign })).toHaveCount(1);
-    await expect(again.getByLabel('Kempen').locator('option', { hasText: waiting })).toHaveCount(0);
+    await expect(again.getByLabel('Kempen').locator('option', { hasText: campaignCode })).toHaveCount(1);
+    await expect(again.getByLabel('Kempen').locator('option', { hasText: waitingCode })).toHaveCount(0);
     await again.getByRole('button', { name: 'Batal' }).click();
 
     // the lists are in Data induk for the centre to change
@@ -185,9 +187,9 @@ test.describe('Drop-downs kept in Data induk', () => {
     await cardIn(page, 'Enquiry', lead.name).getByRole('button', { name: lead.name }).click();
     const detail = page.getByRole('dialog', { name: lead.name });
 
-    await expect(detail.getByLabel('Tindakan').locator('option')).toContainText(['WhatsApp', 'Panggilan telefon', 'Hantar content']);
+    await expect(detail.getByLabel('Tindakan').locator('option')).toContainText(['WHATSAPP', 'CALL', 'CONTENT']);
 
-    await detail.getByLabel(/^Tidak berminat/).selectOption({ label: 'Yuran terlalu tinggi' });
+    await detail.getByLabel(/^Tidak berminat/).selectOption({ label: 'PRICE' }) // shown as its code;
     await detail.getByRole('button', { name: 'Tanda tidak berminat' }).click();
     await expect(toast(page).filter({ hasText: 'tidak berminat' })).toBeVisible();
     const lost = (await api(request, 'ADMIN', 'GET', '/students/leads/')).find((l) => l.id === lead.id);

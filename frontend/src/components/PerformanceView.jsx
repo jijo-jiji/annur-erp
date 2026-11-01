@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ArrowDown, FilePlus2, Search } from 'lucide-react';
 import { studentsApi } from '../api/client';
-import { cikgu, formLabel, FORMS } from '../lib/format';
+import { cikgu, FORMS } from '../lib/format';
 import FormModal from './FormModal';
 import { REPORT_CATEGORIES } from '../lib/reports';
 import { Badge, Button, Card, EmptyState, PageHeader, Stat, cx, useToast } from './ui';
@@ -78,7 +78,7 @@ export default function PerformanceView() {
             </select>
             <select value={form} onChange={(e) => setForm(e.target.value)} aria-label="Tingkatan" className={selectClass}>
               <option value="ALL">Semua tingkatan</option>
-              {FORMS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+              {FORMS.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
             </select>
             <label className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-gray-400" />
@@ -142,7 +142,7 @@ function ConcernRow({ row: r, lowPct, onReport }) {
     <li className="flex flex-wrap items-start gap-x-6 gap-y-2 px-5 py-3">
       <div className="min-w-48 flex-1">
         <a href={`#/students/${r.code}?tab=results`} className="text-sm font-medium text-gray-900 hover:text-brand-700 hover:underline">{r.name}</a>
-        <p className="text-[13px] text-gray-500">{r.code} · {formLabel(r.form)} · {r.subject} · {r.exam}</p>
+        <p className="text-[13px] text-gray-500">{r.code} · {r.form} · {r.subject} · {r.exam}</p>
       </div>
       <div className="w-52">
         <p className={cx('text-sm font-semibold tnum', r.failing ? 'text-red-700' : 'text-gray-900')}>

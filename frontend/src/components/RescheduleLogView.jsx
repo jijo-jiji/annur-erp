@@ -10,10 +10,11 @@ import { date, DAY_LABEL, RESCHEDULE_REASON_LABEL, timeRange, todayISO } from '.
 import {
   Badge, Button, Card, EmptyState, Input, Modal, PageHeader, Segmented, Select, Table, Tabs, Td, Textarea, Th, useToast, WhatsAppIcon,
 } from './ui';
+import { classRef } from '../lib/codes';
 
 
 export default function RescheduleLogView({ role }) {
-  const { reschedules, classes, subjects, teachers, rescheduleAction } = useStore();
+  const { reschedules, classes, teachers, rescheduleAction } = useStore();
   const notify = useToast();
   // The timetable links here with ?class=<id> to record a cancellation for that class
   const presetClass = new URLSearchParams(window.location.hash.split('?')[1]).get('class') || '';
@@ -86,7 +87,7 @@ export default function RescheduleLogView({ role }) {
                 return (
                   <tr key={r.id} className="hover:bg-gray-50">
                     <Td className="min-w-44">
-                      <p className="font-medium text-gray-900">{c ? classLabel(c, subjects) : r.classCode || '—'}</p>
+                      <p className="font-medium text-gray-900">{c ? classRef(c) : r.classCode || '—'}</p>
                       {teachers.find((t) => t.code === c?.teacher) && <p className="text-[13px] text-gray-500">Cikgu {teachers.find((t) => t.code === c?.teacher).name}</p>}
                     </Td>
                     <Td className="whitespace-nowrap">
@@ -184,7 +185,7 @@ const MONTH_CODES = ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL', 'OGO', 'SE
 const logMonth = (iso) => (iso ? `${MONTH_CODES[Number(iso.slice(5, 7)) - 1]} '${iso.slice(2, 4)}` : '');
 
 function CreateModal({ open, role, presetClass, onClose }) {
-  const { classes, subjects, addReschedule, days: DAYS } = useStore();
+  const { classes, addReschedule, days: DAYS } = useStore();
   const empty = { classId: presetClass || '', cancelled: '', replacement: '', reason: 'PH', remarks: '' };
   const [kind, setKind] = useState('replace');
   const [f, setF] = useState(empty);
@@ -252,7 +253,7 @@ function CreateModal({ open, role, presetClass, onClose }) {
                 .sort((a, b) => a.start.localeCompare(b.start))
                 .map((c) => (
                   <option key={c.id} value={c.id}>
-                    {classLabel(c, subjects)} — {timeRange(c.start, c.end)}
+                    {classRef(c)} — {timeRange(c.start, c.end)}
                   </option>
                 ))}
             </optgroup>

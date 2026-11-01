@@ -5,7 +5,7 @@ import { bankLine } from '../lib/centre';
 import { CENTRE } from '../lib/config';
 import { describeError } from '../lib/apiErrors';
 import { preferredContact } from '../lib/domain';
-import { date, fmtPhone, formLabel, monthLabel, rm, todayISO } from '../lib/format';
+import { date, fmtPhone, monthLabel, rm, todayISO } from '../lib/format';
 import { fillMessage } from '../lib/messages';
 import { isApprover } from '../lib/permissions';
 import { telLink } from '../lib/phone';
@@ -83,7 +83,7 @@ export default function Week5FollowUps({ role, limit }) {
                 <tr key={t.id}>
                   <Td>
                     <a href={`#/students/${t.student_code}?tab=fees`} className="font-medium text-gray-900 hover:text-brand-700 hover:underline">{t.student_name}</a>
-                    <p className="text-[13px] text-gray-500">{formLabel(t.form_level)}{contact ? ` · ${contact.name} ${fmtPhone(contact.phone)}` : ''}</p>
+                    <p className="text-[13px] text-gray-500">{t.form_level}{contact ? ` · ${contact.name} ${fmtPhone(contact.phone)}` : ''}</p>
                   </Td>
                   <Td className="whitespace-nowrap">
                     <p className="text-gray-900">{t.invoice_number}</p>

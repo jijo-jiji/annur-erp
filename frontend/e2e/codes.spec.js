@@ -53,6 +53,6 @@ test.describe('Codes on the dashboards', () => {
     await expect(card).not.toContainText('TikTok Ads');
 
     await page.getByRole('button', { name: /^Analisis/ }).click();
-    await expect(page.getByText('TIKTOK', { exact: true }).first()).toBeVisible();
+    await expect(page.locator('section').filter({ hasText: 'Sumber prospek' }).getByText('TIKTOK', { exact: true })).toBeVisible();
   });
 });

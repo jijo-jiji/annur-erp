@@ -5,7 +5,7 @@ import { studentsApi } from '../api/client';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
 import { classLabel, grade, gradeOrder } from '../lib/domain';
-import { formLabel, FORMS, todayISO } from '../lib/format';
+import { FORMS, todayISO } from '../lib/format';
 import { downloadCsv } from '../lib/csv';
 import { useGrades } from '../lib/grades';
 import { examsOf, isFail, isFinalYear, passMark, RESULT_GRADES, resultsFormUrl, summarize, TERMS, termLabel, termOf } from '../lib/results';
@@ -13,6 +13,7 @@ import { CENTRE } from '../lib/config';
 import { HBarList, TrendChart } from './charts';
 import ResultSubmissions from './ResultSubmissions';
 import { Badge, Button, Card, CardHeader, cx, EmptyState, filterClass, inputClass, Modal, PageHeader, Stat, Table, Tabs, Td, Th, useToast } from './ui';
+import { classRef } from '../lib/codes';
 
 // School exam results (not tuition-class tests): per year and term, shown by tuition class. Results come in by
 // class here, by student on the profile, or from parents on the public form (#/keputusan) after review.
@@ -108,7 +109,7 @@ export default function ResultsView({ role }) {
             <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 p-4">
               <select value={form} onChange={(e) => setForm(e.target.value)} aria-label="Tapis tingkatan" className={filterClass}>
                 <option value="ALL">Semua tingkatan</option>
-                {FORMS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                {FORMS.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
               </select>
               <span className="text-sm text-gray-500">{visible.length} kelas{finalOnly ? ' Tingkatan 5' : ''}</span>
             </div>
@@ -135,7 +136,7 @@ export default function ResultsView({ role }) {
                     return (
                       <tr key={c.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setClassId(c.id)}>
                         <Td className="font-medium text-gray-900">
-                          {classLabel(c, subjects)}
+                          {classRef(c)}
                           <p className="text-[13px] font-normal text-gray-500">{rows.length}/{rosterOf(c).length} pelajar direkod</p>
                         </Td>
                         <Td className="hidden text-gray-700 md:table-cell">{teacherName(c) ? `Cikgu ${teacherName(c)}` : '—'}</Td>
@@ -161,11 +162,11 @@ export default function ResultsView({ role }) {
 // One tuition class's results for one school exam: the roster with a mark (or an SPM grade) each, the change
 // from the exam before, and the class average across the year's exams.
 function ClassResults({ cls, year, term, roster, role, onBack }) {
-  const { subjects, teachers, results, saveResults } = useStore();
+  const { teachers, results, saveResults } = useStore();
   const notify = useToast();
   const [busy, setBusy] = useState(false);
   const gradeOnly = termOf(term)?.gradeOnly;
-  const label = classLabel(cls, subjects);
+  const label = classRef(cls);
   const sorted = useMemo(() => [...roster].sort((a, b) => a.name.localeCompare(b.name)), [roster]);
   const pks = new Set(roster.map((s) => s.pk));
   const mine = results.filter((r) => r.subjectPk === cls.subjectPk && pks.has(r.studentPk));
@@ -210,7 +211,7 @@ function ClassResults({ cls, year, term, roster, role, onBack }) {
       </button>
       <PageHeader
         title={`${label} · ${termLabel(term)} ${year}`}
-        description={`${formLabel(cls.form)}${teacher ? ` · Cikgu ${teacher.name}` : ''} · keputusan peperiksaan sekolah dalam subjek kelas ini`}
+        description={`${cls.form}${teacher ? ` · Cikgu ${teacher.name}` : ''} · keputusan peperiksaan sekolah dalam subjek kelas ini`}
         actions={<Button icon={Download} onClick={exportCsv}>Excel</Button>}
       />
 

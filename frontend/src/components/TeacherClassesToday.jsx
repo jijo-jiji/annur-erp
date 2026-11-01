@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCheck } from 'lucide-react';
 import { publicTeacherApi } from '../api/client';
 import { describeError } from '../lib/apiErrors';
-import { clock, formLabel } from '../lib/format';
+import { clock } from '../lib/format';
 import { Badge, Button, Card, cx } from './ui';
 
 // The teacher's classes today on their private link (Phase I): the check-in code to write on the whiteboard, the live
@@ -53,7 +53,7 @@ export default function TeacherClassesToday({ token }) {
           <Card key={cls.class_id} className="overflow-hidden">
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
               <div>
-                <p className="text-base font-semibold text-gray-900">{cls.subject} · {formLabel(cls.form_level)}</p>
+                <p className="text-base font-semibold text-gray-900">{cls.subject} · {cls.form_level}</p>
                 <p className="text-[13px] text-gray-500">{cls.start}–{cls.end}{cls.room ? ` · ${cls.room}` : ''} · imbasan {cls.opens}–{cls.closes}, lewat selepas {cls.late_after}</p>
                 <Badge className="mt-1.5" tone={locked ? 'neutral' : STATE[cls.state].tone}>{locked ? 'Senarai disahkan' : STATE[cls.state].label}</Badge>
               </div>

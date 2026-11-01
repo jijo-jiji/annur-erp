@@ -273,7 +273,7 @@ test.describe('Laporan opens the records behind its figures', () => {
     await agrees(page);
 
     await openReport(page);
-    await page.getByRole('row').filter({ hasText: 'Utiliti' }).getByRole('link').click(); // "Sebenar" in the budget table
+    await page.getByRole('row').filter({ hasText: /^Utiliti\b/ }).getByRole('link').click(); // the category typed on the voucher (a coded one reads UTILITI) // "Sebenar" in the budget table
     await expect(bar(page)).toContainText('Utiliti');
     await agrees(page);
 

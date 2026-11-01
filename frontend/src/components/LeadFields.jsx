@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
 import { subjectsForForm } from '../lib/domain';
-import { FORMS, formLabel, STREAM_LABEL } from '../lib/format';
+import { FORMS, STREAM_LABEL } from '../lib/format';
 import { useGrades } from '../lib/grades';
 import { useStore } from '../store';
 import SchoolPicker from './SchoolPicker';
 import { cx, Input, Select, Textarea } from './ui';
+import { useApp } from '../context/AppContext';
+import { codeOfLabel } from '../lib/codes';
 
 // A grade's level (master data) -> the level the subject list uses
 export const SUBJECT_LEVEL = { PRIMARY: 'PRIMARY', LOWER: 'LOWER_SEC', UPPER: 'UPPER_SEC' };
@@ -47,7 +49,7 @@ function Chips({ items, selected, onToggle, tone }) {
               on ? 'border-brand-700 bg-brand-700 text-white' : tone === 'warn' ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50',
             )}
           >
-            {s.name}
+            {s.code}
           </button>
         );
       })}
@@ -66,7 +68,7 @@ export function SubjectPicker({ form, value, onToggle }) {
   return (
     <fieldset>
       <legend className="mb-1.5 text-[13px] font-medium text-gray-700">
-        Subjek diminati{form && <span className="font-normal text-gray-500"> · {formLabel(form)}</span>}
+        Subjek diminati{form && <span className="font-normal text-gray-500"> · {form}</span>}
       </legend>
       {!form ? (
         <p className="rounded-md border border-dashed border-gray-300 px-3 py-3 text-[13px] text-gray-500">
@@ -79,7 +81,7 @@ export function SubjectPicker({ form, value, onToggle }) {
           )}
           {offered.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-medium text-gray-500">Kelas dibuka untuk {formLabel(form)}</p>
+              <p className="text-xs font-medium text-gray-500">Kelas dibuka untuk {form}</p>
               {byStream(offered).map(([heading, items]) => (
                 <div key={heading || 'all'}>
                   {heading && <p className="mb-1 text-xs text-gray-400">{heading}</p>}
@@ -114,6 +116,8 @@ export function SubjectPicker({ form, value, onToggle }) {
 // The prospect's details. Only the phone number and the source are required: the rest is filled in as
 // the follow-up goes on, and "Belum lengkap" on the card says what is still missing.
 export default function LeadFields({ value, onChange, sources, campaigns, schools }) {
+  const { getMasterOptions } = useApp();
+  const campaignList = getMasterOptions('22_lead_campaign'); // a campaign is kept by its name; the list shows its code
   const set = (patch) => onChange({ ...value, ...patch });
   const toggleSubject = (code) => set({
     interested_subjects: value.interested_subjects.includes(code)
@@ -129,19 +133,19 @@ export default function LeadFields({ value, onChange, sources, campaigns, school
         <Input label="No. telefon" type="tel" required value={value.phone} onChange={(e) => set({ phone: e.target.value })} hint="Cukup dengan nombor telefon dan sumber untuk menyimpan." />
         <Select label="Sumber" required value={value.lead_source} onChange={(e) => set({ lead_source: e.target.value })}>
           <option value="">Pilih sumber</option>
-          {sources.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          {sources.map((s) => <option key={s.value} value={s.value}>{s.value}</option>)}
         </Select>
         <Input label="Nama pelajar" value={value.student_name} onChange={(e) => set({ student_name: e.target.value })} />
         <Input label="Nama ibu bapa / penjaga" value={value.parent_name} onChange={(e) => set({ parent_name: e.target.value })} />
         <Select label="Tingkatan / darjah" value={value.form_level} onChange={(e) => set({ form_level: e.target.value })}>
           <option value="">Belum diketahui</option>
-          {FORMS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          {FORMS.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
         </Select>
-        <SchoolPicker value={value.school_name} onChange={(school_name) => set({ school_name })} schools={schools} />
+        <SchoolPicker value={value.school_name} onChange={(school_name) => set({ school_name })} schools={schools} codes />
         <Input label="E-mel" type="email" value={value.email} onChange={(e) => set({ email: e.target.value })} />
         <Select label="Kempen" value={value.campaign} onChange={(e) => set({ campaign: e.target.value })} hint="Senarai kempen diurus dalam Data induk.">
           <option value="">Tiada kempen</option>
-          {campaignOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+          {campaignOptions.map((c) => <option key={c} value={c}>{codeOfLabel(campaignList, c)}</option>)}
         </Select>
       </div>
       <SubjectPicker form={value.form_level} value={value.interested_subjects} onToggle={toggleSubject} />

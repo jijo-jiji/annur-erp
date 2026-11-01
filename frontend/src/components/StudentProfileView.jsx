@@ -6,10 +6,10 @@ import { useApp } from '../context/AppContext';
 import { studentsApi } from '../api/client';
 import { can } from '../lib/permissions';
 import {
-  arrearsCases, attendanceSummary, classLabel, grade, invoiceBalance, invoiceStatus, preferredContact, schoolCodeOf, siblingsOf,
+  arrearsCases, attendanceSummary, grade, invoiceBalance, invoiceStatus, preferredContact, schoolCodeOf, siblingsOf,
 } from '../lib/domain';
 import { ageText } from '../lib/age';
-import { date, DAY_LABEL, formLabel, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink, fmtPhone } from '../lib/format';
+import { date, DAY_LABEL, rm, STREAM_LABEL, STUDENT_STATUS, timeRange, todayISO, waLink, fmtPhone } from '../lib/format';
 import { CENTRE } from '../lib/config';
 import { fillMessage } from '../lib/messages';
 import { PhotoBox } from './Attachments';
@@ -25,6 +25,7 @@ import {
 } from './ui';
 import WhatsAppButton from './WhatsAppButton';
 import { telLink } from '../lib/phone';
+import { classRef } from '../lib/codes';
 
 const INVOICE_BADGE = {
   PAID: <Badge tone="green">Dibayar</Badge>,
@@ -36,7 +37,7 @@ const INVOICE_BADGE = {
 export default function StudentProfileView({ role, param }) {
   const store = useStore();
   const { getMasterOptions } = useApp();
-  const { students, classes, subjects, teachers, invoices, receipts, attendance, results, discounts, settings, waitlist } = store;
+  const { students, classes, teachers, invoices, receipts, attendance, results, discounts, settings, waitlist } = store;
   const notify = useToast();
   const initialTab = new URLSearchParams(window.location.hash.split('?')[1]).get('tab') ?? 'info';
   const [tab, setTab] = useState(initialTab);
@@ -82,7 +83,6 @@ export default function StudentProfileView({ role, param }) {
   const arrears = arrearsCases([s], invoices, settings.unpaidMonthsLimit)[0];
   const teacherOf = (c) => teachers.find((t) => t.code === c.teacher)?.name;
   const dropReasons = getMasterOptions('14_drop_reason');
-  const sourceLabel = getMasterOptions('3_lead_source').find((o) => o.value === s.source)?.label ?? (s.source === 'QR_CODE' ? 'Borang QR' : s.source);
   const schools = getMasterOptions('6_school');
   // The age comes from the date of birth; a record made before that was asked keeps the age group it was given
   const ageLabel = (p) => (p.dob ? ageText(p.dob) : p.age ? getMasterOptions('7_parent_age').find((o) => o.value === p.age)?.label ?? p.age : '');
@@ -98,8 +98,8 @@ export default function StudentProfileView({ role, param }) {
   });
   const classOptions = (exclude = []) => classes
     .filter((c) => c.form === s.form && !s.classes.includes(c.id) && !exclude.includes(c.id))
-    .map((c) => ({ value: c.id, label: `${classLabel(c, subjects)} · ${DAY_LABEL[c.day]} ${timeRange(c.start, c.end)} · ${c.enrolled}/${c.max}${c.enrolled >= c.max ? ' (penuh)' : ''}` }));
-  const reasonOptions = dropReasons.map((r) => ({ value: r.value, label: r.label }));
+    .map((c) => ({ value: c.id, label: `${classRef(c)} · ${DAY_LABEL[c.day]} ${timeRange(c.start, c.end)} · ${c.enrolled}/${c.max}${c.enrolled >= c.max ? ' (penuh)' : ''}` }));
+  const reasonOptions = dropReasons.map((r) => ({ value: r.value, label: r.value })); // the reasons read as their codes
 
   return (
     <>
@@ -227,7 +227,7 @@ export default function StudentProfileView({ role, param }) {
                     ['E-mel', s.email],
                     ['Tarikh daftar', date(s.joined)],
                     ['Alamat', s.address],
-                    ['Sumber', sourceLabel],
+                    ['Sumber', s.source || '—'],
                     s.type === 'WALK_IN' && ['Keterangan walk-in', s.walkIn.description],
                   ]}
                 />
@@ -308,7 +308,7 @@ export default function StudentProfileView({ role, param }) {
                 {enrolled.map((c) => (
                   <li key={c.id} className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-900">{classLabel(c, subjects)}</p>
+                      <p className="text-sm font-medium text-gray-900">{classRef(c)}</p>
                       <p className="text-[13px] text-gray-600">
                         {DAY_LABEL[c.day]}, {timeRange(c.start, c.end)} · {teacherOf(c) ? `Cikgu ${teacherOf(c)}` : 'Guru belum ditetapkan'}{c.room && ` · Bilik ${c.room}`} · {c.enrolled}/{c.max} kerusi
                       </p>
@@ -334,7 +334,7 @@ export default function StudentProfileView({ role, param }) {
                   return (
                     <li key={w.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">{classLabel(c, subjects)}</p>
+                        <p className="text-sm font-medium text-gray-900">{classRef(c)}</p>
                         <p className="text-[13px] text-gray-500">
                           Menunggu sejak {date(w.added)} · {c.enrolled}/{c.max} kerusi
                         </p>
@@ -436,7 +436,7 @@ export default function StudentProfileView({ role, param }) {
                 const c = classes.find((x) => x.id === a.classId);
                 return (
                   <li key={`${a.classId}-${a.date}`} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
-                    <span className="text-gray-900">{c && classLabel(c, subjects)}{a.notes?.[s.id] && <span className="text-gray-500"> · {a.notes[s.id]}</span>}</span>
+                    <span className="text-gray-900">{c && classRef(c)}{a.notes?.[s.id] && <span className="text-gray-500"> · {a.notes[s.id]}</span>}</span>
                     <span className="text-gray-500">{date(a.date)}</span>
                   </li>
                 );
@@ -455,7 +455,7 @@ export default function StudentProfileView({ role, param }) {
       )}
 
       {tab === 'reports' && (
-        <StudentReportsPanel student={s} role={role} classes={enrolled.map((c) => ({ id: c.id, label: classLabel(c, subjects) }))} />
+        <StudentReportsPanel student={s} role={role} classes={enrolled.map((c) => ({ id: c.id, label: classRef(c) }))} />
       )}
 
       {tab === 'history' && (
@@ -522,7 +522,7 @@ export default function StudentProfileView({ role, param }) {
       )}
       {dialog?.type === 'enroll' && (
         <FormModal
-          title="Tambah subjek" description={`Kelas ${formLabel(s.form)}. Kelas penuh: pelajar dimasukkan ke senarai menunggu.`} submitLabel="Tambah" onClose={() => setDialog(null)}
+          title="Tambah subjek" description={`Kelas ${s.form}. Kelas penuh: pelajar dimasukkan ke senarai menunggu.`} submitLabel="Tambah" onClose={() => setDialog(null)}
           initial={{ class_id: '', allow_over_capacity: false }}
           fields={[
             { name: 'class_id', label: 'Kelas', type: 'select', options: classOptions(), required: true },
@@ -534,7 +534,7 @@ export default function StudentProfileView({ role, param }) {
       )}
       {dialog?.type === 'drop' && (
         <FormModal
-          title="Gugur subjek" description={classLabel(dialog.cls, subjects)} danger submitLabel="Gugur" onClose={() => setDialog(null)}
+          title="Gugur subjek" description={classRef(dialog.cls)} danger submitLabel="Gugur" onClose={() => setDialog(null)}
           initial={{ reason_code: '', reason_text: '' }}
           fields={[
             { name: 'reason_code', label: 'Sebab gugur', type: 'select', options: reasonOptions, required: true },
@@ -545,7 +545,7 @@ export default function StudentProfileView({ role, param }) {
       )}
       {dialog?.type === 'change' && (
         <FormModal
-          title="Tukar kelas" description={`Dari ${classLabel(dialog.cls, subjects)}`} submitLabel="Tukar" onClose={() => setDialog(null)}
+          title="Tukar kelas" description={`Dari ${classRef(dialog.cls)}`} submitLabel="Tukar" onClose={() => setDialog(null)}
           initial={{ to_class: '', reason_text: '' }}
           fields={[
             { name: 'to_class', label: 'Kelas baharu', type: 'select', options: classOptions(), required: true },
@@ -577,7 +577,7 @@ export default function StudentProfileView({ role, param }) {
             {
               name: 'class_ids', label: 'Kelas', type: 'checkgroup', required: s.type !== 'WALK_IN',
               options: classes.filter((c) => c.form === s.form).map((c) => ({
-                value: c.id, label: `${classLabel(c, subjects)} · ${DAY_LABEL[c.day]} ${timeRange(c.start, c.end)} · ${c.enrolled}/${c.max}${c.enrolled >= c.max ? ' (penuh)' : ''}`,
+                value: c.id, label: `${classRef(c)} · ${DAY_LABEL[c.day]} ${timeRange(c.start, c.end)} · ${c.enrolled}/${c.max}${c.enrolled >= c.max ? ' (penuh)' : ''}`,
               })),
             },
             { name: 'note', label: 'Apa yang dibetulkan', type: 'textarea', required: true, hint: 'Supervisor akan melihat catatan ini bersama sejarah penolakan.' },

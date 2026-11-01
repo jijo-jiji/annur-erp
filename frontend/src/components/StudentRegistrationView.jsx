@@ -601,7 +601,7 @@ export function ClassPicker({ form, value, onChange, waitlist = [], onWaitlistCh
               const options = classes.filter((c) => c.form === form && c.subject === subj.code);
               return (
                 <div key={subj.code} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start">
-                  <p className="w-44 shrink-0 pt-1.5 text-sm font-medium text-gray-900">{subj.name}</p>
+                  <p className="w-44 shrink-0 pt-1.5 text-sm font-medium text-gray-900">{subj.code}</p>
                   <div className="flex flex-1 flex-wrap gap-2">
                     {options.map((c) => {
                       const selected = value.includes(c.id);
@@ -818,7 +818,7 @@ function RegistrationForm({ onCancel, onDone }) {
                     <Select label="Sumber (bagaimana tahu tentang kami)" value={f.source} onChange={(e) => set({ source: e.target.value })}>
                       <option value="">Tidak dinyatakan</option>
                       {sources.map((s) => (
-                        <option key={s.value} value={s.value}>{s.label}</option>
+                        <option key={s.value} value={s.value}>{s.value}</option>
                       ))}
                     </Select>
                   )}
@@ -828,7 +828,7 @@ function RegistrationForm({ onCancel, onDone }) {
                     <Select label="Sumber (bagaimana tahu tentang kami)" value={f.source} onChange={(e) => set({ source: e.target.value })}>
                       <option value="">Tidak dinyatakan</option>
                       {sources.map((s) => (
-                        <option key={s.value} value={s.value}>{s.label}</option>
+                        <option key={s.value} value={s.value}>{s.value}</option>
                       ))}
                     </Select>
                   )}

@@ -102,7 +102,7 @@ export default function ParentQRView() {
                     <Td>
                       <a href={`#/students/${s.id}`} className="font-medium text-gray-900 hover:underline">{s.name}</a>
                       <p className="text-[13px] text-gray-500">
-                        {s.id} · {formLabel(s.form)}
+                        {s.id} · {s.form}
                       </p>
                     </Td>
                     <Td>
