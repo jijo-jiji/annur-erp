@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
-import { CheckCircle2, AlertCircle, X, Info } from 'lucide-react';
+import { CheckCircle2, AlertCircle, X, Info, Eye, EyeOff } from 'lucide-react';
 import { normalizePhone, toInputStyle } from '../lib/phone';
 import { THRESHOLDS } from '../lib/thresholds';
 
@@ -282,12 +282,36 @@ export function TelInput({ value, onChange, onBlur, placeholder, ...props }) {
   );
 }
 
+// A password box with an eye that shows what was typed, so a password can be checked before it is used.
+// The button is named without the words "kata laluan" so the box stays the only thing found by that label.
+export function PasswordInput(props) {
+  const [shown, setShown] = useState(false);
+  const Icon = shown ? EyeOff : Eye;
+  return (
+    <div className="relative">
+      <input className={cx(inputClass, 'pr-10')} autoCapitalize="off" autoCorrect="off" spellCheck={false} {...props} type={shown ? 'text' : 'password'} />
+      <button
+        type="button"
+        onClick={() => setShown(!shown)}
+        aria-pressed={shown}
+        aria-label={shown ? 'Sembunyikan' : 'Tunjukkan'}
+        title={shown ? 'Sembunyikan' : 'Tunjukkan'}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-gray-500 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600/30"
+      >
+        <Icon className="size-4" />
+      </button>
+    </div>
+  );
+}
+
 export function Input({ label, hint, error, className, required, ...props }) {
   return (
     <Field label={label} hint={hint} error={error} required={required} className={className}>
-      {(id) => (props.type === 'tel'
-        ? <TelInput id={id} required={required} {...props} />
-        : <input id={id} required={required} className={inputClass} {...props} />)}
+      {(id) => {
+        if (props.type === 'tel') return <TelInput id={id} required={required} {...props} />;
+        if (props.type === 'password') return <PasswordInput id={id} required={required} {...props} />;
+        return <input id={id} required={required} className={inputClass} {...props} />;
+      }}
     </Field>
   );
 }
