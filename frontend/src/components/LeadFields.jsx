@@ -7,7 +7,7 @@ import SchoolPicker from './SchoolPicker';
 import { cx, Input, Select, Textarea } from './ui';
 
 // A grade's level (master data) -> the level the subject list uses
-const SUBJECT_LEVEL = { PRIMARY: 'PRIMARY', LOWER: 'LOWER_SEC', UPPER: 'UPPER_SEC' };
+export const SUBJECT_LEVEL = { PRIMARY: 'PRIMARY', LOWER: 'LOWER_SEC', UPPER: 'UPPER_SEC' };
 const STREAM_ORDER = ['TERAS', 'SAINS', 'SASTERA'];
 
 // The subjects for one tingkatan, in the two groups staff need:

@@ -21,6 +21,7 @@ import {
   useToast, WhatsAppIcon,
 } from './ui';
 import WhatsAppButton from './WhatsAppButton';
+import WalkInSubjects from './WalkInSubjects';
 import { phoneMatches } from '../lib/phone';
 
 const PAGE = 50;
@@ -789,7 +790,7 @@ function RegistrationForm({ onCancel, onDone }) {
                     required
                     value={f.form}
                     onChange={(e) => {
-                      set({ form: e.target.value, classes: [], waitlist: [] });
+                      set({ form: e.target.value, classes: [], waitlist: [], walkInSubjects: [] }); // the subjects belong to the tingkatan
                       setError('');
                     }}
                   >
@@ -885,25 +886,7 @@ function RegistrationForm({ onCancel, onDone }) {
                   <CardHeader title="Walk-in" description="Pelajar walk-in membayar setiap sesi; tiada invois bulanan dijana." />
                   <div className="space-y-4 p-5">
                     <Textarea label="Keterangan" required value={f.walkInDescription} onChange={(e) => set({ walkInDescription: e.target.value })} placeholder="cth. Hadir kelas intensif Sabtu sahaja sebelum peperiksaan" />
-                    <div>
-                      <p className="mb-1.5 text-[13px] font-medium text-gray-700">Subjek walk-in</p>
-                      <div className="flex flex-wrap gap-2">
-                        {subjects.filter((s) => s.active).map((s) => {
-                          const on = f.walkInSubjects.includes(s.pk);
-                          return (
-                            <button
-                              key={s.pk}
-                              type="button"
-                              aria-pressed={on}
-                              onClick={() => set({ walkInSubjects: on ? f.walkInSubjects.filter((x) => x !== s.pk) : [...f.walkInSubjects, s.pk] })}
-                              className={cx('rounded-md border px-3 py-1.5 text-[13px] font-medium', on ? 'border-brand-600 bg-brand-50 text-brand-900 ring-1 ring-brand-600' : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400')}
-                            >
-                              {s.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <WalkInSubjects form={f.form} value={f.walkInSubjects} onChange={(walkInSubjects) => set({ walkInSubjects })} />
                   </div>
                 </Card>
               ) : (
