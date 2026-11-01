@@ -17,6 +17,7 @@ import LeadImportModal from './LeadImportModal';
 import { Badge, Button, Card, CardHeader, Checkbox, cx, DescriptionList, EmptyState, filterClass, Input, Modal, PageHeader, Segmented, Select, Stat, Table, Td, Th, useToast, WhatsAppIcon } from './ui';
 import WhatsAppButton from './WhatsAppButton';
 import { phoneMatches } from '../lib/phone';
+import { codeOfLabel } from '../lib/codes';
 
 // The 8 conversion stages, in order
 // The order and the rules of the stages are fixed; their names are the centre's (Settings > Had & amaran)
@@ -84,7 +85,7 @@ function AddLeadModal({ onClose, sources, campaigns, schools }) {
   );
 }
 
-function LeadDetailModal({ lead, onClose, sources, sourceLabel, subjectName, campaigns, schools, actions, lostReasons }) {
+function LeadDetailModal({ lead, onClose, sources, subjectName, campaigns, schools, actions, lostReasons }) {
   const { leadAction, updateLead } = useApp();
   const [activities, setActivities] = useState([]);
   const [edit, setEdit] = useState(null);
@@ -172,7 +173,7 @@ function LeadDetailModal({ lead, onClose, sources, sourceLabel, subjectName, cam
                 ['Ibu bapa', lead.parent_name],
                 ['Telefon', fmtPhone(lead.phone)],
                 ['Sekolah', lead.school_name],
-                ['Sumber', sourceLabel(lead.lead_source)],
+                ['Sumber', lead.lead_source || '—'],
                 ['Kempen', lead.campaign],
                 ['PIC (pemilik prospek)', lead.assigned_to],
                 ['Tarikh pertanyaan', date(lead.enquiry_date)],
@@ -283,7 +284,9 @@ function LeadDetailModal({ lead, onClose, sources, sourceLabel, subjectName, cam
   );
 }
 
-function LeadCard({ lead, onOpen, onMove, sourceLabel, subjectName }) {
+function LeadCard({ lead, onOpen, onMove, subjectName }) {
+  const { getMasterOptions } = useApp();
+  const campaignOptions = getMasterOptions('22_lead_campaign');
   const due = isDue(lead);
   const idx = MOVABLE.indexOf(lead.status);
   const next = idx >= 0 && idx < MOVABLE.length - 1 ? MOVABLE[idx + 1] : null;
@@ -293,9 +296,9 @@ function LeadCard({ lead, onOpen, onMove, sourceLabel, subjectName }) {
   return (
     <div className={cx('rounded-md border bg-white p-3 text-[13px]', due ? 'border-amber-300' : 'border-gray-200')}>
       <button type="button" onClick={onOpen} className="block text-left text-sm font-medium text-gray-900 hover:text-brand-700 hover:underline">{leadTitle(lead)}</button>
-      <p className="text-gray-500">{lead.lead_id} · {formShort(lead.form_level) || 'Tingkatan ?'} · {sourceLabel(lead.lead_source)}</p>
+      <p className="text-gray-500">{lead.lead_id} · {lead.form_level || 'F?'} · {lead.lead_source || '—'}</p>
       {lead.interested_subjects.length > 0 && <p className="mt-1 text-gray-600">{lead.interested_subjects.map(subjectName).join(', ')}</p>}
-      {lead.campaign && <p className="text-gray-500">Kempen: {lead.campaign}</p>}
+      {lead.campaign && <p className="text-gray-500">Kempen: {codeOfLabel(campaignOptions, lead.campaign)}</p>}
       {open && missing.length > 0 && (
         <button type="button" onClick={onOpen} title={`Belum ada: ${missing.join(', ')}`} className="mt-1.5 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100">
           Belum lengkap ({missing.length})
@@ -362,7 +365,9 @@ export default function LeadFunnelView() {
   const subjectMap = useMemo(() => Object.fromEntries(subjects.map((s) => [s.code, s.name])), [subjects]);
   const subjectName = useCallback((code) => subjectMap[code] || code, [subjectMap]);
   // The lists the centre manages in Data induk
-  const listedCampaigns = useMemo(() => getMasterOptions('22_lead_campaign').map((o) => o.label), [getMasterOptions]);
+  const campaignOptions = getMasterOptions('22_lead_campaign'); // campaigns and reasons are kept by name; the screen reads their codes
+  const reasonOptions = getMasterOptions('24_lost_reason');
+  const listedCampaigns = useMemo(() => campaignOptions.map((o) => o.label), [campaignOptions]);
   const campaigns = useMemo(() => [...new Set([...listedCampaigns, ...leads.map((l) => l.campaign).filter(Boolean)])].sort(), [leads, listedCampaigns]);
   // These two lists keep the order the centre set (meta.order), then anything added later A to Z
   const inOrder = useCallback((category) => getMasterOptions(category)
@@ -492,7 +497,7 @@ export default function LeadFunnelView() {
                       <span className="rounded bg-white px-1.5 py-0.5 text-xs font-medium text-gray-600 ring-1 ring-gray-200 tnum">{current.length}</span>
                     </div>
                     <div className="space-y-2">
-                      {items.map((l) => <LeadCard key={l.id} lead={l} onOpen={() => setOpenId(l.id)} onMove={move} sourceLabel={sourceLabel} subjectName={subjectName} />)}
+                      {items.map((l) => <LeadCard key={l.id} lead={l} onOpen={() => setOpenId(l.id)} onMove={move} subjectName={subjectName} />)}
                       {items.length === 0 && <p className="rounded-md border border-dashed border-gray-300 py-6 text-center text-xs text-gray-400">Tiada prospek</p>}
                       {current.length > items.length && (
                         <Button size="sm" variant="ghost" className="w-full" onClick={() => setShown({ ...shown, [s.id]: limit + COLUMN_LIMIT })}>Tunjuk lagi ({current.length - items.length})</Button>
@@ -525,7 +530,7 @@ export default function LeadFunnelView() {
                     <tr key={l.id}>
                       <Td className="font-medium text-gray-900">{leadTitle(l)} <span className="font-normal text-gray-400">· {l.lead_id}</span></Td>
                       <Td>{STAGE_LABEL[l.lost_at_stage] || '—'}</Td>
-                      <Td className="text-gray-600">{l.lost_reason}</Td>
+                      <Td className="text-gray-600">{codeOfLabel(reasonOptions, l.lost_reason)}</Td>
                       <Td className="whitespace-nowrap">{date((l.stage_changed_at || '').slice(0, 10))}</Td>
                       <Td><Button size="sm" onClick={() => setOpenId(l.id)}>Buka</Button></Td>
                     </tr>
@@ -612,7 +617,7 @@ export default function LeadFunnelView() {
           </Card>
           <Card>
             <CardHeader title="Sumber prospek" />
-            <div className="p-5"><Donut rows={stats.by_source.map((r) => ({ label: sourceLabel(r.source), value: r.count }))} /></div>
+            <div className="p-5"><Donut rows={stats.by_source.map((r) => ({ label: r.source || '—', value: r.count }))} /></div>
           </Card>
           <Card>
             <CardHeader title="Peringkat semasa" />
@@ -620,14 +625,14 @@ export default function LeadFunnelView() {
           </Card>
           <Card>
             <CardHeader title="Kempen" />
-            <div className="p-5"><Donut rows={stats.by_campaign.map((r) => ({ label: r.campaign, value: r.count }))} /></div>
+            <div className="p-5"><Donut rows={stats.by_campaign.map((r) => ({ label: codeOfLabel(campaignOptions, r.campaign), value: r.count }))} /></div>
           </Card>
           <Card>
             <CardHeader title="Sebab tidak berminat" />
             {stats.lost_reasons.length === 0 ? <p className="p-5 text-sm text-gray-500">Tiada rekod.</p> : (
               <ul className="divide-y divide-gray-100 text-sm">
                 {stats.lost_reasons.map((r) => (
-                  <li key={r.reason} className="flex justify-between gap-3 px-5 py-2.5"><span className="text-gray-800">{r.reason}</span><Badge>{r.count}</Badge></li>
+                  <li key={r.reason} className="flex justify-between gap-3 px-5 py-2.5"><span className="text-gray-800">{codeOfLabel(reasonOptions, r.reason)}</span><Badge>{r.count}</Badge></li>
                 ))}
               </ul>
             )}
@@ -651,7 +656,6 @@ export default function LeadFunnelView() {
           lead={openLead}
           onClose={() => setOpenId(null)}
           sources={sources}
-          sourceLabel={sourceLabel}
           subjectName={subjectName}
           campaigns={listedCampaigns}
           schools={schools}

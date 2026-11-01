@@ -72,7 +72,7 @@ export default function TimetableView({ role }) {
 
       {drill && (
         <DrilldownBar
-          chips={describeClassFilters(drill.filters, { subject: (code) => subjects.find((x) => x.code === code)?.name })}
+          chips={describeClassFilters(drill.filters)}
           result={matched}
           expect={drill.expect}
           unit={drill.unit}

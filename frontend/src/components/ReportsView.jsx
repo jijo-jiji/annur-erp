@@ -3,11 +3,13 @@ import { Download, Printer } from 'lucide-react';
 import { dashboardApi } from '../api/client';
 import { useStore } from '../store';
 import { can } from '../lib/permissions';
-import { formLabel, rm, fmtPhone } from '../lib/format';
+import { rm, fmtPhone } from '../lib/format';
 import { attendanceHref, classesHref, historyHref, invoicesHref, monthEnd, monthKey, receiptsHref, sessionsHref, studentsHref, vouchersHref } from '../lib/drilldown';
 import { downloadCsv } from '../lib/csv';
 import { BarChart, HBarList, Legend, SERIES_COLORS } from './charts';
 import { Badge, Button, Card, CardHeader, cx, EmptyState, PageHeader, Stat, Table, Tabs, Td, Th } from './ui';
+import { useApp } from '../context/AppContext';
+import { codeOfLabel, subjectCodeOf } from '../lib/codes';
 
 const MONTHS = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogo', 'Sep', 'Okt', 'Nov', 'Dis'];
 const rmShort = (v, axis) => (axis ? (v >= 1000 ? `RM${Math.round(v / 1000)}k` : `RM${v}`) : rm(v));
@@ -54,6 +56,8 @@ function ShareList({ rows, empty = 'Tiada kutipan pada tahun ini.' }) {
 
 export default function ReportsView({ role }) {
   const { classes, subjects } = useStore();
+  const { getMasterOptions } = useApp();
+  const expenseCategories = getMasterOptions('18_expense_cat'); // vouchers keep the category's name; the report reads its code
   const thisYear = new Date().getFullYear();
   const [year, setYear] = useState(thisYear);
   const [tab, setTab] = useState('sales');
@@ -73,14 +77,14 @@ export default function ReportsView({ role }) {
   const bySubject = useMemo(() => {
     const map = {};
     for (const c of classes) {
-      const name = subjects.find((s) => s.code === c.subject)?.name ?? c.subject ?? '—';
-      map[name] ??= { enrolled: 0, cap: 0, code: c.subject };
-      map[name].enrolled += c.enrolled;
-      map[name].cap += c.max;
+      const code = c.subject ?? '—';
+      map[code] ??= { enrolled: 0, cap: 0, code: c.subject, name: subjects.find((s) => s.code === c.subject)?.name ?? code };
+      map[code].enrolled += c.enrolled;
+      map[code].cap += c.max;
     }
     return Object.entries(map)
       .map(([label, v]) => ({
-        label, value: v.cap ? Math.round((v.enrolled / v.cap) * 100) : 0, hint: `${v.enrolled}/${v.cap} kerusi`, enrolled: v.enrolled, cap: v.cap,
+        label, name: v.name, value: v.cap ? Math.round((v.enrolled / v.cap) * 100) : 0, hint: `${v.enrolled}/${v.cap} kerusi`, enrolled: v.enrolled, cap: v.cap,
         // the classes of the subject, whose seats the bar adds up
         href: v.code && v.enrolled > 0 ? classesHref({ subject: v.code }, { src: 'laporan', expect: v.enrolled, unit: 'enrolled' }) : undefined,
       }))
@@ -204,7 +208,7 @@ export default function ReportsView({ role }) {
           <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card>
               <CardHeader title="Hasil mengikut tingkatan" description="Berdasarkan kutipan resit" />
-              <div className="p-5"><ShareList rows={data.sales.by_form.map((f) => ({ label: `${f.label} (${f.students} pelajar)`, amount: f.amount, pct: f.pct, href: link(receiptsHref, { year: data.year, form: f.form }, f.amount, 'total') }))} /></div>
+              <div className="p-5"><ShareList rows={data.sales.by_form.map((f) => ({ label: `${f.form} (${f.students} pelajar)`, amount: f.amount, pct: f.pct, href: link(receiptsHref, { year: data.year, form: f.form }, f.amount, 'total') }))} /></div>
             </Card>
             <Card>
               <CardHeader title="Hasil mengikut peringkat" description="Menengah atas, menengah rendah dan sekolah rendah" />
@@ -224,7 +228,7 @@ export default function ReportsView({ role }) {
                   {data.expenses.by_category.map((c) => (
                     <li key={c.category}>
                       <RowLink href={link(vouchersHref, { status: 'COUNTED', year: data.year, category: c.category }, c.amount, 'total')} className="flex justify-between gap-3 px-5 py-2.5">
-                        <span className="text-gray-800">{c.category} <span className="text-gray-400">({c.count})</span></span>
+                        <span className="text-gray-800">{codeOfLabel(expenseCategories, c.category)} <span className="text-gray-400">({c.count})</span></span>
                         <span className="font-medium tnum">{rm(c.amount)}</span>
                       </RowLink>
                     </li>
@@ -253,7 +257,7 @@ export default function ReportsView({ role }) {
               <tbody>
                 {data.budget.rows.map((r) => (
                   <tr key={r.category}>
-                    <Td className="font-medium text-gray-900">{r.category} {!r.monthly_budget && <Badge tone="amber" className="ml-1">Tiada bajet</Badge>}</Td>
+                    <Td className="font-medium text-gray-900">{codeOfLabel(expenseCategories, r.category)} {!r.monthly_budget && <Badge tone="amber" className="ml-1">Tiada bajet</Badge>}</Td>
                     <Td className="text-right tnum">{rm(r.monthly_budget)}</Td>
                     <Td className="text-right tnum">{rm(r.budget_to_date)}</Td>
                     <Td className="text-right font-medium tnum"><Fig href={link(vouchersHref, { status: 'COUNTED', year: data.year, category: r.category }, r.actual, 'total')}>{rm(r.actual)}</Fig></Td>
@@ -325,8 +329,8 @@ export default function ReportsView({ role }) {
                   {data.academic.at_risk.map((s) => (
                     <tr key={`${s.student_id}-${s.subject}`}>
                       <Td><a href={`#/students/${s.student_id}?tab=results`} className="font-medium text-gray-900 hover:underline">{s.name}</a></Td>
-                      <Td>{formLabel(s.form)}</Td>
-                      <Td>{s.subject}</Td>
+                      <Td>{s.form}</Td>
+                      <Td>{subjectCodeOf(subjects, s.subject)}</Td>
                       <Td>{s.exam}{s.mark !== null ? ` · ${s.mark}%` : ''}</Td>
                       <Td><Badge tone="red">{s.grade}</Badge></Td>
                     </tr>
@@ -351,7 +355,7 @@ export default function ReportsView({ role }) {
                   <ul className="max-h-80 divide-y divide-gray-100 overflow-y-auto text-sm">
                     {list.map((s) => (
                       <li key={s.student_id} className="flex justify-between gap-3 px-5 py-2.5">
-                        <a href={`#/students/${s.student_id}`} className="text-gray-900 hover:underline">{s.full_name} <span className="text-gray-400">· {formLabel(s.form_level)}</span></a>
+                        <a href={`#/students/${s.student_id}`} className="text-gray-900 hover:underline">{s.full_name} <span className="text-gray-400">· {s.form_level}</span></a>
                         <span className="whitespace-nowrap text-gray-500">{fmtPhone(s.parent1_phone)}</span>
                       </li>
                     ))}
@@ -367,7 +371,7 @@ export default function ReportsView({ role }) {
                   <HBarList
                     labelWidth="12rem"
                     rows={data.drop_reasons.map((r) => ({
-                      label: r.label, value: r.subject_drops + r.students_left, hint: `${r.subject_drops} subjek · ${r.students_left} pelajar`,
+                      label: r.code || r.label, value: r.subject_drops + r.students_left, hint: `${r.subject_drops} subjek · ${r.students_left} pelajar`,
                       href: historyHref({ events: 'DROP_SUBJECT,TERMINATE', from: `${data.year}-01-01`, to: `${data.year}-12-31`, reason: r.code || 'NONE' },
                         { src: 'laporan', expect: r.subject_drops + r.students_left }),
                     }))}
@@ -407,7 +411,7 @@ export default function ReportsView({ role }) {
                     {data.result_improvement.students.map((r) => (
                       <tr key={`${r.student_id}-${r.subject}`}>
                         <Td className="font-medium text-gray-900">{r.student}</Td>
-                        <Td>{r.subject}</Td>
+                        <Td>{subjectCodeOf(subjects, r.subject)}</Td>
                         <Td className="text-right tnum">{r.baseline}</Td>
                         <Td className="text-right tnum">{r.m3 ?? '—'}</Td>
                         <Td className="text-right tnum">{r.m6 ?? '—'}</Td>
@@ -455,7 +459,7 @@ export default function ReportsView({ role }) {
             <CardHeader
               title="Kadar pengisian mengikut subjek"
               description={seats ? `${filled} daripada ${seats} kerusi diisi (${Math.round((filled / seats) * 100)}%). Merah: melebihi kapasiti.` : 'Tiada kelas dalam jadual.'}
-              actions={bySubject.length > 0 && <CsvButton onClick={() => downloadCsv('pengisian-kelas.csv', ['Subjek', 'Pelajar', 'Kerusi', 'Kadar %'], bySubject.map((r) => [r.label, r.enrolled, r.cap, r.value]))} />}
+              actions={bySubject.length > 0 && <CsvButton onClick={() => downloadCsv('pengisian-kelas.csv', ['Subjek', 'Pelajar', 'Kerusi', 'Kadar %'], bySubject.map((r) => [r.name, r.enrolled, r.cap, r.value]))} />}
             />
             <div className="p-5">
               <HBarList rows={bySubject} labelWidth="11rem" max={100} format={(v) => `${v}%`} danger={(r) => r.value > 100} />

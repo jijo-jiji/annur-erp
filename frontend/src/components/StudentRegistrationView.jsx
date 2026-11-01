@@ -94,7 +94,7 @@ function StudentsHome({ role, canEdit }) {
 // ---- Directory ----------------------------------------------------------------
 
 function StudentList({ drill }) {
-  const { students, invoices, subjects } = useStore();
+  const { students, invoices } = useStore();
   const { getMasterOptions } = useApp();
   const schools = getMasterOptions('6_school');
   const [q, setQ] = useState('');
@@ -140,7 +140,7 @@ function StudentList({ drill }) {
     <>
     {drill && (
       <DrilldownBar
-        chips={describeStudentFilters(drill.filters, { subject: (code) => subjects.find((x) => x.code === code)?.name })}
+        chips={describeStudentFilters(drill.filters)}
         result={matched}
         expect={drill.expect}
         unit={drill.unit}

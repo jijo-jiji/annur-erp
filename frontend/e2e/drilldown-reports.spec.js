@@ -245,8 +245,8 @@ test.describe('Laporan opens the records behind its figures', () => {
 
   test('each tingkatan and each peringkat open the receipts they add up to', async ({ page }) => {
     await openReport(page);
-    await page.locator('li a', { hasText: 'Tingkatan 5' }).first().click();
-    await expect(bar(page)).toContainText('Tingkatan 5');
+    await page.locator('li a', { hasText: 'F5' }).first().click();
+    await expect(bar(page)).toContainText('F5');
     await expect(bar(page)).toContainText('Dibayar tahun');
     await agrees(page);
     expect(await rowsOnScreen(page)).toBeGreaterThan(0);
@@ -304,7 +304,7 @@ test.describe('Laporan opens the records behind its figures', () => {
 
   test('a drop reason and a month count open the history rows they count', async ({ page }) => {
     await openReport(page, 'Akademik & status pelajar');
-    await page.getByRole('link', { name: /Pindah Sekolah/ }).click();
+    await page.getByRole('link', { name: /PINDAH/ }).click(); // a drop reason reads as its code
     await expect(page).toHaveURL(/#\/students\?.*tab=history/);
     await expect(bar(page)).toContainText('Dari Laporan');
     await expect(bar(page)).toContainText('Gugur subjek');

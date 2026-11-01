@@ -165,7 +165,7 @@ test.describe('Money, vouchers and classes open the rows they add up to', () => 
 
   test('a subject slice opens the active students taking it', async ({ page }) => {
     await openDetailed(page, 'SUPERVISOR');
-    const slice = page.locator('li a', { hasText: /^Matematik\s/ }).first();
+    const slice = page.locator('section').filter({ hasText: 'Subjek mengikut tingkatan' }).locator('li a').first(); // a subject slice, read as its code
     const count = Number(await slice.locator('span').nth(2).textContent());
     await slice.click();
     await expect(bar(page)).toContainText('Aktif');

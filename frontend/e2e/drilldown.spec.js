@@ -57,11 +57,12 @@ test.describe('Figures open the students they count', () => {
 
   test('a slice of the tingkatan chart opens the active students of that tingkatan', async ({ page }) => {
     await openDetailedDashboard(page, 'ADMIN');
-    const slice = page.locator('li a', { hasText: /^Tingkatan 5/ }).first(); // the chart's legend row for that slice
+    const card = page.locator('section').filter({ hasText: 'Pelajar aktif mengikut tingkatan' });
+    const slice = card.locator('li a', { hasText: /^F5/ }).first(); // the chart's legend row for that slice, read as its code
     const count = Number(await slice.locator('span').nth(2).textContent()); // colour, label, count, percentage
     await slice.click();
     await expect(bar(page)).toContainText('Aktif');
-    await expect(bar(page)).toContainText('Tingkatan 5');
+    await expect(bar(page)).toContainText('F5');
     await expect(bar(page)).toContainText(`${count} pelajar`);
     expect(await studentRows(page)).toBe(count);
     for (const cell of await page.locator('table tbody tr').allTextContents()) expect(cell).toContain('F5'); // the list reads each tingkatan as its code

@@ -4,7 +4,7 @@
 // (students/drilldown.py, billing/drilldown.py, expenses/drilldown.py, academic/drilldown.py, teachers/drilldown.py),
 // so a figure and its list cannot differ.
 import { useEffect, useState } from 'react';
-import { date, formLabel, monthLabel } from './format';
+import { date, monthLabel } from './format';
 
 // The filters each list understands
 export const STUDENT_FILTERS = ['status', 'type', 'form', 'school_category', 'joined', 'left', 'as_at', 'stay', 'uninvoiced', 'subject'];
@@ -117,13 +117,14 @@ const period = (f) => {
   return null;
 };
 
-// One chip per filter. `names` resolves codes the screen knows (subject names).
-export function describeStudentFilters(f, names = {}) {
+// One chip per filter, each as the code Data induk gives it (F5, FZ): the same code the figure's own row shows.
+// `names` resolves what is kept as a name instead (a voucher's category).
+export function describeStudentFilters(f) {
   const chips = [];
   if (f.status) chips.push(STUDENT_STATUS[f.status] ?? f.status);
   if (f.type) chips.push(TYPE[f.type] ?? f.type);
-  if (f.form) chips.push(formLabel(f.form));
-  if (f.subject) chips.push(names.subject?.(f.subject) ?? f.subject);
+  if (f.form) chips.push(f.form);
+  if (f.subject) chips.push(f.subject);
   if (f.school_category) chips.push(f.school_category === 'NONE' ? 'Sekolah tanpa kategori' : `Sekolah ${f.school_category}`);
   if (f.joined) chips.push(`Daftar ${monthLabel(f.joined)}`);
   if (f.left) chips.push(`Berhenti ${monthLabel(f.left)}`);
@@ -139,12 +140,12 @@ export function describeInvoiceFilters(f) {
 
 export function describeReceiptFilters(f) {
   const when = period(f);
-  return [when && `Dibayar ${when}`, f.walk_in && 'Walk-in', f.form && formLabel(f.form), f.level && (LEVEL[f.level] ?? f.level)].filter(Boolean);
+  return [when && `Dibayar ${when}`, f.walk_in && 'Walk-in', f.form, f.level && (LEVEL[f.level] ?? f.level)].filter(Boolean);
 }
 
-export function describeVoucherFilters(f) {
+export function describeVoucherFilters(f, names = {}) {
   const when = period(f);
-  return [f.status && (VOUCHER_STATUS[f.status] ?? f.status), when && (f.year && !f.month ? `Tarikh baucar ${when}` : when), f.category].filter(Boolean);
+  return [f.status && (VOUCHER_STATUS[f.status] ?? f.status), when && (f.year && !f.month ? `Tarikh baucar ${when}` : when), f.category && (names.category?.(f.category) ?? f.category)].filter(Boolean);
 }
 
 // `names` resolves codes the screen knows: teacher(code), klass(id), reason(code)
@@ -175,12 +176,12 @@ export function describeHistoryFilters(f, names = {}) {
 
 export const describeLeadFilters = (f) => (f.due ? ['Susulan tertunggak'] : []);
 
-export function describeClassFilters(f, names = {}) {
+export function describeClassFilters(f) {
   const chips = [];
   if (f.id) chips.push('Satu kelas');
   if (f.capacity) chips.push(CAPACITY[f.capacity] ?? f.capacity);
-  if (f.form) chips.push(formLabel(f.form));
-  if (f.subject) chips.push(names.subject?.(f.subject) ?? f.subject);
+  if (f.form) chips.push(f.form);
+  if (f.subject) chips.push(f.subject);
   return chips;
 }
 

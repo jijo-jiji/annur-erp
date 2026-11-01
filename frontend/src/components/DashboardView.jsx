@@ -2,13 +2,14 @@ import { ringgit, THRESHOLDS } from '../lib/thresholds';
 import { useEffect, useState } from 'react';
 import { BarChart3, CalendarClock, Check, ChevronRight, UserPlus, Wallet } from 'lucide-react';
 import { dashboardApi } from '../api/client';
-import { routeOf } from '../context/AppContext';
+import { routeOf, useApp } from '../context/AppContext';
 import { can } from '../lib/permissions';
 import { attendanceHref, classesHref, invoicesHref, leadsHref, monthEnd, monthKey, receiptsHref, studentsHref, teachersHref, voucherHref, vouchersHref } from '../lib/drilldown';
 import { CURRENT_MONTH, date, DAY_LABEL, monthLabel, rm } from '../lib/format';
 import { Donut, STATUS_COLORS } from './Donut';
 import { BarChart, HBarList, Legend, SERIES_COLORS } from './charts';
 import { Badge, Button, Card, CardHeader, cx, EmptyState, PageHeader, Segmented, Stat } from './ui';
+import { codeOfLabel } from '../lib/codes';
 
 // Two layouts over the same server summary:
 //   Ringkas     — is everything okay (three tiles) and what needs doing now (one list)
@@ -176,6 +177,8 @@ function growthHint(pct, fallback) {
 }
 
 export default function DashboardView({ role }) {
+  const { getMasterOptions } = useApp();
+  const expenseCategories = getMasterOptions('18_expense_cat'); // vouchers keep the category's name; the screen reads its code
   const [view, setView] = useState(loadView);
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
@@ -319,7 +322,7 @@ export default function DashboardView({ role }) {
         <ActionList items={notices} limit={8} />
         <Card>
           <CardHeader title="Pelajar aktif mengikut tingkatan" description="Bulanan dan walk-in" />
-          <div className="p-5"><Donut rows={students.by_form.map((f) => ({ label: f.label, value: f.count, href: sh({ status: 'ACTIVE', form: f.form }, f.count) }))} /></div>
+          <div className="p-5"><Donut rows={students.by_form.map((f) => ({ label: f.form, value: f.count, href: sh({ status: 'ACTIVE', form: f.form }, f.count) }))} /></div>
         </Card>
       </div>
 
@@ -457,7 +460,7 @@ export default function DashboardView({ role }) {
                     <a href={voucherHref(pv.pv_number)} className="flex items-center justify-between gap-4 px-5 py-3 text-sm hover:bg-gray-50">
                       <div className="min-w-0">
                         <p className="truncate font-medium text-gray-900">{pv.pv_number} · {pv.vendor || '—'}</p>
-                        <p className="text-[13px] text-gray-500">{pv.category} · {pv.status === 'PENDING_MANAGEMENT' ? 'kuasa pengurusan' : 'tahap supervisor'}</p>
+                        <p className="text-[13px] text-gray-500">{codeOfLabel(expenseCategories, pv.category)} · {pv.status === 'PENDING_MANAGEMENT' ? 'kuasa pengurusan' : 'tahap supervisor'}</p>
                       </div>
                       <span className="font-medium tnum">{rm(pv.amount)}</span>
                     </a>
@@ -488,12 +491,12 @@ function SubjectsByForm({ rows, hrefFor }) {
             onChange={(e) => setForm(e.target.value)}
             className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:border-brand-600 focus:outline-none"
           >
-            {rows.map((f) => <option key={f.form} value={f.form}>{f.label}</option>)}
+            {rows.map((f) => <option key={f.form} value={f.form}>{f.form}</option>)}
           </select>
         )}
       />
       <div className="p-5">
-        {current ? <Donut rows={current.subjects.map((x) => ({ label: x.subject, value: x.count, href: hrefFor?.(current.form, x) }))} /> : <p className="text-sm text-gray-500">Tiada pendaftaran kelas.</p>}
+        {current ? <Donut rows={current.subjects.map((x) => ({ label: x.code, value: x.count, href: hrefFor?.(current.form, x) }))} /> : <p className="text-sm text-gray-500">Tiada pendaftaran kelas.</p>}
       </div>
     </Card>
   );

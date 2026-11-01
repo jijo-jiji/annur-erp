@@ -17,6 +17,7 @@ import ExpenseCategories from './ExpenseCategories';
 import DrilldownBar from './DrilldownBar';
 import FormModal from './FormModal';
 import { Badge, Button, Card, CardHeader, DescriptionList, EmptyState, Input, Modal, PageHeader, Select, Table, Tabs, Td, Textarea, Th } from './ui';
+import { codeOfLabel } from '../lib/codes';
 
 const tierText = () => ({
   1: `Bawah ${ringgit(THRESHOLDS.voucher_tier1)}: disahkan oleh admin kaunter`,
@@ -203,7 +204,7 @@ export default function PaymentVoucherView({ role }) {
         <>
         {drill && (
           <DrilldownBar
-            chips={describeVoucherFilters(drill.filters)}
+            chips={describeVoucherFilters(drill.filters, { category: (label) => codeOfLabel(getMasterOptions('18_expense_cat'), label) })}
             result={matched}
             expect={drill.expect}
             unit={drill.unit}
