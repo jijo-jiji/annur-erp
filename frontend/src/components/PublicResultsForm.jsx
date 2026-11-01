@@ -12,10 +12,10 @@ import { Button, Card, CardHeader, cx, Input, inputClass, Select, Textarea } fro
 const RELATIONS = ['Pelajar', 'Bapa', 'Ibu', 'Penjaga'];
 
 // Public, mobile-first form (#/keputusan): a parent or the student sends school exam results without an account.
-// The student code and the last 4 digits of the IC prove who it is; staff check the results before they are saved.
+// The student's IC number proves who it is (the student code is for staff only); staff check the results before they are saved.
 export default function PublicResultsForm() {
-  const [who, setWho] = useState({ code: '', ic: '' });
-  const [student, setStudent] = useState(null); // what the server returns once the code and IC match
+  const [ic, setIc] = useState('');
+  const [student, setStudent] = useState(null); // what the server returns once the IC number matches
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(null);
@@ -29,7 +29,7 @@ export default function PublicResultsForm() {
     setError('');
     setBusy(true);
     try {
-      setStudent(await publicApi.checkResults(who.code.trim(), who.ic.trim()));
+      setStudent(await publicApi.checkResults(ic.trim()));
     } catch (err) {
       failed(err, 'Tidak dapat menyemak. Sila cuba lagi.');
     } finally {
@@ -75,12 +75,12 @@ export default function PublicResultsForm() {
       {!student ? (
         <form onSubmit={check} className="mt-6">
           <Card>
-            <CardHeader title="Pengesahan pelajar" description="Kod pelajar tertera pada resit yuran, contohnya HQ-260001." />
-            <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-              <Input label="Kod pelajar" required value={who.code} onChange={(e) => setWho({ ...who, code: e.target.value.toUpperCase() })} autoComplete="off" placeholder="HQ-260001" />
+            <CardHeader title="Pengesahan pelajar" description="Masukkan No. kad pengenalan pelajar (MyKad atau MyKid) untuk mengesahkan pelajar." />
+            <div className="p-5">
               <Input
-                label="4 digit akhir No. K/P pelajar" required inputMode="numeric" maxLength={4} pattern="\d{4}" value={who.ic}
-                onChange={(e) => setWho({ ...who, ic: e.target.value.replace(/\D/g, '').slice(0, 4) })} autoComplete="off" placeholder="1234"
+                label="No. K/P pelajar" required inputMode="numeric" maxLength={14} value={ic} autoComplete="off" placeholder="090101-03-1234"
+                onChange={(e) => setIc(e.target.value.replace(/[^\d-]/g, '').slice(0, 14))}
+                hint="12 digit. Tanda sengkang (-) boleh dimasukkan atau ditinggalkan."
               />
             </div>
           </Card>
@@ -89,7 +89,7 @@ export default function PublicResultsForm() {
         </form>
       ) : (
         <ResultsEntry
-          who={who}
+          ic={ic}
           student={student}
           onChangeStudent={() => { setStudent(null); setError(''); }}
           onDone={(res) => { setDone(res); window.scrollTo(0, 0); }}
@@ -99,7 +99,7 @@ export default function PublicResultsForm() {
   );
 }
 
-function ResultsEntry({ who, student, onChangeStudent, onDone }) {
+function ResultsEntry({ ic, student, onChangeStudent, onDone }) {
   const tuition = student.subjects.filter((x) => x.tuition).map((x) => x.id);
   const [f, setF] = useState({
     year: student.years[0], term: latestSat(student.terms.map((t) => t.code), todayISO()), submitted_by: '', relation: 'Bapa', phone: '', note: '',
@@ -122,7 +122,7 @@ function ResultsEntry({ who, student, onChangeStudent, onDone }) {
     setBusy(true);
     try {
       onDone(await publicApi.sendResults({
-        student_code: who.code.trim(), ic_last4: who.ic.trim(), ...f,
+        ic_number: ic.trim(), ...f,
         rows: filled.map((id) => (gradeOnly ? { subject: id, grade: values[id] } : { subject: id, mark: values[id] })),
       }, slip));
     } catch (err) {
@@ -139,7 +139,7 @@ function ResultsEntry({ who, student, onChangeStudent, onDone }) {
       <Card className="flex items-center justify-between gap-3 p-5">
         <div>
           <p className="font-medium text-gray-900">{student.name}</p>
-          <p className="text-[13px] text-gray-500">{student.student_code} · {student.form_label}</p>
+          <p className="text-[13px] text-gray-500">{student.form_label}</p>
         </div>
         <Button size="sm" variant="ghost" onClick={onChangeStudent}>Tukar pelajar</Button>
       </Card>

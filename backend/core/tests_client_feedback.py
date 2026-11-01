@@ -233,27 +233,55 @@ class PhaseCSchoolResultsTests(FeedbackBase):
         self.assertEqual(res.data, {'saved': 1})
         self.assertEqual(self.results(), {(2026, 'AKHIR', 'FZ'): (47, 'D', 'STAFF')})
 
-    def check(self, code=None, ic='1234'):
-        self.client.force_authenticate(None)
-        return self.client.post('/api/v1/public/results/check/', {'student_code': code or self.student['student_id'], 'ic_last4': ic}, format='json')
+    IC = '090101-03-1234'
 
-    def test_the_public_form_checks_the_student_code_and_ic_and_locks_after_wrong_tries(self):
+    def check(self, ic=IC, **extra):
+        self.client.force_authenticate(None)
+        return self.client.post('/api/v1/public/results/check/', {'ic_number': ic}, format='json', **extra)
+
+    def test_the_public_form_finds_the_student_by_ic_number_alone(self):
         ok = self.check()
         self.assertEqual(ok.status_code, 200, ok.data)
         self.assertEqual(ok.data['name'], 'Ali')
+        self.assertNotIn('student_code', ok.data)  # the code is for staff, not shown to parents
         self.assertIn('SPM', [t['code'] for t in ok.data['terms']])  # Tingkatan 5
         self.assertEqual(ok.data['subjects'][0], {'id': self.fizik.id, 'name': 'Fizik', 'tuition': True})  # tuition subjects first
-        self.assertEqual(self.check(code=self.student['student_id'].lower()).status_code, 200)
-        for _ in range(5):
-            self.assertEqual(self.check(ic='0000').status_code, 400)
-        locked = self.check()
+        self.assertEqual(self.check(ic='090101031234').status_code, 200)  # the dashes are optional
+        Student.objects.filter(pk=self.pk).update(ic_number='090101031234')  # and the record may have been kept without them
+        self.assertEqual(self.check(ic='090101-03-1234').status_code, 200)
+
+    def test_a_wrong_short_or_old_style_identification_finds_nobody(self):
+        self.assertEqual(self.check(ic='090101-03-9999').status_code, 400)
+        self.assertEqual(self.check(ic='1234').status_code, 400)  # the last 4 digits alone are no longer enough
+        self.assertEqual(self.check(ic='').status_code, 400)
+        self.client.force_authenticate(None)
+        old = self.client.post('/api/v1/public/results/check/', {'student_code': self.student['student_id'], 'ic_last4': '1234'}, format='json')
+        self.assertEqual(old.status_code, 400)  # nor is the student code with 4 digits
+
+    def test_one_ic_number_on_two_records_goes_to_the_student_still_attending(self):
+        Student.objects.create(student_id='HQ-269998', full_name='Ali Lama', ic_number='090101031234', form_level='F4', join_date=date(2025, 1, 1),
+                               status='TERMINATED', parent1_name='P', parent1_phone='1')
+        self.assertEqual(self.check().status_code, 400)  # Ali is still waiting for approval, so there is nobody to choose
+        self.as_role(SUPERVISOR)
+        self.client.post(f"/api/v1/students/students/{self.pk}/approve/")
+        ok = self.check()
+        self.assertEqual((ok.status_code, ok.data['name']), (200, 'Ali'))
+
+    def test_wrong_numbers_are_counted_for_each_address_and_a_right_one_does_not_clear_the_count(self):
+        mine = {'REMOTE_ADDR': '10.0.0.5'}
+        for _ in range(9):
+            self.assertEqual(self.check(ic='090101-03-9999', **mine).status_code, 400)
+        self.assertEqual(self.check(**mine).status_code, 200)  # a right number in between...
+        self.assertEqual(self.check(ic='090101-03-9999', **mine).status_code, 400)  # ...the tenth wrong one
+        locked = self.check(**mine)  # ...and the address waits, whatever it types
         self.assertEqual(locked.status_code, 400)
         self.assertIn('Terlalu banyak cubaan', str(locked.data))
+        self.assertEqual(self.check(REMOTE_ADDR='10.0.0.6').status_code, 200)  # another address is not affected
 
     def submit(self, rows, **extra):
         self.client.force_authenticate(None)
         return self.client.post('/api/v1/public/results/', {
-            'student_code': self.student['student_id'], 'ic_last4': '1234', 'year': 2026, 'term': 'PENGGAL_2',
+            'ic_number': self.IC, 'year': 2026, 'term': 'PENGGAL_2',
             'rows': json.dumps(rows), 'submitted_by': 'Bapa Ali', 'relation': 'Bapa', **extra}, format='multipart')
 
     def test_results_from_the_public_form_wait_for_review_and_approval_copies_them(self):
@@ -627,7 +655,7 @@ class PhaseENotificationsAndWeek5Tests(FeedbackBase):
         self.student.save()
         self.client.force_authenticate(None)
         sent = self.client.post('/api/v1/public/results/', {
-            'student_code': 'HQ-260001', 'ic_last4': '1234', 'year': 2026, 'term': 'PENGGAL_2',
+            'ic_number': '090101-03-1234', 'year': 2026, 'term': 'PENGGAL_2',
             'rows': json.dumps([{'subject': self.fizik.id, 'mark': 70}]), 'submitted_by': 'Bapa Ali', 'relation': 'Bapa'}, format='multipart')
         self.assertEqual(sent.status_code, 201, sent.data)
         self.assertEqual(self.titles(ADMIN)[0], 'Keputusan dari borang ibu bapa: Ali')
@@ -1021,7 +1049,14 @@ class PhaseGHandoutTests(FeedbackBase):
     def test_who_has_a_copy_comes_from_the_class_s_attendance_and_copies_given_later(self):
         hid = self.add().data['id']
         url = f'/api/v1/academic/handouts/{hid}/'
-        before = self.client.get(url + 'recipients/').data
+        from unittest import mock
+
+        class Before(date):  # the class is on 30 Oct 2026: look at it from before that day, whenever the test runs
+            @classmethod
+            def today(cls):
+                return date(2026, 10, 28)
+        with mock.patch('academic.handouts.date', Before):
+            before = self.client.get(url + 'recipients/').data
         self.assertEqual({(r['state'], r['why']) for r in before['students']}, {('PENDING', 'Kelas belum berlangsung')})
         self.take_attendance([(0, True), (1, False), (2, True)])
         got = self.client.get(url + 'recipients/').data

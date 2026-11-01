@@ -119,7 +119,7 @@ Tests: `PhaseBStudentCodeTests` (3 tests); full backend suite 233 tests OK.
 1. Six fixed terms per year: Penggal 1, Pertengahan Tahun, Penggal 2, Akhir Tahun for everyone; Percubaan SPM and SPM
    for Tingkatan 5. Results are keyed by student, year, term and subject; existing rows are moved into this shape.
 2. Entry by student and term in one grid (marks, or grade only for SPM), and by class.
-3. Public form `#/keputusan`: student code + IC last 4 digits, the grid, an optional photo of the report slip.
+3. Public form `#/keputusan`: the student's IC number (the student code is for staff), the grid, an optional photo of the report slip.
    Submissions wait in a review queue until staff approve them.
 4. Statistics: a *Prestasi* tab on the student (trend per subject, average per term, grade counts, against the class
    average) and per tuition class.
@@ -132,7 +132,7 @@ Tests: `PhaseBStudentCodeTests` (3 tests); full backend suite 233 tests OK.
 | Keputusan → **Semakan borang** | Results sent on the public form, with the photo of the slip, what is already saved (differences in amber), **Semak & luluskan** (staff can correct marks first) or **Tolak** with a reason. |
 | Keputusan → **Borang ibu bapa** | Link and QR code of the public form, to print or copy. |
 | Student → **Keputusan** tab | Year grid: subjects × terms, failing marks in red, average row; **Isi keputusan** enters a whole term in one screen and can add school subjects not taken at the centre. **Prestasi**: latest average and change, against the class average, subjects passed, A count, a trend chart against the class (dashed), latest grade spread, and a trend card per subject with its tuition teacher. |
-| `#/keputusan` (public, phone-first) | Student code (old codes work too) + last 4 IC digits → choose year and exam (defaults to the latest one already sat) → marks per subject → optional slip photo / PDF → sender's name, relation, phone. Five wrong IC tries lock that code for an hour; 30 sends an hour per device. Sending again for the same exam replaces a submission not yet reviewed. |
+| `#/keputusan` (public, phone-first) | The student's IC number only (12 digits, dashes optional; the student code is for staff and is not asked or shown) → choose year and exam (defaults to the latest one already sat) → marks per subject → optional slip photo / PDF → sender's name, relation, phone. Ten wrong IC numbers from one device make it wait an hour (a right number does not clear the count); 30 sends an hour per device. An IC number on two records goes to the one still attending, otherwise the form asks the parent to contact the counter. Sending again for the same exam replaces a submission not yet reviewed. |
 
 Data: `StudentExamResult` now has `year`, `term`, `source` (staff / parent form) and `recorded_by`, one row per student, year, term
 and subject (migration `students/0015` mapped old rows by exam name, else by month). New `ResultSubmission` model and

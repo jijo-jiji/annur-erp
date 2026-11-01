@@ -5,7 +5,8 @@ from datetime import date
 
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Value
+from django.db.models.functions import Replace
 from django.utils import timezone
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action, api_view, authentication_classes, parser_classes, permission_classes, throttle_classes
@@ -24,7 +25,8 @@ from . import exam_terms
 from .models import ResultSubmission, Student, StudentExamResult
 
 SUBJECT_LEVEL = {'PRIMARY': 'PRIMARY', 'LOWER': 'LOWER_SEC', 'UPPER': 'UPPER_SEC'}
-MAX_TRIES = 5  # wrong IC digits for one student code before that code is locked for an hour
+MAX_TRIES = 10  # wrong IC numbers from one address before it must wait an hour
+MIN_IC_DIGITS = 10  # a MyKad / MyKid number has 12; anything much shorter is too easy to guess
 
 
 def _year(value):
@@ -241,20 +243,28 @@ class ResultSubmissionViewSet(viewsets.ReadOnlyModelViewSet):
 
 # ---- Public form (no login) -------------------------------------------------------------------------------------
 
-def find_student(code, ic_last4):
-    """The student with this code (or the code they had before renumbering) whose IC ends in these 4 digits.
-    Repeated wrong digits lock the code for an hour."""
-    code = str(code or '').strip().upper()
-    ic4 = ''.join(ch for ch in str(ic_last4 or '') if ch.isdigit())
-    tries_key = f'results-tries:{code}'
-    if cache.get(tries_key, 0) >= MAX_TRIES:
+def find_student(request):
+    """The student whose IC number was typed on the public form: the whole number, with or without dashes. The
+    parent types the IC and nothing else; the student code is for staff.
+
+    With no code to count wrong tries against, they are counted per address: MAX_TRIES wrong numbers and the address
+    waits an hour. A right number does not clear the count, or one valid IC would let a guesser carry on."""
+    digits = ''.join(ch for ch in str(request.data.get('ic_number') or '') if ch.isdigit())
+    tries_key = f'results-tries:{PublicResultsThrottle().get_ident(request)}'
+    tries = cache.get(tries_key, 0)
+    if tries >= MAX_TRIES:
         raise ValidationError({'detail': 'Terlalu banyak cubaan yang salah. Sila cuba semula selepas sejam atau hubungi kaunter.'})
-    student = Student.objects.filter(Q(student_id=code) | Q(previous_student_id=code)).exclude(status='REJECTED').first() if code else None
-    ic_digits = ''.join(ch for ch in (student.ic_number if student else '') if ch.isdigit())
-    if student is None or len(ic4) != 4 or len(ic_digits) < 4 or not ic_digits.endswith(ic4):
-        cache.set(tries_key, cache.get(tries_key, 0) + 1, 3600)
-        raise ValidationError({'detail': 'Kod pelajar atau 4 digit akhir No. K/P tidak sepadan.'})
-    cache.delete(tries_key)
+    student = None
+    if len(digits) >= MIN_IC_DIGITS:
+        found = list(Student.objects.exclude(status='REJECTED')
+                     .annotate(ic_digits=Replace(Replace('ic_number', Value('-'), Value('')), Value(' '), Value('')))
+                     .filter(ic_digits=digits))
+        if len(found) > 1:  # the same number on two records (a re-registration): the one still attending
+            found = [s for s in found if s.status == 'ACTIVE']
+        student = found[0] if len(found) == 1 else None
+    if student is None:
+        cache.set(tries_key, tries + 1, 3600)
+        raise ValidationError({'detail': 'No. K/P tidak dijumpai. Semak semula nombor itu atau hubungi kaunter.'})
     return student
 
 
@@ -264,10 +274,10 @@ def find_student(code, ic_last4):
 @throttle_classes([PublicResultsThrottle])
 def public_results_check(request):
     """Step 1 of the public form: confirm the student and get the choices for their form."""
-    student = find_student(request.data.get('student_code'), request.data.get('ic_last4'))
+    student = find_student(request)
     this_year = date.today().year
     return Response({
-        'name': student.full_name, 'student_code': student.student_id, 'form_level': student.form_level,
+        'name': student.full_name, 'form_level': student.form_level,
         'form_label': grades.label(student.form_level), 'years': [this_year, this_year - 1],
         'terms': exam_terms.terms_for(student.form_level), 'grades': exam_terms.GRADES, 'subjects': subjects_for(student),
     })
@@ -281,7 +291,7 @@ def public_results_check(request):
 def public_results_submit(request):
     """Step 2: the results, an optional photo of the report slip, and who is sending them. They wait for staff
     review; sending again for the same exam replaces a submission that has not been reviewed yet."""
-    student = find_student(request.data.get('student_code'), request.data.get('ic_last4'))
+    student = find_student(request)
     year, term = _year(request.data.get('year')), request.data.get('term')
     exam_terms.check(term, student.form_level, year)
     rows = request.data.get('rows') or []

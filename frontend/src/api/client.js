@@ -100,9 +100,9 @@ export const filesApi = {
 // Endpoints the public forms use without signing in
 export const publicApi = {
   subjects: (form = '') => request(`/public/subjects/?${new URLSearchParams({ form })}`),
-  // School results form (#/keputusan): the student code and the last 4 digits of the IC prove who it is
-  checkResults: (studentCode, icLast4) => request('/public/results/check/', {
-    method: 'POST', body: JSON.stringify({ student_code: studentCode, ic_last4: icLast4 }),
+  // School results form (#/keputusan): the student's IC number proves who it is (the student code is for staff)
+  checkResults: (icNumber) => request('/public/results/check/', {
+    method: 'POST', body: JSON.stringify({ ic_number: icNumber }),
   }),
   sendResults: async (fields, slip) => {
     const form = new FormData();
