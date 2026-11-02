@@ -91,6 +91,32 @@ test.describe('Payment voucher approval', () => {
     await expect(row(page, large)).toContainText('Diluluskan pengurusan');
   });
 
+  // The app loads its data twice when it opens (in development React runs the start-up effects twice), and a slow
+  // second load can arrive after the click. The list it carries was read before the approval, so it must not put the
+  // voucher back to waiting.
+  test('a voucher list read before the approval but arriving after it does not undo the approval', async ({ page, request }) => {
+    const middle = await voucherWaiting(request, 1700);
+    let loads = 0;
+    let release;
+    const late = new Promise((resolve) => { release = resolve; });
+    await page.route(/\/api\/v1\/expenses\/vouchers\/$/, async (route) => {
+      loads += 1;
+      if (loads !== 2) return route.continue();
+      const older = await route.fetch(); // read now, before the approval
+      await late;
+      return route.fulfill({ response: older });
+    });
+    await signInAs(page, 'SUPERVISOR');
+    await page.goto('/#/vouchers');
+
+    await row(page, middle).getByRole('button', { name: 'Lulus' }).click();
+    await expect(row(page, middle)).toContainText('Diluluskan supervisor');
+    release();
+    await page.waitForTimeout(1500); // time for the late list to be applied, if it is going to be
+    await expect(row(page, middle)).toContainText('Diluluskan supervisor');
+    await expect(row(page, middle).getByRole('button', { name: 'Lulus' })).toHaveCount(0);
+  });
+
   test('a rejection must say why, and the reason stays on the voucher', async ({ page, request }) => {
     const description = await voucherWaiting(request, 2200);
     await signInAs(page, 'SUPERVISOR');

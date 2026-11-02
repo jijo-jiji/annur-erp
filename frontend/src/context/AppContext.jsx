@@ -57,12 +57,14 @@ export function AppProvider({ children, notify }) {
   // moved during the load, the prospects are fetched again instead.
   const leadEdits = useRef(0);
   const handoutEdits = useRef(0); // the same for handouts (added, printed, a copy given out)
+  const voucherEdits = useRef(0); // the same for vouchers (made, approved, rejected)
 
   // Initial Load from Django REST backend
   const refreshAllData = useCallback(async () => {
     setIsLoading(true);
     const leadEditsAtStart = leadEdits.current;
     const handoutEditsAtStart = handoutEdits.current;
+    const voucherEditsAtStart = voucherEdits.current;
     try {
       const [
         masterRes, studentsRes, leadsRes, invoicesRes, receiptsRes,
@@ -98,7 +100,10 @@ export function AppProvider({ children, notify }) {
       }
       if (invoicesRes.status === 'fulfilled') setInvoices(invoicesRes.value || []);
       if (receiptsRes.status === 'fulfilled') setReceipts(receiptsRes.value || []);
-      if (vouchersRes.status === 'fulfilled') setVouchers(vouchersRes.value || []);
+      if (vouchersRes.status === 'fulfilled') {
+        if (voucherEdits.current === voucherEditsAtStart) setVouchers(vouchersRes.value || []);
+        else expensesApi.getVouchers().then(setVouchers).catch(() => {});
+      }
       if (vendorsRes.status === 'fulfilled') setVendors(vendorsRes.value || []);
       if (timetableRes.status === 'fulfilled') setTimetable(timetableRes.value || []);
       if (reschedulesRes.status === 'fulfilled') setReschedules(reschedulesRes.value || []);
@@ -378,6 +383,7 @@ export function AppProvider({ children, notify }) {
   const createVoucher = async (voucherPayload) => {
     try {
       const newPv = await expensesApi.createVoucher(voucherPayload);
+      voucherEdits.current += 1;
       const allVouchers = await expensesApi.getVouchers();
       setVouchers(allVouchers);
       showToast(`Baucar Bayaran berjaya dijana: ${newPv.pv_number} (${newPv.tier_level})`);
@@ -391,6 +397,7 @@ export function AppProvider({ children, notify }) {
   const approveVoucher = async (pvId, comment = '') => {
     try {
       const updated = await expensesApi.approveVoucher(pvId, comment);
+      voucherEdits.current += 1;
       setVouchers((prev) => prev.map((v) => (v.id === pvId ? updated : v)));
       showToast(`Baucar ${updated.pv_number} telah diluluskan.`);
       return updated;
@@ -403,6 +410,7 @@ export function AppProvider({ children, notify }) {
   const rejectVoucher = async (pvId, comment) => {
     try {
       const updated = await expensesApi.rejectVoucher(pvId, comment);
+      voucherEdits.current += 1;
       setVouchers((prev) => prev.map((v) => (v.id === pvId ? updated : v)));
       showToast(`Baucar ${updated.pv_number} telah ditolak.`, 'info');
       return updated;
