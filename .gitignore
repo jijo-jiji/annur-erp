@@ -16,6 +16,7 @@ db.sqlite3
 .env
 dev_credentials.txt
 backend/uploads/
+backend/backups/
 venv/
 .venv/
 env/
